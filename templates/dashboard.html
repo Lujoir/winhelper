@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Windows 系统故障分析系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <!-- 顶部导航 -->
+    <nav class="navbar">
+        <div class="nav-brand">
+            <svg class="nav-logo" viewBox="0 0 24 24" width="28" height="28">
+                <path d="M4 3h7v7H4V3zm9 0h7v7h-7V3zM4 12h7v7H4v-7zm9 0h7v7h-7v-7z" fill="currentColor" opacity="0.9"/>
+                <path d="M4 3h7v7H4V3z" fill="currentColor" opacity="0.6"/>
+            </svg>
+            <span class="nav-title">Windows 故障分析系统</span>
+        </div>
+        <div class="nav-tabs">
+            <button class="nav-tab active" data-tab="dashboard" onclick="switchTab('dashboard')">
+                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z" fill="currentColor"/></svg>
+                仪表盘
+            </button>
+            <button class="nav-tab" data-tab="logs" onclick="switchTab('logs')">
+                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6z" fill="currentColor"/></svg>
+                日志查看
+            </button>
+            <button class="nav-tab" data-tab="analysis" onclick="switchTab('analysis')">
+                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z" fill="currentColor"/></svg>
+                故障分析
+            </button>
+            <button class="nav-tab" data-tab="knowledge" onclick="switchTab('knowledge')">
+                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+                知识库
+            </button>
+        </div>
+        <div class="nav-actions">
+            <select id="logTypeSelector" class="log-select" onchange="reloadData()">
+                <option value="System">系统日志</option>
+                <option value="Application">应用程序日志</option>
+                <option value="Security">安全日志</option>
+            </select>
+            <button class="refresh-btn" onclick="reloadData()" title="刷新数据">
+                <svg viewBox="0 0 24 24" width="18" height="18"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" fill="currentColor"/></svg>
+            </button>
+        </div>
+    </nav>
+
+    <!-- 页面内容 -->
+    <main class="main-content">
+        <!-- 加载遮罩 -->
+        <div id="loadingOverlay" class="loading-overlay">
+            <div class="loader">
+                <div class="loader-ring"></div>
+                <div class="loader-text">正在分析系统日志...</div>
+            </div>
+        </div>
+
+        <!-- ==================== 仪表盘 ==================== -->
+        <div id="tab-dashboard" class="tab-content active">
+            <div class="page-header">
+                <h2>系统概览</h2>
+                <p class="page-subtitle" id="summaryTime">实时分析 Windows 事件日志</p>
+            </div>
+
+            <!-- 统计卡片 -->
+            <div class="stats-grid" id="statsCards">
+                <div class="stat-card stat-total"><div class="stat-value pulse-loading">--</div><div class="stat-label">事件总数</div></div>
+                <div class="stat-card stat-critical"><div class="stat-value pulse-loading">--</div><div class="stat-label">关键事件</div></div>
+                <div class="stat-card stat-error"><div class="stat-value pulse-loading">--</div><div class="stat-label">错误事件</div></div>
+                <div class="stat-card stat-warning"><div class="stat-value pulse-loading">--</div><div class="stat-label">警告事件</div></div>
+                <div class="stat-card stat-info"><div class="stat-value pulse-loading">--</div><div class="stat-label">信息事件</div></div>
+            </div>
+
+            <!-- 图表区域 -->
+            <div class="charts-row">
+                <div class="chart-card">
+                    <div class="card-header">
+                        <h3>事件时间分布</h3>
+                        <span class="card-badge">24小时</span>
+                    </div>
+                    <div class="chart-body">
+                        <canvas id="timeChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <div class="card-header">
+                        <h3>事件来源 TOP10</h3>
+                        <span class="card-badge">按数量</span>
+                    </div>
+                    <div class="chart-body">
+                        <canvas id="sourceChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 关键事件 -->
+            <div class="section-card">
+                <div class="card-header">
+                    <h3>已知问题事件</h3>
+                    <span class="card-badge" id="criticalBadge">共 0 条</span>
+                </div>
+                <div class="table-wrapper">
+                    <table class="event-table">
+                        <thead>
+                            <tr><th>时间</th><th>事件ID</th><th>事件名称</th><th>来源</th><th>级别</th><th>描述</th></tr>
+                        </thead>
+                        <tbody id="criticalEventsBody">
+                            <tr><td colspan="6" class="empty-state">暂无数据，请点击刷新</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 日志查看 ==================== -->
+        <div id="tab-logs" class="tab-content">
+            <div class="page-header">
+                <h2>事件日志</h2>
+                <div class="filter-bar">
+                    <div class="filter-group">
+                        <label>级别筛选</label>
+                        <select id="logLevelFilter" class="filter-select" onchange="loadLogs(1)">
+                            <option value="">全部级别</option>
+                            <option value="critical">关键</option>
+                            <option value="error">错误</option>
+                            <option value="warning">警告</option>
+                            <option value="info">信息</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>每页</label>
+                        <select id="pageSize" class="filter-select" onchange="loadLogs(1)">
+                            <option value="25">25 条</option>
+                            <option value="50" selected>50 条</option>
+                            <option value="100">100 条</option>
+                        </select>
+                    </div>
+                    <span class="pagination-info" id="paginationInfo"></span>
+                </div>
+            </div>
+
+            <div class="section-card">
+                <div class="table-wrapper">
+                    <table class="event-table">
+                        <thead>
+                            <tr><th>时间</th><th>ID</th><th>来源</th><th>级别</th><th>描述</th></tr>
+                        </thead>
+                        <tbody id="logsBody">
+                            <tr><td colspan="5" class="empty-state">暂无数据</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="pagination-bar" id="paginationBar">
+                    <button class="page-btn" onclick="changePage(-1)" id="prevBtn">上一页</button>
+                    <span id="pageNumbers"></span>
+                    <button class="page-btn" onclick="changePage(1)" id="nextBtn">下一页</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 故障分析 ==================== -->
+        <div id="tab-analysis" class="tab-content">
+            <div class="page-header">
+                <h2>故障分析报告</h2>
+                <p class="page-subtitle">基于事件日志模式匹配的智能分析</p>
+            </div>
+
+            <div class="risk-summary" id="riskSummary"></div>
+
+            <div id="faultsContainer">
+                <div class="empty-state-full">
+                    <svg viewBox="0 0 24 24" width="48" height="48"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" fill="currentColor" opacity="0.3"/></svg>
+                    <p>正在加载分析结果...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 知识库 ==================== -->
+        <div id="tab-knowledge" class="tab-content">
+            <div class="page-header">
+                <h2>故障知识库</h2>
+                <p class="page-subtitle">系统内置的故障模式与修复建议</p>
+            </div>
+
+            <div class="knowledge-grid" id="knowledgeContainer">
+                <div class="empty-state-full">加载中...</div>
+            </div>
+        </div>
+    </main>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
