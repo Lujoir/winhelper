@@ -867,7 +867,6 @@ function renderTreemap() {
         });
     }
     // 容量守恒视图：根目录散落系统文件（pagefile/hiberfil）+ 权限受限残差
-    const atRoot = !treeCache.rel || treeCache.rel === ".";
     if (atRoot) {
         (treeCache.loose_files || []).slice(0, 6).forEach(f => {
             if (f.size > 0) data.push({
