@@ -1,0 +1,56 @@
+[
+  {
+    "id": "msg-1788591873863-h4o7i8",
+    "from": "team-lead",
+    "to": "disk-cleaner-dev",
+    "type": "message",
+    "content": "收到回报，评审通过。你发现的 3 个改进点全部批准，现下发正式任务 #1：\n\n【任务 #1：技术债清理（3项）】\n1. 修复 win_update_cache 硬编码：disk_cleanup.py 中 r\"C:\\Windows\\SoftwareDistribution\\Download\" 改为 os.path.join(win_root, \"SoftwareDistribution\\\\Download\")\n2. 前端去重：humanSizeRaw / fmtNum / shortPath / escapeJs / showToast 五个函数收敛到 app-lite.js 单份定义，从 disk.js 删除重复实现（注意 disk.js 内部所有调用点保持可用，app-lite.js 先于 disk.js 加载）\n3. 删除死代码：appdata_scan.py 的 _conflict_dest()（真实冲突处理逻辑在 _run_migrate 内联实现，保留内联）\n\n【验收要求】\n- python -m py_compile 两个 PY 文件通过\n- esprima 校验 disk.js / app-lite.js / appdata.js 通过\n- 启动 app.py 冒烟：/api/disk/overview 200、/api/disk/scan?type=junk 完成且 user_temp 有数据\n- git commit（消息前缀 \"refactor:\"）\n- 完成后 send_message 向 main 回报：改动文件清单 + 验证结果\n\n【记忆要求】\n- 若修复过程中发现新踩坑，追加 ADR-009 到 docs/DECISIONS.md 并一并 commit\n\n边界：仅做以上 3 项，不要顺手改其他内容。",
+    "timestamp": "2026-09-05T07:04:33.863Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788592149478-je0zlm",
+    "from": "team-lead",
+    "to": "disk-cleaner-dev",
+    "type": "message",
+    "content": "追加 bugfix（并入任务 #1，一起 commit）：\n\n【BUG：容量仪表盘点击\"生成仪表盘\"报错 \"Cannot read properties of undefined (reading 'size')\"】\n根因（web/disk.js renderTreemap）：renderTreemap 构造的 data 元素字段是 {name,path,size,size_text,files,isOther}，没有 squarifyLayout 所需的 value 字段；且 rects.forEach 内读取 rc.item.d —— 而 squarifyLayout 把数据对象本身存为 r.item（不存在 .d 包装）。两处契约不一致叠加导致报错/空白。\n\n【修复要求（与主应用同源修复保持一致）】\n1. renderTreemap 的 data 构造与 rest.push 中每个元素补上 value: size 字段（squarifyLayout 按 value 布局，保持不变）\n2. rects.forEach 内改为 const d = rc.item;（删除 .d 解引用）\n3. 顺带自查 squarifyLayout 对 value<=0 的防护（total<=0 时 break 已有，确认即可）\n\n【验收追加】\n- 生成仪表盘冒烟：先 /api/disk/scan?type=tree&root=C%3A%5C 完成后，用 JS 逻辑等价方式验证 renderTreemap 不抛异常（可用 esprima 校验 + 手动推演，或起 HTTP 服务用浏览器无头验证均可）\n- 此 bug 与修复方案追加到 docs/DECISIONS.md 作为 ADR-009（treemap 数据契约：value 字段必须存在，squarifyLayout 输出 rect.item 即数据对象）\n- 与任务 #1 的 3 项修复同一 commit 或连续 commit，完成后 send_message 向 main 回报全部改动清单与验证结果",
+    "timestamp": "2026-09-05T07:09:09.478Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788592218252-l4sup0",
+    "from": "team-lead",
+    "to": "disk-cleaner-dev",
+    "type": "message",
+    "content": "任务 #1 验收：3 项技术债修复合格（commit 9fd2a27），win_root 冒烟验证到位。但有一条**未完成**——我在你执行任务 #1 期间追加了 bugfix 指令（仪表盘报错），你的回报清单中没有它，且 disk-cleaner/web/disk.js:797 仍是 rc.item.d。\n\n现下发【任务 #2：容量仪表盘契约 bug 修复（必修）】\n\n【BUG 现象】独立项目\"生成仪表盘\"报错：Cannot read properties of undefined (reading 'size')\n\n【根因】web/disk.js renderTreemap 与 squarifyLayout 数据契约不一致：\n1. renderTreemap 构造的 data 元素字段为 {name,path,size,size_text,files,isOther}，缺少 squarifyLayout 布局所需的 value 字段（squarifyLayout 内部按 c.value 求面积，value 缺失会导致 total=0）\n2. squarifyLayout 把数据对象本身存为 rect.item，但 forEach 内读取 rc.item.d（不存在的包装层）→ undefined.size 报错\n\n【修复要求】\n1. renderTreemap 的 data 构造（top.map）与\"其他\"聚合 push 中，每个元素补上 value: size 字段\n2. rects.forEach 内 const d = rc.item;（删除 .d 解引用）\n3. 确认 squarifyLayout 对 total<=0 / value<=0 的防护存在\n\n【参考】主应用 web/disk.js（../web/disk.js）已修复同样问题，可直接对照（搜索 \"value: c.size\" 与 \"const d = rc.item\"）\n\n【验收】\n- esprima 校验通过\n- 追加 ADR-009 到 docs/DECISIONS.md：treemap 数据契约（value 字段必须存在；rect.item 即数据对象，无 .d 包装）\n- git commit（前缀 \"fix:\"）\n- 完成后 send_message 回报改动 diff 摘要 + ADR-009 全文\n\n边界：只改这一处契约问题，不动其他逻辑。",
+    "timestamp": "2026-09-05T07:10:18.252Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788592758060-j3xvxf",
+    "from": "team-lead",
+    "to": "disk-cleaner-dev",
+    "type": "message",
+    "content": "任务 #2 验收通过 ✅\n- 抽查确认：disk.js:773 value 字段已补、rc.item.d 解引用已消除、ADR-009 已入档\n- 验证方法（Python 复刻修复后逻辑 + 真实 C 盘扫描数据 + 5 视口布局断言）是本次任务的亮点，此方法可作为后续前端逻辑改动的标准验证手段\n\n当前无新任务，进入待命状态。等待 main 下发下一个任务。",
+    "timestamp": "2026-09-05T07:19:18.060Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788596484605-re9t3r",
+    "from": "team-lead",
+    "to": "disk-cleaner-dev",
+    "type": "message",
+    "content": "任务 #3：主应用发现\"容量仪表盘加载不了数据\"的体验缺陷，独立项目存在相同问题，现同步修复。\n\n【现象】用户进入磁盘清理页，直接点击仪表盘\"生成仪表盘\"后看不到任何进展/数据。（根因组合：仪表盘依赖的全盘目录树扫描需1-3分钟，但扫描进度只显示在默认收纳的\"容量定位分析\"卡片中，仪表盘卡片无任何反馈；且若从未扫描过，需手动点按钮触发；扫描失败时错误提示只在右上角toast一闪而过。）\n\n【修复内容（在 disk-cleaner/web/disk.js，与主应用同源）】\n1. initDiskTab()：loadTreeDrives() 改为 return Promise，并在其 .then() 中自动启动C盘目录树扫描（守卫：!window._treeDone && !window._treeRunning 时调用 startLargeScan()）\n2. startLargeScan()：\n   - 开头补 root 兜底：if (!root) root = \"C:\\\\\"（下拉框未就绪时防竞态）\n   - 设 window._treeRunning = true; window._treeDone = false;\n   - 将 #treemap innerHTML 替换为内嵌 spinner + <p id=\"tmSpinText\">正在扫描目录树（全盘约需1-3分钟）…</p>；隐藏 #tmStartBtn\n   - 启动失败分支：window._treeRunning = false 并调用 tmShowError(...)\n3. pollLargeScan()：\n   - running 分支：更新 #tmSpinText 为实时进度（当前目录/已扫描文件数/耗时）\n   - 结束分支：window._treeRunning = false；done 时补 window._treeDone = true（renderTreemap 会经 loadTreeNode 自动触发）；cancelled/error/result.error 各分支调用 tmShowError(...)\n4. loadTreeNode()：!data.success 与 catch 分支均调用 tmShowError(...)\n5. startTreeForTreemap() 重写为状态机：\n   - window._treeRunning → 只更新 #tmNote 提示\"扫描进行中\"并 return\n   - window._treeDone && treeScanId && window._treeRoot → 直接 loadTreeNode(window._treeRoot)\n   - 否则 → 默认C:\\启动扫描\n6. 新增函数 tmShowError(msg)：将 #treemap innerHTML 替换为 ❌ + msg + 「重试」按钮（onclick=startTreeForTreemap），并恢复 #tmStartBtn 显示\n\n【参考】主应用 ../web/disk.js 已完成同款修复，可直接对照（搜索 _treeRunning / tmShowError / tmSpinText）。\n\n【验收】esprima 校验；起 :5010 服务后用真实流程验证：进入页面 → 仪表盘自动出现扫描spinner → 扫描完成自动渲染色块（可用 /api/disk/scan?type=tree 触发后模拟前端状态机，或无头浏览器均可，方法自选）；git commit（前缀 fix:）；回报改动摘要。\n\n注意：index.html 的仪表盘占位文案如需同步微调（提示自动扫描），允许一并修改。",
+    "timestamp": "2026-09-05T08:21:24.605Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788596973696-r8n0wi",
+    "from": "team-lead",
+    "to": "disk-cleaner-dev",
+    "type": "message",
+    "content": "任务 #3 验收通过 ✅\n- commit 61bed66 已核查落地（_treeRunning/_treeDone/tmShowError/tmSpinText 共14处引用确认）\n- E2E 验证（Playwright 无头浏览器真实流程 + pageerror=none 断言）是本项目迄今质量最高的验证手段，予以表扬\n\n【新增要求】将 Playwright E2E 纳入标准验证手段：\n1. 追加 ADR-010 到 docs/DECISIONS.md：记录\"前端改动必须 Playwright E2E 验证（esprima 只能查语法，抓不住运行时 ReferenceError——本次主应用 ratio 缺陷即教训）\"，包含你的 E2E 脚本要点（起服务→打开页面→断言 spinner/进度/色块渲染/pageerror=none）\n2. 将 E2E 验证脚本固化到项目 tools/e2e_dashboard.py（可重复执行），git commit（前缀 test:）\n3. 完成后回报即可，无其他任务",
+    "timestamp": "2026-09-05T08:29:33.696Z",
+    "read": true
+  }
+]

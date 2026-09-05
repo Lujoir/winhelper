@@ -1,0 +1,23 @@
+{
+  "name": "disk-cleaner-team",
+  "leadAgentId": "760601e4064b405ba71f5310f1d93e27",
+  "workspacePath": "c:/Users/10604/CodeBuddy/20260522083146",
+  "createdAt": "2026-09-05T06:59:43.410Z",
+  "options": {
+    "workspacePath": "c:/Users/10604/CodeBuddy/20260522083146",
+    "isAutoTeam": false
+  },
+  "members": [
+    {
+      "memberId": "team-lead@disk-cleaner-team",
+      "name": "team-lead",
+      "role": "Team Lead - coordinates the team and interacts with the user"
+    },
+    {
+      "memberId": "disk-cleaner-dev@disk-cleaner-team",
+      "name": "disk-cleaner-dev",
+      "role": "Disk Cleaner项目开发负责人"
+    }
+  ],
+  "isAutoTeam": false
+}

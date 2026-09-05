@@ -1,0 +1,47 @@
+[
+  {
+    "id": "msg-1788591818475-w9ha3i",
+    "from": "disk-cleaner-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "disk-cleaner-dev 项目熟悉任务完成，回报如下：\n\n【一、项目理解摘要】\nDisk Cleaner 是由 winhelper 迁移出的独立 C 盘清理工具：Flask 后端（:5010，app.py 薄路由层）+ 纯静态前端（index.html 单页 + app-lite.js/disk.js/appdata.js）。核心安全模型为三级分级：🟢 safe（一键清理）、🟡 caution（默认不勾选显式确认）、🔴 sensitive（大文件仅定位+分析，无删除入口）。清理白名单硬编码于 disk_cleanup.py::CATEGORY_DEFS（14 类），前端只能传分类 key 且同步前置校验；应用数据迁移/删除仅限 ZONE_DEFS 区域根 + 服务端登记的 _EXTRA_ALLOWED_ROOTS，微信/QQ 的 db/log 目录扫描时直接排除。所有扫描/清理/迁移走统一后台任务管理器（_start_task/_task_view/_cancel_task：限频进度、取消、同类幂等复用、清理互斥锁）；目录树全量统计存 task[\"_tree\"] 经 /api/disk/tree 懒展开（limit 上限 5000）。安装包按 6 级判定链识别（卸载排除→安装关键词→版本号→架构标记→工具负向→待确认），避免误杀 MySQL 工具集。路径全部用环境变量取盘符。docs/DECISIONS.md 8 条 ADR 已完整吸收。\n\n【二、发现的改进点（3个）】\n1. 【违反 ADR-003 的残留】disk_cleanup.py:130 win_update_cache 分类硬编码了 r\"C:\\Windows\\SoftwareDistribution\\Download\"，未用 win_root 变量——同文件 delivery_opt 分类（:135）已正确用 os.path.join(win_root, ...)。若系统盘非 C:，该分类会扫错盘（报告 0 容量）。属安全无害但违反\"禁止硬编码盘符\"铁律的一致性缺陷，建议修正。\n2. 【前端重复定义】humanSizeRaw / fmtNum / shortPath / escapeJs / showToast 五个函数在 app-lite.js 与 disk.js 各有一份完全相同的实现（app-lite.js 先加载被 disk.js 覆盖）。双份维护易漂移——改一处忘另一处会出现行为不一致，建议收敛到 app-lite.js 单份。\n3. 【死代码】appdata_scan.py:348 _conflict_dest() 从未被调用（仅返回\"同名跳过\"的一半逻辑），实际迁移冲突处理内联在 _run_migrate 中（同名同大小跳过、否则 _unique_dest 改名）。死代码与真实行为不一致，易误导后续维护，建议删除或改为真实逻辑。\n\n以上均为观察结论，未修改任何代码。等待 main 下发具体开发任务。",
+    "timestamp": "2026-09-05T07:03:38.475Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788592146961-704eqm",
+    "from": "disk-cleaner-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "任务 #1 技术债清理完成，全部验收通过。\n\n【改动文件清单（3个，共 +1/-45 行）】\n1. disk_cleanup.py（1处修改）\n   - win_update_cache 分类：r\"C:\\Windows\\SoftwareDistribution\\Download\" → os.path.join(win_root, \"SoftwareDistribution\\\\Download\")，消除 ADR-003 硬编码盘符残留\n2. web/disk.js（删除 5 个重复函数定义，共 37 行）\n   - humanSizeRaw / fmtNum / shortPath / escapeJs / showToast 收敛到 app-lite.js 单份定义（index.html 加载顺序 app-lite.js:274 → disk.js:275 → appdata.js:276 已确认，全局定义可用）\n3. appdata_scan.py（删除 7 行）\n   - _conflict_dest() 死代码移除，真实冲突处理（同名同大小跳过/否则改名）保留在 _run_migrate 内联\n\n【验证结果】\n- python -m py_compile disk_cleanup.py appdata_scan.py → PY_COMPILE_OK\n- esprima 校验 app-lite.js / disk.js / appdata.js → ESPRIMA_OK\n- 冒烟测试（python app.py :5010）：\n  * GET /api/disk/overview → success=True, drive=C:\\, used=86.5%（HTTP 200）\n  * GET /api/disk/scan?type=junk → scan_id=0a1656f3fe35，轮询至 STATUS=done\n  * user_temp：1.1 GB / 3557 个文件（验收要求\"有数据\" ✓）\n  * win_update_cache（修复后路径）：862 MB 正常扫出，证明 win_root 推导在本机工作正常\n  * 总计 2.5 GB，测试后服务已停止（进程树已清理）\n- git commit：9fd2a27 \"refactor: 技术债清理 — win_update_cache改用win_root变量(ADR-003), 前端5个工具函数收敛到app-lite.js, 删除_conflict_dest死代码\"（disk-cleaner 内部仓库 master 分支，3 files changed, 1 insertion, 45 deletions）\n\n【记忆说明】本次为已知问题的清理，过程中无新踩坑，未追加 ADR-009（docs/DECISIONS.md 保持不变）。\n\n任务边界遵守：未改动任何其他文件。等待下一个任务。",
+    "timestamp": "2026-09-05T07:09:06.961Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788592713112-e93ir3",
+    "from": "disk-cleaner-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "任务 #2 容量仪表盘契约 bug 修复完成（该 bugfix 在收到追加指令后已执行，本次回报补齐全部细节）。\n\n【改动清单（commit a29b0fb，2 files changed, +10/-1）】\n\n1. web/disk.js — 两处契约修复：\n   - renderTreemap data 构造：top.map(...) 与\"其他\"聚合 push 的每个元素补上 `value: c.size` / `value: rs`（squarifyLayout 按 c.value 求面积）\n   - 消费侧：`const d = rc.item.d;` → `const d = rc.item;`（squarifyLayout 内 r.item = list[idx] 存的就是数据对象，无 .d 包装）\n\n2. docs/DECISIONS.md — 追加 ADR-009，全文如下：\n\n> ## ADR-009 仪表盘 treemap 数据契约\n>\n> - `renderTreemap` 构造的 data 元素**必须含 `value` 字段**（squarifyLayout 按 value 求和/求面积布局）\n> - `squarifyLayout` 输出 `rect.item` 即**数据对象本身**（`r.item = list[idx]`），消费方直接读 `rc.item`，**不得解引用 `.d`**\n> - 历史缺陷（2026-09-05 修复）：data 无 value + `rc.item.d` 双重契约不一致 → 点击\"生成仪表盘\"报 `Cannot read properties of undefined (reading 'size')` 且面板空白\n> - 防护：`squarifyLayout` 内 `total <= 0` break 兜底 value 全非正的情况；renderTreemap 入口已 `filter(c => c.size > 0)` 保证正值\n\n【验证结果】\n- esprima 校验修复后 disk.js → ESPRIMA_OK\n- 逻辑等价冒烟（临时 Python 脚本逐行复刻修复后 renderTreemap+squarifyLayout，输入为真实运行数据）：起 :5010 服务 → /api/disk/scan?type=tree&root=C%3A%5C 完成（46.4s，根层 23 子目录）→ data 构造 16 items（TOP15+其他聚合，value 总和 217.7GB，全部>0）→ 5 种视口（1280x460 / 1920x460 / 900x460 / 600x300 / 320x200）全部通过：16 项全部布局、面积守恒（Σrect 面积 == W×H，误差<1px²）、rc.item 直接读取（模拟修复后消费侧）无任何 undefined 异常 → TREEMAP_CONTRACT_OK\n- 临时验证脚本已删除，工作区干净\n\n【git 记录（disk-cleaner 内部仓库 master）】\n- a29b0fb fix: 容量仪表盘treemap数据契约 — renderTreemap data补value字段, 消费侧rc.item解引用修正, 追加ADR-009\n- 9fd2a27 refactor: 技术债清理（任务 #1）\n- 3cdeb9b v1.0 初始迁移\n\n边界遵守：仅修复该契约问题，未动其他逻辑。等待下一任务。",
+    "timestamp": "2026-09-05T07:18:33.112Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788596863124-adw5xh",
+    "from": "disk-cleaner-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "任务 #3 仪表盘体验缺陷修复完成（commit 61bed66，web/disk.js +55/-6，与主应用同源逐行对照移植）。\n\n【改动摘要（disk-cleaner/web/disk.js，6 组函数）】\n1. initDiskTab()：loadTreeDrives() 返回 Promise，.then() 中自动启动C盘目录树扫描，守卫 `if (!window._treeDone && !window._treeRunning) startLargeScan(true)`\n2. loadTreeDrives()：加 return 使其返回 Promise\n3. startLargeScan()：`let scope` + root 兜底 `if (!root) root = \"C:\\\\\"`（下拉框未就绪防竞态）；进入扫描即置 `window._treeRunning=true; window._treeDone=false`；#treemap 注入内嵌 spinner（loader-ring + #tmSpinText「正在扫描目录树（全盘约需1-3分钟）…」）并隐藏 #tmStartBtn；启动失败/catch 分支复位 _treeRunning 并调 tmShowError\n4. pollLargeScan()：running 分支同步更新 #tmSpinText 实时进度（当前目录/已扫文件数/耗时）；结束分支统一复位 _treeRunning，done 时置 _treeDone（renderTreemap 经 loadTreeNode 自动触发）；cancelled/error/result.error 分支均调 tmShowError\n5. loadTreeNode()：!data.success 与 catch 分支均调 tmShowError\n6. startTreeForTreemap() 重写为三态状态机（扫描中→提示 #tmNote 等待 / 已完成→直接 loadTreeNode(_treeRoot) / 未扫描→默认C:\\启动）；新增 tmShowError(msg)：#treemap 展示 ❌ + msg + 「重试」按钮（onclick=startTreeForTreemap），并恢复 #tmStartBtn 显示\n\n【同源确认】与 ../web/disk.js 逐段对照一致（_treeRunning/_treeDone/tmShowError/tmSpinText 全部对齐）。index.html 无需修改——两边 treemap 占位区块本来就完全一致；style.css 已自带 .loader-ring（188行）。\n\n【E2E 验证（Playwright 无头浏览器真实流程，全部通过）】\n- 起服务 → 打开 http://127.0.0.1:5010/ → initDiskTab 自动触发：#tmSpinText 出现「正在扫描目录树（全盘约需1-3分钟）…」✓\n- #tmStartBtn 已隐藏 ✓，window._treeRunning=true ✓\n- 6 秒后实时进度已刷新：「正在扫描: C:\\Program… · 已 257,395 文件 · 5.5s」✓\n- C 盘扫描完成后（约 1 分钟）仪表盘自动渲染 16 个色块：Users 84.3 GB / Windows 50.9 GB / Program Files (x86) 28.8 GB / Program Files 27.9 GB / ProgramData 8.5 GB… ✓\n- spinner 已消失、window._treeDone=true ✓\n- 全程 pageerror=none（无任何 JS 运行时错误）✓\n- esprima 校验通过；服务已停止、临时脚本已清理\n\n【git 记录】61bed66 (fix 仪表盘) → a29b0fb (fix treemap契约) → 9fd2a27 (refactor 技术债) → 3cdeb9b (v1.0)\n\n等待下一任务。",
+    "timestamp": "2026-09-05T08:27:43.124Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788597118918-bprnhy",
+    "from": "disk-cleaner-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "新增要求完成（commit 921bb1c，2 files changed, +144）。\n\n【1. ADR-010 已入档 docs/DECISIONS.md，核心内容】\n- esprima 只能查语法，抓不住运行时错误（ReferenceError / undefined 属性读取 / DOM 元素缺失）——主应用 treemap ratio 缺陷即教训，独立项目 ADR-009 同源 bug 同理\n- 标准流程（tools/e2e_dashboard.py 固化，可重复执行）：起 :5010 服务（--with-server 自动起停）→ Playwright 无头 Chromium 打开页面监听 pageerror → 断言 initDiskTab 自动触发 / spinner 出现 / 实时进度刷新 / 色块自动渲染（≥10）/ pageerror=none → 退出码反映结果\n- 约定：前端任何 JS 改动，commit 前必须跑通本脚本；依赖 pip install playwright + playwright install chromium（本机无 node，走 Python API）\n\n【2. tools/e2e_dashboard.py 固化要点】\n- 两种用法：服务已启动时直接跑；或 --with-server 自动起停 app.py（Windows 下 taskkill /T /F 清理 Flask reloader 进程树）\n- 参数化：--url（默认 127.0.0.1:5010）、--timeout（默认 300s，覆盖 C 盘全量扫描 1-3 分钟）\n- 服务就绪轮询（/api/disk/overview 200）替代固定 sleep\n- 4 项分阶段断言（spinner/进度/色块/pageerror），E2E_DASHBOARD_OK/FAILED + 退出码 0/1\n- 注明：每次执行会做一次 C 盘全量树扫描（约1-3分钟）\n\n【3. 固化脚本实跑验证（--with-server 模式，退出码 0）】\n[1/4] SPINNER: 正在扫描目录树（全盘约需1-3分钟）… | TM_START_HIDDEN: True | _treeRunning: True\n[2/4] PROGRESS: 正在扫描: C:\\Users\\… · 已 263,999 文件 · 5.1s\n[3/4] BLOCKS: 16 | SPINNER_GONE: True | _treeDone: True\n[4/4] PAGE_ERRORS: none\nE2E_DASHBOARD_OK（服务已自动停止，无残留进程）\n\n【git 链】921bb1c (test: E2E固化) → 61bed66 (fix 仪表盘) → a29b0fb (fix 契约) → 9fd2a27 (refactor 技术债) → 3cdeb9b (v1.0)\n\n无其他待办，继续待命。",
+    "timestamp": "2026-09-05T08:31:58.918Z",
+    "read": true
+  }
+]
