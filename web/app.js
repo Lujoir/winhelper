@@ -121,6 +121,7 @@ function switchTab(tab) {
     if (tab === "analysis") loadAnalysis();
     if (tab === "knowledge") loadKnowledge();
     if (tab === "disk" && typeof initDiskTab === "function") initDiskTab();
+    if (tab === "perf" && typeof initPerfTab === "function") initPerfTab();
 }
 
 // ===================== 数据加载 =====================

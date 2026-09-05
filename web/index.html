@@ -38,6 +38,10 @@
                 <svg viewBox="0 0 24 24" width="16" height="16"><path d="M19.36 2.72l1.42 1.42-7.53 7.58 1.41 1.42-4.24 4.24-2.83-2.83 4.24-4.24 1.42 1.41 7.53-7.58zM5.94 17.36l.71.71c.78.78.78 2.05 0 2.83l-1.76 1.76L1.34 19.11l1.77-1.76c.78-.78 2.05-.78 2.83 0z" fill="currentColor"/></svg>
                 磁盘清理
             </button>
+            <button class="nav-tab" data-tab="perf" onclick="switchTab('perf')">
+                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 7.08l1.5 1.41z" fill="currentColor"/></svg>
+                性能分析
+            </button>
         </div>
         <div class="nav-actions">
             <span class="mode-badge" id="modeBadge" title="运行模式">--</span>
@@ -434,10 +438,109 @@
                 <div class="disk-note" id="tmNote">色块面积与背景色深浅均与占用容量成正比：深色=占用大，浅色=占用小。灰色块=权限受限/系统保护数据（系统还原点等，无法细览）；金色块=根目录系统文件（页面文件等，勿动）。各色块与「已用容量」守恒。基于「容量定位分析」扫描结果自动生成，点击蓝色系色块可下钻。</div>
             </div>
         </div>
+
+        <!-- ==================== 性能分析 ==================== -->
+        <div id="tab-perf" class="tab-content">
+            <style>
+                /* perf 模块特有样式（同步契约 ADR-001：仅作用于本 section，不改 style.css） */
+                .perf-live-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; padding: 14px 18px 6px; }
+                .perf-live-item { background: rgba(255,255,255,.03); border: 1px solid var(--border-color, #262b3a); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+                .perf-live-value { font-size: 21px; font-weight: 700; color: var(--accent-cyan, #4fc3f7); font-variant-numeric: tabular-nums; }
+                .perf-live-label { font-size: 12px; color: var(--text-secondary, #8a93a5); }
+                .perf-charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px 18px 4px; }
+                @media (max-width: 980px) { .perf-charts-row { grid-template-columns: 1fr; } }
+                .perf-chart-box { height: 220px; background: rgba(255,255,255,.02); border: 1px solid var(--border-color, #262b3a); border-radius: 10px; padding: 8px; }
+                .perf-rec-status { display: flex; flex-wrap: wrap; gap: 8px 22px; padding: 12px 18px; font-size: 13px; color: var(--text-secondary, #8a93a5); }
+                .perf-rec-status b { color: var(--text-primary, #e8ebf2); font-variant-numeric: tabular-nums; }
+                .perf-report { padding: 14px 18px 18px; }
+                .perf-report-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+                .perf-report-title { font-size: 15px; font-weight: 700; }
+                .perf-report-level { font-size: 12.5px; border: 1px solid; border-radius: 20px; padding: 2px 10px; }
+                .perf-report-meta { font-size: 12px; color: var(--text-secondary, #8a93a5); }
+                .perf-report-item { background: rgba(255,255,255,.03); border: 1px solid var(--border-color, #262b3a); border-left: 3px solid var(--accent-cyan, #4fc3f7); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; font-size: 13px; line-height: 1.6; }
+                .perf-report-suggestion { color: var(--text-secondary, #8a93a5); font-size: 12.5px; margin-top: 2px; }
+                .perf-sev { font-size: 11.5px; border: 1px solid; border-radius: 4px; padding: 0 5px; margin-right: 4px; }
+                .perf-sat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 12px; }
+                .perf-sat-item { display: flex; gap: 10px; align-items: flex-start; background: rgba(255,255,255,.02); border: 1px solid var(--border-color, #262b3a); border-radius: 10px; padding: 10px 12px; font-size: 13px; }
+                .perf-sat-rank { font-weight: 800; color: var(--accent-cyan, #4fc3f7); font-size: 15px; }
+                .perf-sat-detail { color: var(--text-secondary, #8a93a5); font-size: 12px; margin-top: 3px; }
+            </style>
+            <div class="page-header">
+                <h2>性能分析</h2>
+                <p class="page-subtitle">实时指标 · 长时间记录 · 瓶颈分析与硬件优化评估</p>
+                <button class="btn btn-ghost" onclick="toggleAllCards(this)">📁 收纳全部</button>
+            </div>
+
+            <!-- 实时指标 -->
+            <div class="section-card" data-collapse>
+                <div class="card-header">
+                    <h3>实时指标</h3>
+                    <span class="card-badge" id="perfBadge">1s 刷新 · 60s 窗口</span>
+                </div>
+                <div class="perf-live-grid">
+                    <div class="perf-live-item"><span class="perf-live-value" id="perfCpuVal">--</span><span class="perf-live-label">CPU 占用</span></div>
+                    <div class="perf-live-item"><span class="perf-live-value" id="perfFreqVal">--</span><span class="perf-live-label">CPU 频率</span></div>
+                    <div class="perf-live-item"><span class="perf-live-value" id="perfMemVal">--</span><span class="perf-live-label">内存占用</span></div>
+                    <div class="perf-live-item"><span class="perf-live-value" id="perfMemAvailVal">--</span><span class="perf-live-label">可用内存</span></div>
+                    <div class="perf-live-item"><span class="perf-live-value" id="perfSwapVal">--</span><span class="perf-live-label">虚拟内存</span></div>
+                    <div class="perf-live-item"><span class="perf-live-value" id="perfDiskVal">--</span><span class="perf-live-label">磁盘最高活跃</span></div>
+                    <div class="perf-live-item"><span class="perf-live-value" id="perfIoVal">--</span><span class="perf-live-label">磁盘读写合计</span></div>
+                    <div class="perf-live-item"><span class="perf-live-value" id="perfIopsVal">--</span><span class="perf-live-label">IOPS 合计</span></div>
+                    <div class="perf-live-item"><span class="perf-live-value" id="perfCoresVal">--</span><span class="perf-live-label">逻辑核心</span></div>
+                </div>
+                <div class="perf-charts-row">
+                    <div class="perf-chart-box"><canvas id="perfChartCpuMem"></canvas></div>
+                    <div class="perf-chart-box"><canvas id="perfChartDisk"></canvas></div>
+                </div>
+                <div class="table-wrapper">
+                    <table class="event-table">
+                        <thead><tr><th>物理磁盘</th><th>读 MB/s</th><th>写 MB/s</th><th>IOPS</th><th>活跃度</th></tr></thead>
+                        <tbody id="perfDisksBody"><tr><td colspan="5" class="empty-state">等待数据…</td></tr></tbody>
+                    </table>
+                </div>
+                <div class="table-wrapper">
+                    <table class="event-table">
+                        <thead><tr><th>卷</th><th>容量</th><th>已用</th><th>剩余</th><th>使用率</th></tr></thead>
+                        <tbody id="perfVolsBody"><tr><td colspan="5" class="empty-state">等待数据…</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 长时间记录与分析 -->
+            <div class="section-card" data-collapse>
+                <div class="card-header">
+                    <h3>长时间记录与分析</h3>
+                    <span class="card-badge" id="perfRecBadge">未开始</span>
+                    <div class="disk-toolbar">
+                        <label style="font-size:12px;color:var(--text-secondary,#8a93a5)">采样间隔</label>
+                        <select id="perfInterval" class="filter-select">
+                            <option value="1">1 秒</option>
+                            <option value="2" selected>2 秒</option>
+                            <option value="5">5 秒</option>
+                            <option value="10">10 秒</option>
+                        </select>
+                        <button class="btn btn-primary" id="perfRecStartBtn" onclick="perfStartRecord()">● 开始记录</button>
+                        <button class="btn btn-ghost" id="perfRecStopBtn" onclick="perfStopRecord()" disabled>■ 停止并分析</button>
+                    </div>
+                </div>
+                <div class="disk-note">记录期间数据逐行落盘至 <b>%LOCALAPPDATA%\winhelper\perf_records</b>（JSONL 增量写入，关闭窗口不丢数据）。点击「停止并分析」后自动统计 avg/p95/max/min、饱和持续时长（CPU&gt;85%、内存可用&lt;10%、磁盘活跃&gt;80%）、瓶颈排序与硬件优化评估。</div>
+                <div class="perf-rec-status">
+                    <span>时长 <b id="perfRecElapsed">0s</b></span>
+                    <span>样本 <b id="perfRecSamples">0</b></span>
+                    <span>间隔 <b id="perfRecInterval">2s</b></span>
+                    <span>文件 <b id="perfRecFile">--</b></span>
+                    <span>瞬时 CPU <b id="perfRecCpu">--</b></span>
+                    <span>瞬时内存 <b id="perfRecMem">--</b></span>
+                    <span>瞬时磁盘 <b id="perfRecDisk">--</b></span>
+                </div>
+                <div id="perfReportBox" style="display:none"></div>
+            </div>
+        </div>
     </main>
 
     <script src="app.js"></script>
     <script src="disk.js"></script>
     <script src="appdata.js"></script>
+    <script src="perf.js"></script>
 </body>
 </html>

@@ -19,6 +19,11 @@ from service import (
     handle_appdata_migrate, handle_appdata_delete,
     handle_installer_scan,
 )
+from perf_service import (
+    handle_perf_snapshot, handle_perf_record_start,
+    handle_perf_record_status, handle_perf_record_stop,
+    handle_perf_record_report, handle_perf_record_export,
+)
 
 # 路由表：前端请求路径 -> 业务处理器
 ROUTES = {
@@ -42,6 +47,13 @@ ROUTES = {
     "/api/appdata/migrate": handle_appdata_migrate,
     "/api/appdata/delete": handle_appdata_delete,
     "/api/installers/scan": handle_installer_scan,
+    # 性能分析
+    "/api/perf/snapshot": handle_perf_snapshot,
+    "/api/perf/record-start": handle_perf_record_start,
+    "/api/perf/record-status": handle_perf_record_status,
+    "/api/perf/record-stop": handle_perf_record_stop,
+    "/api/perf/record-report": handle_perf_record_report,
+    "/api/perf/record-export": handle_perf_record_export,
 }
 
 
