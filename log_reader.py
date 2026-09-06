@@ -360,14 +360,15 @@ def check_log_access(log_name, machine_name=None):
 def _parse_event(ev_obj, log_name, seq):
     """将 pywin32 事件对象转换为标准 dict"""
     try:
-        timestamp = ev_obj.TimeGenerated.Format()
+        # 时间格式固定为「2026/9/6 17:13:20」（月/日不补零），不随系统本地化变化
         if hasattr(ev_obj.TimeGenerated, 'timetuple'):
             dt = datetime.datetime(*ev_obj.TimeGenerated.timetuple()[:6])
         else:
             try:
-                dt = datetime.datetime.strptime(timestamp, "%a %b %d %H:%M:%S %Y")
+                dt = datetime.datetime.strptime(ev_obj.TimeGenerated.Format(), "%a %b %d %H:%M:%S %Y")
             except ValueError:
                 dt = datetime.datetime.now()
+        timestamp = "%d/%d/%d %02d:%02d:%02d" % (dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second)
     except Exception:
         timestamp = ""
         dt = datetime.datetime.now()
