@@ -844,8 +844,13 @@ function renderHwInfo(h) {
     html.push('<div class="hw-group"><div class="hw-title">显卡</div><div class="hw-body">');
     if (gpus.length) {
         gpus.forEach(function (g) {
+            var spec = [];
+            if (g.vram_text && g.vram_text !== "--") spec.push("显存 " + g.vram_text);
+            if (g.driver && g.driver !== "--") spec.push("驱动 " + g.driver);
+            if (g.resolution && g.resolution !== "--") spec.push(g.resolution);
             html.push('<div class="hw-meta">' + esc(g.name || "--") +
-                ' <span class="hw-badge">' + (g.dedicated ? "独立显卡" : "核显") + '</span></div>');
+                ' <span class="hw-badge">' + (g.dedicated ? "独立显卡" : "核显") + '</span>' +
+                (spec.length ? '<div class="hw-meta">' + esc(spec.join(" · ")) + '</div>' : '') + '</div>');
         });
     } else {
         html.push('<div class="hw-meta">显卡信息不可用（--）</div>');

@@ -1544,7 +1544,7 @@ _PS_CIM_SCRIPT = (
     "Write-Output '==P2L==';"
     "Get-CimInstance Win32_LogicalDiskToPartition | ForEach-Object { '{0}=>{1}' -f $_.Antecedent.DeviceID,$_.Dependent.DeviceID };"
     "Write-Output '==GPU==';"
-    "Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name };"
+    "Get-CimInstance Win32_VideoController | ForEach-Object { '{0}|{1}|{2}|{3}' -f $_.Name,$_.AdapterRAM,$_.DriverVersion,$_.VideoModeDescription };"
     "Write-Output '==OS==';"
     "Get-CimInstance Win32_OperatingSystem | ForEach-Object { '{0}|{1}|{2}' -f $_.Caption,$_.Version,$_.BuildNumber };"
     "Write-Output '==NET==';"
@@ -1793,11 +1793,117 @@ def _collect_hwinfo():
             pass
 
     # ---- GPU ----
-    for n in p.get("gpu", []):
-        if n.strip():
-            info["gpu"].append({"name": n.strip(), "dedicated": _looks_dgpu(n)})
+    def _nvidia_spec_map():
+        """nvidia-smi: name.lower() -> (vram_mb文本, driver)（显存精确值，规避 WMI AdapterRAM 32位上限）"""
+        try:
+            r = subprocess.run(
+                ["nvidia-smi", "--query-gpu=name,memory.total,driver_version",
+                 "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, timeout=3, creationflags=_NO_WINDOW)
+            m = {}
+            if r.returncode == 0:
+                for ln in r.stdout.splitlines():
+                    f = [x.strip() for x in ln.split(",")]
+                    if len(f) >= 3 and f[0]:
+                        m[f[0].lower()] = (f[1], f[2])
+            return m
+        except Exception:
+            return {}
+
+    def _registry_gpu_map():
+        """注册表显示类子键: DriverDesc.lower() -> (qwMemorySize字节, DriverVersion)；QWORD 显存精确"""
+        out = {}
+        try:
+            import winreg
+            base = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"
+            k = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, base)
+            for i in range(winreg.QueryInfoKey(k)[0]):
+                try:
+                    sk = winreg.OpenKey(k, winreg.EnumKey(k, i))
+                    desc = drv = None
+                    qmem = 0
+                    try:
+                        desc = winreg.QueryValueEx(sk, "DriverDesc")[0]
+                    except Exception:
+                        pass
+                    try:
+                        raw = winreg.QueryValueEx(sk, "HardwareInformation.qwMemorySize")[0]
+                        qmem = int.from_bytes(raw[:8], "little") if isinstance(raw, (bytes, bytearray)) else int(raw)
+                    except Exception:
+                        pass
+                    try:
+                        drv = winreg.QueryValueEx(sk, "DriverVersion")[0]
+                    except Exception:
+                        pass
+                    if desc:
+                        out[desc.lower()] = (qmem, drv)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return out
+
+    def _fmt_vram_mb(txt):
+        try:
+            mb = int(float(txt))
+            return ("%d GB" % (mb // 1024)) if mb and mb % 1024 == 0 else ("%.1f GB" % (mb / 1024.0))
+        except Exception:
+            return txt or "--"
+
+    def _fmt_vram_bytes(nb):
+        try:
+            gb = float(nb) / (1024 ** 3)
+            return ("%.1f GB" % gb).rstrip("0").rstrip(".") + " GB"
+        except Exception:
+            return "--"
+
+    def _build_gpu(name, wmi_ram=None, driver="", resolution=""):
+        e = {"name": name, "dedicated": _looks_dgpu(name),
+             "vram_text": "--", "driver": driver or "--", "resolution": resolution or "--"}
+        low = (name or "").lower()
+        for k, (mem, drv) in nvidia_spec.items():
+            if k in low or low in k:
+                e["vram_text"] = _fmt_vram_mb(mem)
+                if drv:
+                    e["driver"] = drv
+                return e
+        matched = False
+        for desc, (qmem, drv) in reg_spec.items():
+            d = (desc or "").lower()
+            if d and (d in low or low in d):
+                if qmem:
+                    e["vram_text"] = _fmt_vram_bytes(qmem)
+                if drv and e["driver"] == "--":
+                    e["driver"] = drv
+                matched = True
+                break  # 匹配到即停；qmem=0（共享显存）不提前返回，交由共享内存兜底
+        if not matched and wmi_ram:
+            try:
+                e["vram_text"] = _fmt_vram_bytes(wmi_ram) + ("（WMI 上限值，可能偏小）" if int(wmi_ram) >= 4 * 1024 ** 3 else "")
+            except Exception:
+                pass
+        if e["vram_text"] == "--" and not e["dedicated"]:
+            e["vram_text"] = "共享系统内存"
+        return e
+
+    nvidia_spec = _nvidia_spec_map()
+    reg_spec = _registry_gpu_map()
+    for ln in p.get("gpu", []):
+        f = (ln or "").split("|")
+        nm = f[0].strip()
+        if not nm:
+            continue
+        wmi_ram = int(f[1]) if len(f) > 1 and f[1].strip().isdigit() else None
+        drv = f[2].strip() if len(f) > 2 else ""
+        res = f[3].strip() if len(f) > 3 else ""
+        rt = res.split()
+        if len(rt) >= 3 and rt[0].isdigit() and rt[2].isdigit():
+            res = rt[0] + " x " + rt[2]  # 截取分辨率，去掉色深与本地化尾巴（含中文易乱码）
+        else:
+            res = ""
+        info["gpu"].append(_build_gpu(nm, wmi_ram, drv, res))
     if not info["gpu"]:
-        info["gpu"] = [{"name": n, "dedicated": _looks_dgpu(n)} for n in _detect_gpus()]
+        info["gpu"] = [_build_gpu(n) for n in _detect_gpus()]
 
     # ---- OS / hostname / network（ADR-014：与硬件规格同一次缓存一次性获取）----
     if p.get("os"):
