@@ -1545,6 +1545,10 @@ _PS_CIM_SCRIPT = (
     "Get-CimInstance Win32_LogicalDiskToPartition | ForEach-Object { '{0}=>{1}' -f $_.Antecedent.DeviceID,$_.Dependent.DeviceID };"
     "Write-Output '==GPU==';"
     "Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name };"
+    "Write-Output '==OS==';"
+    "Get-CimInstance Win32_OperatingSystem | ForEach-Object { '{0}|{1}|{2}' -f $_.Caption,$_.Version,$_.BuildNumber };"
+    "Write-Output '==NET==';"
+    "Get-CimInstance Win32_NetworkAdapterConfiguration -Filter \"IPEnabled=True\" | ForEach-Object { '{0}|{1}|{2}|{3}|{4}|{5}' -f $_.Description,$_.MACAddress,(($_.IPAddress | Where-Object { $_ -notmatch ':' }) -join '/'),(($_.IPAddress | Where-Object { $_ -match ':' }) -join '/'),(($_.DefaultIPGateway) -join '/'),(($_.DNSServerSearchOrder) -join '/') };"
 )
 
 
@@ -1588,7 +1592,8 @@ def _reg_cpu_name():
 
 def _parse_cim_sections(text):
     sec = None
-    data = {"cpu": [], "mem": [], "disk": [], "pd": [], "d2p": [], "p2l": [], "gpu": []}
+    data = {"cpu": [], "mem": [], "disk": [], "pd": [], "d2p": [], "p2l": [],
+            "gpu": [], "os": [], "net": []}
     for ln in text.splitlines():
         ln = ln.strip()
         if not ln:
@@ -1601,9 +1606,75 @@ def _parse_cim_sections(text):
     return data
 
 
+def _reg_os_info():
+    """OS 降级：winreg CurrentVersion（ProductName/DisplayVersion/CurrentBuildNumber）"""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            r"SOFTWARE\Microsoft\Windows NT\CurrentVersion") as k:
+            def _v(name):
+                try:
+                    val, _ = winreg.QueryValueEx(k, name)
+                    return str(val)
+                except Exception:
+                    return ""
+            product = _v("ProductName")
+            display = _v("DisplayVersion")
+            build = _v("CurrentBuildNumber") or _v("CurrentBuild")
+            version = "10.0." + build if build else ""
+            text = " ".join(x for x in (product, version) if x)
+            return {"caption": product or "--", "version": version or "--",
+                    "build": build or "--", "text": text or "--"}
+    except Exception:
+        return {"caption": "--", "version": "--", "build": "--", "text": "--"}
+
+
+def _psutil_network():
+    """网络降级：psutil net_if_addrs + net_if_stats（网关/DNS 不可得显示 --，ADR-014）"""
+    out = []
+    if psutil is None:
+        return out
+    try:
+        stats = psutil.net_if_stats()
+    except Exception:
+        stats = {}
+    try:
+        addrs = psutil.net_if_addrs()
+    except Exception:
+        addrs = {}
+    import socket as _socket
+    for name, alist in addrs.items():
+        ln = name.lower()
+        if "loopback" in ln or ln in ("lo", "lo0"):
+            continue  # 环回排除
+        ipv4 = ipv6 = mac = None
+        for a in alist:
+            try:
+                if a.family == _socket.AF_INET and a.address:
+                    ipv4 = ipv4 or a.address
+                elif a.family == _socket.AF_INET6 and a.address:
+                    ipv6 = ipv6 or a.address.split("%")[0]
+                elif a.family == _socket.AF_LINK and a.address:
+                    mac = mac or a.address
+            except Exception:
+                continue
+        if not ipv4 and not ipv6:
+            continue  # 无 IP 的虚拟适配器（蓝牙等）排除
+        st = stats.get(name)
+        out.append({
+            "name": name, "ipv4": ipv4 or "--", "ipv6": ipv6 or "--",
+            "mac": mac or "--",
+            "status": "up" if (st is None or st.isup) else "down",
+            "gateway": "--", "dns": "--",
+        })
+    return out
+
+
 def _collect_hwinfo():
     info = {"cpu": {}, "memory": {"total": None, "modules": []},
-            "disks": [], "gpu": [], "source": "cim"}
+            "disks": [], "gpu": [], "source": "cim",
+            "os": {"caption": "--", "version": "--", "build": "--", "text": "--"},
+            "hostname": "--", "network": []}
     raw = _ps_cim_dump()
     if not raw:
         info["source"] = "fallback"
@@ -1727,6 +1798,50 @@ def _collect_hwinfo():
             info["gpu"].append({"name": n.strip(), "dedicated": _looks_dgpu(n)})
     if not info["gpu"]:
         info["gpu"] = [{"name": n, "dedicated": _looks_dgpu(n)} for n in _detect_gpus()]
+
+    # ---- OS / hostname / network（ADR-014：与硬件规格同一次缓存一次性获取）----
+    if p.get("os"):
+        f = p["os"][0].split("|")
+        if f and f[0].strip():
+            caption = f[0].strip()
+            version = f[1].strip() if len(f) > 1 else ""
+            build = f[2].strip() if len(f) > 2 else ""
+            info["os"] = {"caption": caption, "version": version or "--",
+                          "build": build or "--",
+                          "text": " ".join(x for x in (caption, version) if x)}
+    if info["os"]["caption"] == "--" or not info["os"].get("text"):
+        reg_os = _reg_os_info()
+        if info["os"].get("caption") in (None, "--", ""):
+            info["os"]["caption"] = reg_os["caption"]
+        if info["os"].get("version") in (None, "--", ""):
+            info["os"]["version"] = reg_os["version"]
+        if info["os"].get("build") in (None, "--", ""):
+            info["os"]["build"] = reg_os["build"]
+        if not info["os"].get("text") or info["os"]["text"] == "--":
+            info["os"]["text"] = reg_os["text"]
+
+    try:
+        import socket
+        info["hostname"] = socket.gethostname() or os.environ.get("COMPUTERNAME") or "--"
+    except Exception:
+        info["hostname"] = os.environ.get("COMPUTERNAME") or "--"
+
+    net_rows = p.get("net", [])
+    for ln in net_rows:
+        f = ln.split("|")
+        if len(f) < 2 or not f[0].strip():
+            continue
+        info["network"].append({
+            "name": f[0].strip(),
+            "mac": f[1].strip() or "--",
+            "ipv4": f[2].strip() or "--",
+            "ipv6": f[3].strip() or "--",
+            "gateway": f[4].strip() or "--",
+            "dns": f[5].strip() or "--",
+            "status": "up",  # IPEnabled=True 过滤后均为启用
+        })
+    if not info["network"]:
+        info["network"] = _psutil_network()
     return info
 
 
