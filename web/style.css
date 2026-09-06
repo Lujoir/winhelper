@@ -136,11 +136,10 @@ body {
 
 .refresh-btn:hover { background: var(--bg-hover); color: var(--accent-cyan); border-color: var(--accent-cyan); }
 
-/* --- 主内容 --- */
+/* --- 主内容（宽度跟随窗体自适应） --- */
 .main-content {
     margin-top: 60px;
     padding: 24px 28px 60px;
-    max-width: 1400px;
 }
 
 /* --- Tab 切换 --- */

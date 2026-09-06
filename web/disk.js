@@ -1014,3 +1014,14 @@ function treemapUp() {
     const parent = parts.join("\\") + (parts.length === 1 ? "\\" : "");
     loadTreeNode(parent);
 }
+
+// 窗体尺寸变化时重排仪表盘（色块按渲染时宽度布局，需随窗体自适应）
+window.addEventListener("resize", function () {
+    clearTimeout(window._tmResizeTimer);
+    window._tmResizeTimer = setTimeout(function () {
+        var el = document.getElementById("treemap");
+        if (el && treeCache && el.clientWidth > 50 && el.offsetParent !== null) {
+            renderTreemap();
+        }
+    }, 150);
+});
