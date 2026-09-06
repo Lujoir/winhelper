@@ -12,7 +12,7 @@ a = Analysis(
     # 前端静态资源随包分发；温度组件（LibreHardwareMonitorLib/HidSharp）随包分发
     datas=[
         ('web', 'web'),
-        ('libs/*.dll', 'libs'),
+        ('perf-analyzer/libs/*.dll', 'libs'),
     ],
     hiddenimports=[
         # Windows 事件日志
