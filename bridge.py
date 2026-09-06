@@ -10,8 +10,6 @@ pywebview 的 js_api 通道：前端 JS 直接调用本地 Python 处理器，
 from urllib.parse import urlparse, parse_qs
 
 from service import (
-    handle_analyze, handle_events, handle_faults,
-    handle_log_types, handle_knowledge,
     handle_disk_overview, handle_disk_scan, handle_disk_scan_status,
     handle_disk_scan_cancel, handle_disk_cleanup, handle_disk_open_location,
     handle_disk_tree, handle_disk_drives,
@@ -27,14 +25,27 @@ from perf_service import (
     handle_perf_stress_cancel, handle_perf_stress_export,
     handle_perf_hwinfo, handle_perf_temps, handle_perf_restart_admin,
 )
+from log_service import (
+    handle_log_access, handle_log_search,
+    handle_log_export_start, handle_log_export_status, handle_log_export_cancel,
+    handle_log_analyze, handle_log_report_export, handle_log_knowledge,
+)
+from uplink import (
+    handle_uplink_status, handle_uplink_save, handle_uplink_register,
+    autostart as uplink_autostart,
+)
 
 # 路由表：前端请求路径 -> 业务处理器
 ROUTES = {
-    "/api/analyze": handle_analyze,
-    "/api/events": handle_events,
-    "/api/faults": handle_faults,
-    "/api/log-types": handle_log_types,
-    "/api/knowledge": handle_knowledge,
+    # 日志诊断
+    "/api/loginspector/access": handle_log_access,
+    "/api/loginspector/search": handle_log_search,
+    "/api/loginspector/export-start": handle_log_export_start,
+    "/api/loginspector/export-status": handle_log_export_status,
+    "/api/loginspector/export-cancel": handle_log_export_cancel,
+    "/api/loginspector/analyze": handle_log_analyze,
+    "/api/loginspector/report-export": handle_log_report_export,
+    "/api/loginspector/knowledge": handle_log_knowledge,
     # 磁盘清理
     "/api/disk/overview": handle_disk_overview,
     "/api/disk/scan": handle_disk_scan,
@@ -72,7 +83,7 @@ class ApiBridge:
 
     def call(self, path: str) -> dict:
         """
-        统一入口：前端传入 '/api/analyze?type=System&max=1000' 形式的路径，
+        统一入口：前端传入 '/api/loginspector/search?page=1' 形式的路径，
         分发到对应业务处理器并返回 dict（pywebview 自动转为 JS Promise）。
         """
         try:

@@ -18,21 +18,9 @@
             <span class="nav-title">观枢终端平台｜EyeTerm</span>
         </div>
         <div class="nav-tabs">
-            <button class="nav-tab active" data-tab="dashboard" onclick="switchTab('dashboard')">
-                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z" fill="currentColor"/></svg>
-                仪表盘
-            </button>
-            <button class="nav-tab" data-tab="logs" onclick="switchTab('logs')">
-                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6z" fill="currentColor"/></svg>
-                日志查看
-            </button>
-            <button class="nav-tab" data-tab="analysis" onclick="switchTab('analysis')">
-                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z" fill="currentColor"/></svg>
-                故障分析
-            </button>
-            <button class="nav-tab" data-tab="knowledge" onclick="switchTab('knowledge')">
-                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-                知识库
+            <button class="nav-tab active" data-tab="loginspector" onclick="switchTab('loginspector')">
+                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6zm8-2h2v-2h-2v2zm0-4h2v-4h-2v4z" fill="currentColor"/></svg>
+                日志诊断
             </button>
             <button class="nav-tab" data-tab="disk" onclick="switchTab('disk')">
                 <svg viewBox="0 0 24 24" width="16" height="16"><path d="M19.36 2.72l1.42 1.42-7.53 7.58 1.41 1.42-4.24 4.24-2.83-2.83 4.24-4.24 1.42 1.41 7.53-7.58zM5.94 17.36l.71.71c.78.78.78 2.05 0 2.83l-1.76 1.76L1.34 19.11l1.77-1.76c.78-.78 2.05-.78 2.83 0z" fill="currentColor"/></svg>
@@ -44,157 +32,219 @@
             </button>
         </div>
         <div class="nav-actions">
-            <span class="mode-badge" id="modeBadge" title="运行模式">--</span>
-            <select id="logTypeSelector" class="log-select" onchange="reloadData()">
-                <option value="System">系统日志</option>
-                <option value="Application">应用程序日志</option>
-                <option value="Security">安全日志</option>
-            </select>
-            <button class="refresh-btn" onclick="reloadData()" title="刷新数据">
-                <svg viewBox="0 0 24 24" width="18" height="18"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" fill="currentColor"/></svg>
-            </button>
+            <span class="mode-badge" id="modeBadge" title="终端类型：Windows（点击查看本机基础信息）" onclick="liShowSystemPanel()">Windows</span>
         </div>
     </nav>
 
     <!-- 页面内容 -->
     <main class="main-content">
-        <!-- 加载遮罩 -->
-        <div id="loadingOverlay" class="loading-overlay">
-            <div class="loader">
-                <div class="loader-ring"></div>
-                <div class="loader-text">正在分析系统日志...</div>
-            </div>
-        </div>
-
-        <!-- ==================== 仪表盘 ==================== -->
-        <div id="tab-dashboard" class="tab-content active">
+        <!-- ==================== 日志诊断 ==================== -->
+        <div id="tab-loginspector" class="tab-content active">
+            <style>
+                /* loginspector 模块特有样式（ADR-001：仅作用于本 section，不改 style.css） */
+                .li-flow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 11px 18px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); margin-bottom: 14px; font-size: 12.5px; color: var(--text-secondary); }
+                .li-step { padding: 3px 10px; border-radius: 12px; border: 1px solid var(--border-color); }
+                .li-step.on { color: var(--accent-cyan); border-color: var(--accent-cyan); background: rgba(79,195,247,.1); }
+                .li-arrow { color: var(--text-muted); }
+                .li-cond-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; padding: 14px 18px; }
+                .li-cond-item { display: flex; flex-direction: column; gap: 6px; }
+                .li-cond-item > label { font-size: 12px; color: var(--text-secondary); }
+                .li-checks { display: flex; gap: 10px; flex-wrap: wrap; font-size: 12.5px; }
+                .li-checks label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+                .li-type-denied { opacity: .45; }
+                .li-denied { font-size: 11.5px; color: var(--color-warning); }
+                .li-charts-row { display: grid; grid-template-columns: 1.6fr 1fr; gap: 12px; padding: 12px 18px 4px; }
+                @media (max-width: 980px) { .li-charts-row { grid-template-columns: 1fr; } }
+                .li-charts-row .chart-body { height: 210px; padding: 10px; }
+                .li-chart-head { font-size: 12.5px; color: var(--text-secondary); margin-bottom: 6px; padding: 10px 10px 0; }
+                .li-conclusion { display: flex; gap: 12px; align-items: flex-start; margin: 12px 18px; padding: 12px 14px; border: 1px solid var(--border-color); border-left: 3px solid; border-radius: var(--radius); background: var(--bg-secondary); }
+                .li-concl-badge { display: inline-block; border: 1px solid; border-radius: 20px; padding: 3px 12px; font-size: 12.5px; white-space: nowrap; }
+                /* 本机基础信息面板（modeBadge 点击弹出） */
+                .li-sys-overlay { display: none; position: fixed; inset: 0; background: rgba(6,8,12,.72); z-index: 998; align-items: center; justify-content: center; }
+                .li-sys-panel { width: min(720px, 92vw); max-height: 84vh; overflow: auto; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; box-shadow: 0 12px 44px rgba(0,0,0,.55); }
+                .li-sys-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border-color); position: sticky; top: 0; background: var(--bg-card); z-index: 1; }
+                .li-sys-body { padding: 8px 18px 18px; }
+                .li-sys-body h4 { font-size: 13.5px; margin: 16px 0 8px; color: var(--accent-cyan); border-bottom: 1px dashed var(--border-color); padding-bottom: 5px; }
+                .li-sys-row { display: flex; gap: 14px; padding: 4px 0; font-size: 13px; }
+                .li-sys-k { color: var(--text-secondary); min-width: 110px; flex: none; }
+                .li-sys-v { color: var(--text-primary); word-break: break-all; }
+                .li-sys-table { margin: 6px 0 4px; }
+                .li-sys-none { font-size: 12px; color: var(--text-muted); padding: 4px 0; }
+                .li-sys-gpu-tag { display: inline-block; border: 1px solid var(--accent-cyan); color: var(--accent-cyan); border-radius: 4px; padding: 0 6px; font-size: 11px; }
+            </style>
             <div class="page-header">
-                <h2>系统概览</h2>
-                <p class="page-subtitle" id="summaryTime">实时分析 Windows 事件日志</p>
+                <h2>日志诊断</h2>
+                <p class="page-subtitle">检索 → 下载 → 智能分析 → 知识库建议 · 观枢终端平台｜EyeTerm</p>
+                <button class="btn btn-ghost" onclick="toggleAllCards(this)">📁 收纳全部</button>
             </div>
 
-            <!-- 统计卡片 -->
-            <div class="stats-grid" id="statsCards">
-                <div class="stat-card stat-total"><div class="stat-value pulse-loading">--</div><div class="stat-label">事件总数</div></div>
-                <div class="stat-card stat-critical"><div class="stat-value pulse-loading">--</div><div class="stat-label">关键事件</div></div>
-                <div class="stat-card stat-error"><div class="stat-value pulse-loading">--</div><div class="stat-label">错误事件</div></div>
-                <div class="stat-card stat-warning"><div class="stat-value pulse-loading">--</div><div class="stat-label">警告事件</div></div>
-                <div class="stat-card stat-info"><div class="stat-value pulse-loading">--</div><div class="stat-label">信息事件</div></div>
+            <div class="li-flow" id="liFlow">
+                <span class="li-step on">① 选择条件</span><span class="li-arrow">→</span>
+                <span class="li-step">② 检索</span><span class="li-arrow">→</span>
+                <span class="li-step">③ 下载原始日志</span><span class="li-arrow">→</span>
+                <span class="li-step">④ 智能分析</span><span class="li-arrow">→</span>
+                <span class="li-step">⑤ 知识库建议</span>
             </div>
 
-            <!-- 图表区域 -->
-            <div class="charts-row">
-                <div class="chart-card">
-                    <div class="card-header">
-                        <h3>事件时间分布</h3>
-                        <span class="card-badge">24小时</span>
-                    </div>
-                    <div class="chart-body">
-                        <canvas id="timeChart"></canvas>
-                    </div>
-                </div>
-                <div class="chart-card">
-                    <div class="card-header">
-                        <h3>事件来源 TOP10</h3>
-                        <span class="card-badge">按数量</span>
-                    </div>
-                    <div class="chart-body">
-                        <canvas id="sourceChart"></canvas>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 关键事件 -->
-            <div class="section-card">
+            <!-- ① 条件区 -->
+            <div class="section-card" data-collapse>
                 <div class="card-header">
-                    <h3>已知问题事件</h3>
-                    <span class="card-badge" id="criticalBadge">共 0 条</span>
-                </div>
-                <div class="table-wrapper">
-                    <table class="event-table">
-                        <thead>
-                            <tr><th>时间</th><th>事件ID</th><th>事件名称</th><th>来源</th><th>级别</th><th>描述</th></tr>
-                        </thead>
-                        <tbody id="criticalEventsBody">
-                            <tr><td colspan="6" class="empty-state">暂无数据，请点击刷新</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- ==================== 日志查看 ==================== -->
-        <div id="tab-logs" class="tab-content">
-            <div class="page-header">
-                <h2>事件日志</h2>
-                <div class="filter-bar">
-                    <div class="filter-group">
-                        <label>级别筛选</label>
-                        <select id="logLevelFilter" class="filter-select" onchange="loadLogs(1)">
-                            <option value="">全部级别</option>
-                            <option value="critical">关键</option>
-                            <option value="error">错误</option>
-                            <option value="warning">警告</option>
-                            <option value="info">信息</option>
-                        </select>
+                    <h3>① 检索条件</h3>
+                    <span class="card-badge" id="liCondBadge">默认：系统日志 · 近3天</span>
+                    <div class="disk-toolbar">
+                        <button class="btn btn-primary" id="liSearchBtn" onclick="liSearch(1)">🔍 检索</button>
                     </div>
-                    <div class="filter-group">
+                </div>
+                <div class="li-cond-grid">
+                    <div class="li-cond-item">
+                        <label>日志类别（多选）</label>
+                        <div class="li-checks" id="liTypeChecks">
+                            <label><input type="checkbox" class="li-type" value="System" checked> 系统日志</label>
+                            <label><input type="checkbox" class="li-type" value="Application" checked> 应用程序日志</label>
+                            <label><input type="checkbox" class="li-type" value="Security"> 安全日志</label>
+                            <label><input type="checkbox" class="li-type" value="Setup"> 安装程序</label>
+                        </div>
+                        <span class="li-denied" id="liDeniedTip" style="display:none"></span>
+                    </div>
+                    <div class="li-cond-item">
+                        <label>时间范围</label>
+                        <select id="liTimeRange" class="filter-select" onchange="liOnTimeRangeChange()">
+                            <option value="1">近 1 小时</option>
+                            <option value="24">近 24 小时</option>
+                            <option value="72" selected>近 3 天（默认）</option>
+                            <option value="168">近 7 天</option>
+                            <option value="custom">自定义起止…</option>
+                        </select>
+                        <div id="liCustomRange" style="display:none;gap:6px;align-items:center">
+                            <input type="datetime-local" id="liStart" class="ad-input">
+                            <span style="font-size:12px;color:var(--text-secondary)">至</span>
+                            <input type="datetime-local" id="liEnd" class="ad-input">
+                        </div>
+                    </div>
+                    <div class="li-cond-item">
+                        <label>级别（多选，空=全部）</label>
+                        <div class="li-checks">
+                            <label><input type="checkbox" class="li-level" value="critical"> 关键</label>
+                            <label><input type="checkbox" class="li-level" value="error"> 错误</label>
+                            <label><input type="checkbox" class="li-level" value="warning"> 警告</label>
+                            <label><input type="checkbox" class="li-level" value="info"> 信息</label>
+                        </div>
+                    </div>
+                    <div class="li-cond-item">
+                        <label>来源</label>
+                        <select id="liSource" class="filter-select"><option value="">全部来源</option></select>
+                    </div>
+                    <div class="li-cond-item">
+                        <label>关键字（描述模糊匹配）</label>
+                        <input type="text" id="liKeyword" class="ad-input" placeholder="如 disk / timeout / 服务">
+                    </div>
+                    <div class="li-cond-item">
+                        <label>事件ID</label>
+                        <input type="text" id="liEventId" class="ad-input" placeholder="如 41 / 1000">
+                    </div>
+                    <div class="li-cond-item">
                         <label>每页</label>
-                        <select id="pageSize" class="filter-select" onchange="loadLogs(1)">
+                        <select id="liPerPage" class="filter-select">
                             <option value="25">25 条</option>
                             <option value="50" selected>50 条</option>
                             <option value="100">100 条</option>
                         </select>
                     </div>
-                    <span class="pagination-info" id="paginationInfo"></span>
                 </div>
+                <div class="disk-note" id="liNote">默认条件 = 系统日志 · 近3天全量（与下载默认一致）。安全日志需管理员权限，无权限时自动置灰。</div>
             </div>
 
-            <div class="section-card">
+            <!-- ② 检索结果 -->
+            <div class="section-card" data-collapse>
+                <div class="card-header">
+                    <h3>② 检索结果</h3>
+                    <span class="card-badge" id="liTotalBadge">共 -- 条</span>
+                </div>
+                <div class="stats-grid" id="liStats">
+                    <div class="stat-card stat-total"><div class="stat-value">--</div><div class="stat-label">事件总数</div></div>
+                    <div class="stat-card stat-critical"><div class="stat-value">--</div><div class="stat-label">关键事件</div></div>
+                    <div class="stat-card stat-error"><div class="stat-value">--</div><div class="stat-label">错误事件</div></div>
+                    <div class="stat-card stat-warning"><div class="stat-value">--</div><div class="stat-label">警告事件</div></div>
+                    <div class="stat-card stat-info"><div class="stat-value">--</div><div class="stat-label">信息事件</div></div>
+                </div>
+                <div class="li-charts-row">
+                    <div class="chart-card">
+                        <div class="li-chart-head">事件时间分布</div>
+                        <div class="chart-body"><canvas id="liTimeChart"></canvas></div>
+                    </div>
+                    <div class="chart-card">
+                        <div class="li-chart-head">事件来源 TOP10</div>
+                        <div class="chart-body"><canvas id="liSourceChart"></canvas></div>
+                    </div>
+                </div>
                 <div class="table-wrapper">
                     <table class="event-table">
-                        <thead>
-                            <tr><th>时间</th><th>ID</th><th>来源</th><th>级别</th><th>描述</th></tr>
-                        </thead>
-                        <tbody id="logsBody">
-                            <tr><td colspan="5" class="empty-state">暂无数据</td></tr>
-                        </tbody>
+                        <thead><tr><th>时间</th><th>ID</th><th>来源</th><th>级别</th><th>描述</th></tr></thead>
+                        <tbody id="liBody"><tr><td colspan="5" class="empty-state">输入条件后点击「检索」</td></tr></tbody>
                     </table>
                 </div>
-                <div class="pagination-bar" id="paginationBar">
-                    <button class="page-btn" onclick="changePage(-1)" id="prevBtn">上一页</button>
-                    <span id="pageNumbers"></span>
-                    <button class="page-btn" onclick="changePage(1)" id="nextBtn">下一页</button>
+                <div class="pagination-bar">
+                    <button class="page-btn" onclick="liChangePage(-1)">上一页</button>
+                    <span id="liPageNums"></span>
+                    <button class="page-btn" onclick="liChangePage(1)">下一页</button>
+                </div>
+                <span class="pagination-info" id="liPageInfo"></span>
+            </div>
+
+            <!-- ③ 下载原始日志 -->
+            <div class="section-card" data-collapse>
+                <div class="card-header">
+                    <h3>③ 下载原始日志（txt）</h3>
+                    <div class="disk-toolbar">
+                        <button class="btn btn-primary" id="liExportBtn" onclick="liStartExport()">⬇ 按当前条件导出 txt</button>
+                        <button class="btn btn-ghost" id="liExportCancelBtn" style="display:none" onclick="liCancelExport()">✖ 取消</button>
+                    </div>
+                </div>
+                <div class="disk-note">按上方条件导出原始事件为 txt（utf-8 BOM，记事本可直接打开）；默认条件即近3天全量系统日志。大日志量采用后台任务流式写出，可取消。</div>
+                <div class="disk-progress-wrap" id="liExportProgress" style="display:none">
+                    <div class="progress-bar"><div class="progress-fill" id="liExportBar"></div></div>
+                    <span class="progress-text" id="liExportText"></span>
+                </div>
+                <div class="disk-note" id="liExportResult" style="display:none"></div>
+            </div>
+
+            <!-- ④ 智能分析 -->
+            <div class="section-card" data-collapse>
+                <div class="card-header">
+                    <h3>④ 智能分析</h3>
+                    <span class="card-badge" id="liAnalysisBadge">未分析</span>
+                    <div class="disk-toolbar">
+                        <button class="btn btn-primary" id="liAnalysisBtn" onclick="liRunAnalysis()">🧠 对当前条件分析</button>
+                        <button class="btn btn-ghost" id="liReportBtn" onclick="liExportReport()" style="display:none">📄 导出 HTML 报告</button>
+                    </div>
+                </div>
+                <div id="liConclusion" style="display:none"></div>
+                <div id="liPatterns"><div class="empty-state-full">尚未分析，点击「对当前条件分析」</div></div>
+                <div id="liKnownBlock" style="display:none">
+                    <div class="card-header sub-header">
+                        <h3>已知问题事件</h3>
+                        <span class="card-badge" id="liKnownBadge">共 0 条</span>
+                    </div>
+                    <div class="table-wrapper">
+                        <table class="event-table">
+                            <thead><tr><th>时间</th><th>事件ID</th><th>事件名称</th><th>来源</th><th>级别</th><th>描述</th></tr></thead>
+                            <tbody id="liKnownBody"><tr><td colspan="6" class="empty-state">暂无数据</td></tr></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <!-- ==================== 故障分析 ==================== -->
-        <div id="tab-analysis" class="tab-content">
-            <div class="page-header">
-                <h2>故障分析报告</h2>
-                <p class="page-subtitle">基于事件日志模式匹配的智能分析</p>
-            </div>
-
-            <div class="risk-summary" id="riskSummary"></div>
-
-            <div id="faultsContainer">
-                <div class="empty-state-full">
-                    <svg viewBox="0 0 24 24" width="48" height="48"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" fill="currentColor" opacity="0.3"/></svg>
-                    <p>正在加载分析结果...</p>
+            <!-- ⑤ 知识库建议 -->
+            <div class="section-card" data-collapse>
+                <div class="card-header">
+                    <h3>⑤ 知识库建议</h3>
+                    <div class="disk-toolbar">
+                        <input type="text" id="liKbQuery" class="ad-input" placeholder="检索故障模式 / 事件ID / 关键字" onkeydown="if(event.key==='Enter')liFilterKnowledge()">
+                        <button class="btn btn-ghost" onclick="liFilterKnowledge()">🔍 检索知识库</button>
+                    </div>
                 </div>
-            </div>
-        </div>
-
-        <!-- ==================== 知识库 ==================== -->
-        <div id="tab-knowledge" class="tab-content">
-            <div class="page-header">
-                <h2>故障知识库</h2>
-                <p class="page-subtitle">系统内置的故障模式与修复建议</p>
-            </div>
-
-            <div class="knowledge-grid" id="knowledgeContainer">
-                <div class="empty-state-full">加载中...</div>
+                <div class="disk-note">智能分析出的故障模式会自动列出处理建议；也可自由检索内置故障知识库。</div>
+                <div class="knowledge-grid" id="liKnowledgeGrid"><div class="empty-state-full">暂无内容，可先执行智能分析或自由检索</div></div>
             </div>
         </div>
 
@@ -522,6 +572,25 @@
                 <div class="disk-note" id="perfHwInfoPlaceholder">正在读取硬件规格…</div>
             </div>
 
+            <!-- 平台接入（EyeTerm 服务端联动） -->
+            <div class="section-card" data-collapse>
+                <div class="card-header">
+                    <h3>平台接入</h3>
+                    <span class="card-badge" id="perfUplinkBadge">未启用</span>
+                    <div class="disk-toolbar">
+                        <input id="perfUplinkServer" type="text" placeholder="服务端地址，如 http://172.17.5.215:18090"
+                            style="background:var(--panel2,#1d212e);color:var(--text-primary,#e8ebf2);border:1px solid var(--border-color,#262b3a);border-radius:8px;padding:6px 10px;font-size:12.5px;width:250px">
+                        <input id="perfUplinkToken" type="password" placeholder="接入 Token（留空不修改）" autocomplete="new-password"
+                            style="background:var(--panel2,#1d212e);color:var(--text-primary,#e8ebf2);border:1px solid var(--border-color,#262b3a);border-radius:8px;padding:6px 10px;font-size:12.5px;width:180px">
+                        <button class="btn btn-primary" id="perfUplinkSaveBtn" onclick="savePerfUplink(true)">保存并启用</button>
+                        <button class="btn" id="perfUplinkRegBtn" onclick="registerPerfUplink()">立即注册</button>
+                        <button class="btn" id="perfUplinkDisableBtn" onclick="savePerfUplink(false)">停用接入</button>
+                    </div>
+                </div>
+                <div class="perf-rec-status" id="perfUplinkStatus"><span>状态 <b>读取中…</b></span></div>
+                <div class="disk-note">接入观枢终端平台（EyeTerm）服务端后，本终端将注册资产信息并按 30s 心跳保持在线，随心跳上报性能指标快照；平台可按需下发网络测试（iperf3 已内置）、网络探测等命令。接入 Token 仅保存在本机 <b>%LOCALAPPDATA%\winhelper\uplink_config.json</b>，不会上传到任何其他位置，也不在此回显。</div>
+            </div>
+
             <!-- 实时指标 -->
             <div class="section-card" data-collapse>
                 <div class="card-header">
@@ -593,6 +662,7 @@
     </main>
 
     <script src="app.js"></script>
+    <script src="loginspector.js"></script>
     <script src="disk.js"></script>
     <script src="appdata.js"></script>
     <script src="perf.js"></script>

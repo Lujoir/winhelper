@@ -1,14 +1,18 @@
 """
-Windows 系统事件日志读取模块
-支持从本地 Windows 系统读取事件日志（Application、System、Security）
+Windows 系统事件日志读取引擎（Log Inspector 演进版）
+=====================================================
+自 winhelper 主应用 log_reader.py 迁入并增强（ADR-001）：
+  1. iter_events(): 流式迭代读取（BACKWARDS_READ 逐批 + since/until 剪枝），
+     大日志量禁止一次性载入内存（ADR-002）
+  2. check_log_access(): Security 等类别权限探测（ADR-004）
+  3. get_fault_analysis(): 支持输出证据样本 evidence（ADR-007）
 """
 
-import win32evtlog
-import win32evtlogutil
-import winerror
 import datetime
 from collections import defaultdict
 
+import win32evtlog
+import win32evtlogutil
 
 # 事件严重级别定义
 EVENT_LEVELS = {
@@ -19,12 +23,17 @@ EVENT_LEVELS = {
     0: ("信息", "info", "info"),
 }
 
-# 事件日志源常量
+# 事件日志源常量（含 Setup，ADR-001 四类别）
 LOG_SOURCES = {
     "System": "系统日志",
     "Application": "应用程序日志",
     "Security": "安全日志",
+    "Setup": "安装程序日志",
 }
+
+# 级别 label -> Windows EventType 数值（用于级别过滤）
+LEVEL_FILTER_MAP = {"critical": 1, "error": 2, "warning": 3, "info": (0, 4)}
+
 
 # 通用关键事件ID（Windows各版本通用）
 CRITICAL_EVENT_IDS = {
@@ -335,94 +344,182 @@ def safe_str(value, encoding='gbk'):
             return ""
 
 
-def get_event_logs(log_type="System", machine_name=None, max_events=500):
+def check_log_access(log_name, machine_name=None):
     """
-    读取Windows事件日志
-    :param log_type: 日志类型 System, Application, Security
+    探测指定类别日志是否可读（Security 需管理员权限，ADR-004）
+    :return: {"ok": bool, "error": str}
+    """
+    try:
+        hand = win32evtlog.OpenEventLog(machine_name, log_name)
+        win32evtlog.CloseEventLog(hand)
+        return {"ok": True, "error": ""}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _parse_event(ev_obj, log_name, seq):
+    """将 pywin32 事件对象转换为标准 dict"""
+    try:
+        timestamp = ev_obj.TimeGenerated.Format()
+        if hasattr(ev_obj.TimeGenerated, 'timetuple'):
+            dt = datetime.datetime(*ev_obj.TimeGenerated.timetuple()[:6])
+        else:
+            try:
+                dt = datetime.datetime.strptime(timestamp, "%a %b %d %H:%M:%S %Y")
+            except ValueError:
+                dt = datetime.datetime.now()
+    except Exception:
+        timestamp = ""
+        dt = datetime.datetime.now()
+
+    event_id = ev_obj.EventID & 0xFFFF
+    source = safe_str(ev_obj.SourceName)
+    category = safe_str(ev_obj.EventCategory)
+    level = ev_obj.EventType
+    computer = safe_str(ev_obj.ComputerName)
+
+    try:
+        desc = win32evtlogutil.SafeFormatMessage(ev_obj)
+        if isinstance(desc, bytes):
+            desc = desc.decode('utf-8', errors='replace')
+    except Exception:
+        desc = ""
+
+    strings = []
+    if ev_obj.StringInserts:
+        strings = [safe_str(s) for s in ev_obj.StringInserts]
+
+    level_name, level_label, level_class = EVENT_LEVELS.get(level, ("未知", "unknown", "secondary"))
+
+    return {
+        "id": seq,
+        "event_id": event_id,
+        "source": source,
+        "category": category,
+        "level": level,
+        "level_name": level_name,
+        "level_label": level_label,
+        "level_class": level_class,
+        "timestamp": timestamp,
+        "datetime": dt,
+        "computer": computer,
+        "description": desc,
+        "strings": strings,
+        "log_type": LOG_SOURCES.get(log_name, log_name),
+    }
+
+
+def iter_events(log_name, machine_name=None, since=None, until=None,
+                batch=256, cancel_event=None, progress_cb=None, max_events=None):
+    """
+    流式迭代读取事件日志（ADR-002 核心）。
+
+    从最新事件往回读（BACKWARDS_READ），逐批产出；
+    - 事件时间早于 since 时整体停止（后续更旧，无需继续）
+    - 事件时间晚于 until 时跳过
+    - cancel_event 被置位时立即停止（导出任务取消）
+    - progress_cb(scanned) 每批回调（进度上报）
+    - max_events 上限保护（检索模式防止内存爆炸）
+
+    :yields: 事件 dict
+    """
+    try:
+        hand = win32evtlog.OpenEventLog(machine_name, log_name)
+    except Exception as e:
+        raise RuntimeError(f"读取{LOG_SOURCES.get(log_name, log_name)}失败: {e}")
+
+    scanned = 0
+    yielded = 0
+    try:
+        flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
+        chunk = win32evtlog.ReadEventLog(hand, flags, 0)
+        while chunk:
+            if cancel_event is not None and cancel_event.is_set():
+                break
+            stop = False
+            for ev_obj in chunk:
+                scanned += 1
+                try:
+                    dt = datetime.datetime(*ev_obj.TimeGenerated.timetuple()[:6])
+                except Exception:
+                    dt = datetime.datetime.now()
+                # 时间剪枝（倒序：越过 until 之前的都跳过；早于 since 即终止）
+                if until is not None and dt > until:
+                    continue
+                if since is not None and dt < since:
+                    stop = True
+                    break
+                if max_events is not None and yielded >= max_events:
+                    stop = True
+                    break
+                ev = _parse_event(ev_obj, log_name, yielded + 1)
+                ev["datetime"] = dt
+                yield ev
+                yielded += 1
+            if progress_cb is not None:
+                try:
+                    progress_cb(scanned)
+                except Exception:
+                    pass
+            if stop:
+                break
+            try:
+                chunk = win32evtlog.ReadEventLog(hand, flags, 0)
+            except Exception:
+                break
+    finally:
+        try:
+            win32evtlog.CloseEventLog(hand)
+        except Exception:
+            pass
+
+
+def get_event_logs(log_type="System", machine_name=None, max_events=500, since=None):
+    """
+    读取Windows事件日志（兼容旧签名；内部走流式迭代）
+    :param log_type: 日志类型 System, Application, Security, Setup
     :param machine_name: 远程机器名，None为本地
     :param max_events: 最大事件数
+    :param since: datetime，仅读取该时间之后的事件（None=不限）
     :return: 事件日志列表
     """
-    events = []
-    try:
-        hand = win32evtlog.OpenEventLog(machine_name, log_type)
-        flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
+    return list(iter_events(log_type, machine_name=machine_name,
+                            since=since, max_events=max_events))
 
-        total = win32evtlog.GetNumberOfEventLogRecords(hand)
 
-        event_list = win32evtlog.ReadEventLog(hand, flags, 0)
-        count = 0
-        while event_list and count < max_events:
-            for ev_obj in event_list:
-                if count >= max_events:
-                    break
-                
-                try:
-                    timestamp = ev_obj.TimeGenerated.Format()
-                    if hasattr(ev_obj.TimeGenerated, 'timetuple'):
-                        dt = datetime.datetime(*ev_obj.TimeGenerated.timetuple()[:6])
-                    else:
-                        try:
-                            dt = datetime.datetime.strptime(timestamp, "%a %b %d %H:%M:%S %Y")
-                        except ValueError:
-                            dt = datetime.datetime.now()
-                except Exception:
-                    timestamp = ""
-                    dt = datetime.datetime.now()
-
-                event_id = ev_obj.EventID & 0xFFFF
-                source = safe_str(ev_obj.SourceName)
-                category = safe_str(ev_obj.EventCategory)
-                level = ev_obj.EventType
-                computer = safe_str(ev_obj.ComputerName)
-
-                # 获取事件描述
-                try:
-                    desc = win32evtlogutil.SafeFormatMessage(ev_obj)
-                    if isinstance(desc, bytes):
-                        desc = desc.decode('utf-8', errors='replace')
-                except Exception:
-                    desc = ""
-
-                # 获取插入参数（详细数据）
-                strings = []
-                if ev_obj.StringInserts:
-                    strings = [safe_str(s) for s in ev_obj.StringInserts]
-
-                level_name, level_label, level_class = EVENT_LEVELS.get(level, ("未知", "unknown", "secondary"))
-
-                events.append({
-                    "id": count + 1,
-                    "event_id": event_id,
-                    "source": source,
-                    "category": category,
-                    "level": level,
-                    "level_name": level_name,
-                    "level_label": level_label,
-                    "level_class": level_class,
-                    "timestamp": timestamp,
-                    "datetime": dt,
-                    "computer": computer,
-                    "description": desc,
-                    "strings": strings,
-                    "log_type": LOG_SOURCES.get(log_type, log_type),
-                })
-                count += 1
-            
-            event_list = win32evtlog.ReadEventLog(hand, flags, 0)
-
-        win32evtlog.CloseEventLog(hand)
-    except Exception as e:
-        raise RuntimeError(f"读取{LOG_SOURCES.get(log_type, log_type)}失败: {str(e)}")
-
-    return events
+def match_condition(event, conditions):
+    """
+    对单个事件应用过滤条件（服务端过滤，ADR-002）
+    :param conditions: {"levels": set[int], "source": str, "keyword": str, "event_id": int|None}
+    """
+    levels = conditions.get("levels")
+    if levels:
+        if event["level"] not in levels:
+            return False
+    source = (conditions.get("source") or "").strip()
+    if source:
+        if source.lower() not in (event["source"] or "").lower():
+            return False
+    keyword = (conditions.get("keyword") or "").strip()
+    if keyword:
+        kw = keyword.lower()
+        haystack = (event["description"] or "") + " " + " ".join(event.get("strings") or [])
+        if kw not in haystack.lower() and kw not in (event["source"] or "").lower():
+            return False
+    event_id = conditions.get("event_id")
+    if event_id:
+        try:
+            if int(event_id) != int(event["event_id"]):
+                return False
+        except (TypeError, ValueError):
+            return False
+    return True
 
 
 def analyze_event(event):
     """
     对单个事件进行分析，匹配已知故障模式
-    :param event: 事件字典
-    :return: 分析结果或None
+    :return: 匹配的故障模式名称列表
     """
     event_id = event["event_id"]
     source = event["source"].lower()
@@ -430,25 +527,20 @@ def analyze_event(event):
 
     matches = []
     for pattern_name, pattern in FAULT_PATTERNS.items():
-        # 检查事件ID
         if event_id in pattern["event_ids"]:
             matches.append(pattern_name)
             continue
-        # 检查来源
         for src in pattern["sources"]:
             if src.lower() in source:
                 matches.append(pattern_name)
                 break
         else:
-            # 检查关键词
             for kw in pattern["keywords"]:
                 if kw.lower() in desc:
                     matches.append(pattern_name)
                     break
 
-    # 去重
-    matches = list(dict.fromkeys(matches))
-    return matches
+    return list(dict.fromkeys(matches))
 
 
 def get_system_summary(events):
@@ -491,40 +583,52 @@ def get_system_summary(events):
         hour = event["datetime"].hour
         summary["by_hour"][hour] += 1
 
-    # 按小时生成排序列表
     summary["by_hour_labels"] = [f"{h}:00" for h in range(24)]
     summary["by_hour_values"] = [summary["by_hour"].get(h, 0) for h in range(24)]
 
-    # 按来源排序取前10
     summary["top_events"] = sorted(summary["by_source"].items(), key=lambda x: x[1], reverse=True)[:10]
 
     return summary
 
 
-def get_fault_analysis(events):
+def get_fault_analysis(events, with_evidence=False, max_evidence=5):
     """
     全面故障分析
     :param events: 事件列表
-    :return: 故障分析结果
+    :param with_evidence: 是否输出证据样本（ADR-007）
+    :param max_evidence: 每模式最多证据条数
+    :return: 故障分析结果列表
     """
     fault_counts = defaultdict(lambda: {"count": 0, "events": [], "severity": "info", "suggestions": []})
-    
+
     for event in events:
         matches = analyze_event(event)
         for pattern_name in matches:
             pattern = FAULT_PATTERNS[pattern_name]
-            fault_counts[pattern_name]["count"] += 1
-            fault_counts[pattern_name]["severity"] = pattern["severity"]
-            fault_counts[pattern_name]["suggestions"] = pattern["suggestions"]
+            data = fault_counts[pattern_name]
+            data["count"] += 1
+            data["severity"] = pattern["severity"]
+            data["suggestions"] = pattern["suggestions"]
+            if with_evidence and len(data["events"]) < max_evidence:
+                data["events"].append({
+                    "timestamp": event["timestamp"],
+                    "event_id": event["event_id"],
+                    "source": event["source"],
+                    "level_name": event["level_name"],
+                    "description": (event["description"] or "")[:200],
+                })
 
-    # 转换为列表排序
     result = []
     for name, data in sorted(fault_counts.items(), key=lambda x: x[1]["count"], reverse=True):
-        result.append({
+        item = {
             "name": name,
             "count": data["count"],
             "severity": data["severity"],
             "suggestions": data["suggestions"],
-        })
+        }
+        if with_evidence:
+            item["evidence"] = data["events"]
+        result.append(item)
 
     return result
+
