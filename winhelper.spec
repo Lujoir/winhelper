@@ -9,10 +9,12 @@ a = Analysis(
     ['desktop.py'],
     pathex=[],
     binaries=[],
-    # 前端静态资源随包分发；温度组件（LibreHardwareMonitorLib/HidSharp）随包分发
+    # 前端静态资源随包分发；温度组件（LibreHardwareMonitorLib/HidSharp）随包分发；
+    # iperf3 客户端（平台网络测试命令用，uplink 运行时解压至 %TEMP% 执行）随包分发
     datas=[
         ('web', 'web'),
         ('perf-analyzer/libs/*.dll', 'libs'),
+        ('perf-analyzer/libs/iperf3/*', 'libs/iperf3'),
     ],
     hiddenimports=[
         # Windows 事件日志

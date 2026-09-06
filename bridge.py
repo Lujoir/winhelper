@@ -75,6 +75,10 @@ ROUTES = {
     "/api/perf/hwinfo": handle_perf_hwinfo,
     "/api/perf/temps": handle_perf_temps,
     "/api/perf/restart-admin": handle_perf_restart_admin,
+    # 平台接入（EyeTerm 服务端联动）
+    "/api/perf/uplink/status": handle_uplink_status,
+    "/api/perf/uplink/save": handle_uplink_save,
+    "/api/perf/uplink/register": handle_uplink_register,
 }
 
 
@@ -95,3 +99,7 @@ class ApiBridge:
             return handler(params)
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+
+# 按配置自动恢复平台接入心跳（enabled=true 时；失败静默不崩主进程）
+uplink_autostart()

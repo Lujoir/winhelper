@@ -49,6 +49,7 @@ var perfState = {
     stressDoneVisible: false,
     hwLoaded: false,       // 硬件规格已加载
     tempsTimer: null,      // 温度轮询（2s）
+    uplinkTimer: null,     // 平台接入状态轮询（10s）
 };
 
 // ===================== 初始化（主应用 switchTab 守卫调用） =====================
@@ -61,6 +62,8 @@ function initPerfTab() {
     perfStartTempsPolling();
     perfRestoreReport();
     perfLoadHwInfo();
+    perfLoadUplink();
+    perfStartUplinkPolling();
 }
 
 function perfStartPolling() {
@@ -922,4 +925,95 @@ function renderHwInfo(h) {
     box.style.display = "";
     var ph = document.getElementById("perfHwInfoPlaceholder");
     if (ph) ph.style.display = "none";
+}
+
+// ============================================================
+// 平台接入（EyeTerm 服务端联动，v4 uplink）
+// ============================================================
+
+var UPLINK_STATE_TEXT = {
+    disabled: "未启用", connecting: "连接中", connected: "已连接", error: "连接异常"
+};
+
+function perfStartUplinkPolling() {
+    if (perfState.uplinkTimer) return;
+    perfState.uplinkTimer = setInterval(perfTickUplink, 10000);
+}
+
+function perfStopUplinkPolling() {
+    if (perfState.uplinkTimer) {
+        clearInterval(perfState.uplinkTimer);
+        perfState.uplinkTimer = null;
+    }
+}
+
+async function perfTickUplink() {
+    var sec = document.getElementById("tab-perf");
+    if (!sec || !sec.classList.contains("active")) { perfStopUplinkPolling(); return; }
+    var d = await perfApi("/api/perf/uplink/status");
+    if (d && d.success) renderPerfUplink(d.uplink || {});
+}
+
+async function perfLoadUplink() {
+    var d = await perfApi("/api/perf/uplink/status");
+    if (d && d.success) renderPerfUplink(d.uplink || {});
+}
+
+function renderPerfUplink(u) {
+    var stateText = UPLINK_STATE_TEXT[u.state] || "未连接";
+    var badge = document.getElementById("perfUplinkBadge");
+    if (badge) {
+        var on = u.state === "connected";
+        var bad = u.state === "error";
+        badge.textContent = u.enabled ? stateText : "未启用";
+        badge.style.color = on ? "#81c784" : (bad ? "#e57373" : "");
+        badge.style.background = on ? "rgba(129,199,132,.12)" : (bad ? "rgba(229,115,115,.12)" : "");
+    }
+    var sv = document.getElementById("perfUplinkServer");
+    if (sv && u.server_url && document.activeElement !== sv) sv.value = u.server_url;
+    var st = document.getElementById("perfUplinkStatus");
+    if (st) {
+        var hb = "--";
+        if (u.last_hb_ts) {
+            var dt = new Date(u.last_hb_ts * 1000);
+            hb = ("0" + dt.getHours()).slice(-2) + ":" + ("0" + dt.getMinutes()).slice(-2) + ":" + ("0" + dt.getSeconds()).slice(-2);
+        }
+        var rows = [];
+        rows.push("状态 <b>" + esc(stateText) + "</b>");
+        rows.push("终端ID <b>" + esc(u.terminal_id || "--") + "</b>");
+        rows.push("注册 <b>" + (u.registered ? "已注册" : "未注册") + "</b>");
+        rows.push("最近心跳 <b>" + hb + "</b>");
+        rows.push("心跳间隔 <b>" + (u.heartbeat_interval || 30) + "s</b>");
+        rows.push("iperf3 <b>" + (u.iperf3_available ? "就绪" : "未内置") + "</b>");
+        rows.push("已执行命令 <b>" + (u.executed_count || 0) + "</b>");
+        if (u.last_error) rows.push('<span style="color:#e57373">' + esc(u.last_error) + "</span>");
+        st.innerHTML = rows.join(" · ");
+    }
+}
+
+async function savePerfUplink(enabled) {
+    var sv = document.getElementById("perfUplinkServer");
+    var tk = document.getElementById("perfUplinkToken");
+    var url = "/api/perf/uplink/save?enabled=" + (enabled ? "true" : "false") +
+        "&server_url=" + encodeURIComponent(sv ? sv.value.trim() : "");
+    if (enabled && tk && tk.value.trim()) {
+        url += "&token=" + encodeURIComponent(tk.value.trim());
+    }
+    var d = await perfApi(url);
+    if (!d || !d.success) {
+        alert((enabled ? "启用失败" : "停用失败") + ": " + ((d && d.error) || "未知错误"));
+        return;
+    }
+    if (tk) tk.value = "";  // 保存后清空输入框（token 不回显）
+    renderPerfUplink(d.uplink || {});
+}
+
+async function registerPerfUplink() {
+    var d = await perfApi("/api/perf/uplink/register");
+    if (!d || !d.success) {
+        alert("注册失败: " + ((d && d.error) || "未知错误") +
+            "\n请先填写服务端地址与接入 Token 并保存启用。");
+        return;
+    }
+    renderPerfUplink(d.uplink || {});
 }
