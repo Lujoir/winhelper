@@ -3,7 +3,9 @@ python-dateutil==2.9.0
 wmi==1.5.1
 pywebview>=5.4
 psutil>=5.9
+pythonnet>=3.0
 
 # 打包工具（构建exe时使用）
 pyinstaller>=6.10
+
 

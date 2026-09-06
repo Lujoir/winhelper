@@ -20,11 +20,14 @@ import os
 import random
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
 import uuid
 from datetime import datetime
+
+import ctypes
 
 try:
     import psutil
@@ -291,7 +294,7 @@ def _record_worker(rec):
 
 
 def _sample_once(rec):
-    """单次采样（rec 内自维护 io 基线；cpu 基线也在 rec 上）"""
+    """单次采样（rec 内自维护 io 基线；cpu 基线也在 rec 上；温度取温度轮询缓存）"""
     with rec["_lock"]:
         cpu = _cpu_pct_from_state(rec["_cpu_state"])
         disks = _disks_delta_from_state(rec["_io_state"])
@@ -303,6 +306,8 @@ def _sample_once(rec):
         "mem_avail": vm.available,
         "mem_total": vm.total,
         "swap_pct": round(sw.percent, 1),
+        "cpu_temp": _temps_cache.get("cpu_temp"),   # 管理员模式下有值
+        "gpu_temp": _temps_cache.get("gpu_temp"),   # 有 NVIDIA GPU 时有值
         "disks": {name: m for name, m in disks.items()},
     }
 
@@ -458,7 +463,7 @@ def _longest_run(pairs, threshold, below, gap):
 
 def _analyze_jsonl(path, interval):
     """流式分析 JSONL：统计 + 饱和段 + 瓶颈排序 + 硬件评估"""
-    cols = {"cpu": [], "mem_pct": [], "mem_avail": [], "swap_pct": []}
+    cols = {"cpu": [], "mem_pct": [], "mem_avail": [], "swap_pct": [], "cpu_temp": [], "gpu_temp": []}
     sat_pairs = {"cpu": [], "mem": [], "swap": []}
     per_disk = {}
     bad_lines = 0
@@ -501,6 +506,13 @@ def _analyze_jsonl(path, interval):
                     cols["swap_pct"].append(sp)
                     sat_pairs["swap"].append((ts, sp))
 
+                ct = o.get("cpu_temp")
+                if ct is not None:
+                    cols["cpu_temp"].append(ct)
+                gt = o.get("gpu_temp")
+                if gt is not None:
+                    cols["gpu_temp"].append(gt)
+
                 for name, m in (o.get("disks") or {}).items():
                     d = per_disk.setdefault(name, {"busy": [], "read": [], "write": [], "iops": []})
                     if m.get("busy_pct") is not None:
@@ -542,6 +554,10 @@ def _analyze_jsonl(path, interval):
             "min": round(min(gb), 2),
             "unit": "GB", "n": len(gb),
         }
+    if cols["cpu_temp"]:
+        stats["cpu_temp_c"] = _stat_line(cols["cpu_temp"], "°C")
+    if cols["gpu_temp"]:
+        stats["gpu_temp_c"] = _stat_line(cols["gpu_temp"], "°C")
     disk_stats = {}
     for name, d in per_disk.items():
         disk_stats[name] = {
@@ -702,7 +718,7 @@ def _assess(components, cpu_sat, mem_sat, disk_sat,
 # ============================================================
 
 def handle_perf_record_export(params: dict) -> dict:
-    """导出最近（或指定）报告为 Markdown，写入记录目录"""
+    """导出最近（或指定）报告为单文件自包含 HTML，写入记录目录"""
     rep = _last_report_ref["report"]
     rid = (params.get("record_id") or "").strip()
     if rid and rep and rep.get("record_id") != rid:
@@ -715,16 +731,16 @@ def handle_perf_record_export(params: dict) -> dict:
     if not rep:
         return {"success": False, "error": "暂无可导出的分析报告"}
 
-    md = _report_markdown(rep)
+    html = _report_html(rep)
     d = rep.get("file") and os.path.dirname(rep["file"]) or _records_dir()
-    name = "perf_report_%s.md" % (rep.get("record_id") or datetime.now().strftime("%Y%m%d_%H%M%S"))
+    name = "perf_report_%s.html" % (rep.get("record_id") or datetime.now().strftime("%Y%m%d_%H%M%S"))
     out = os.path.join(d, name)
     try:
         with io.open(out, "w", encoding="utf-8") as f:
-            f.write(md)
+            f.write(html)
     except Exception as e:
         return {"success": False, "error": str(e)}
-    return {"success": True, "path": out, "markdown": md}
+    return {"success": True, "path": out, "html_size": len(html)}
 
 
 def _stat_row(title, s, fmt="%s"):
@@ -734,67 +750,108 @@ def _stat_row(title, s, fmt="%s"):
         title, s["avg"], s["p95"], s["max"], s["min"])
 
 
-def _report_markdown(rep):
+def _html_escape(s):
+    import html as _htmllib
+    return _htmllib.escape(str(s if s is not None else "--"))
+
+
+def _html_doc(title, body):
+    css = (
+        "body{background:#0f1117;color:#e8ebf2;font-family:'Segoe UI','Microsoft YaHei',sans-serif;"
+        "margin:0;padding:32px}"
+        ".wrap{max-width:920px;margin:0 auto}"
+        "h1{font-size:20px;margin:0 0 6px}"
+        "h2{font-size:15px;margin:24px 0 10px;border-bottom:1px solid #262b3a;padding-bottom:6px}"
+        ".meta{color:#8a93a5;font-size:12.5px;line-height:1.9}"
+        ".badge{display:inline-block;font-size:12.5px;border:1px solid #262b3a;"
+        "border-radius:20px;padding:2px 12px;vertical-align:middle;margin-left:8px}"
+        ".card{background:#171a23;border:1px solid #262b3a;border-left:3px solid #4fc3f7;"
+        "border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:13px;line-height:1.7}"
+        ".sug{color:#8a93a5;font-size:12.5px;margin-top:2px}"
+        "table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}"
+        "th,td{padding:8px 12px;border-bottom:1px solid #262b3a;text-align:left}"
+        "th{color:#8a93a5;font-weight:500;white-space:nowrap}"
+        "td{white-space:nowrap}"
+        "ol,ul{margin:8px 0 0;padding-left:22px}li{margin:3px 0;font-size:13px}"
+        "code{background:#1d212e;border:1px solid #262b3a;border-radius:4px;padding:0 5px;font-size:12px}"
+        ".foot{color:#8a93a5;font-size:11.5px;margin-top:24px;border-top:1px solid #262b3a;padding-top:10px}"
+    )
+    return ('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
+            "<title>%s</title><style>%s</style></head><body><div class=\"wrap\">%s</div></body></html>"
+            % (_html_escape(title), css, body))
+
+
+def _report_html(rep):
+    """记录分析报告 → 单文件自包含 HTML（深色风格，ADR-012）"""
     a = rep.get("assessment") or {}
-    lines = []
-    ap = lines.append
-    ap("# 性能记录分析报告")
-    ap("")
-    ap("- 记录ID：%s" % rep.get("record_id"))
-    ap("- 生成时间：%s" % rep.get("generated_at"))
-    ap("- 采样间隔：%ss" % rep.get("interval"))
-    ap("- 记录时长：%ss" % rep.get("elapsed"))
-    ap("- 数据文件：`%s`" % rep.get("file"))
-    ap("")
-    ap("## 综合结论：%s" % a.get("level_text", "--"))
-    ap("")
+    color = {"ok": "#81c784", "watch": "#ffd54f", "upgrade": "#e57373"}.get(a.get("level"), "#aab3c5")
+    sev_color = {"ok": "#81c784", "watch": "#ffd54f", "upgrade": "#e57373"}
+    h = []
+    ap = h.append
+    ap('<h1>观枢终端平台｜EyeTerm · 性能分析报告<span class="badge" style="color:%s;border-color:%s">%s</span></h1>'
+       % (color, color, _html_escape(a.get("level_text"))))
+    ap('<div class="meta">记录ID：%s · 生成时间：%s · 采样间隔：%ss · 记录时长：%ss<br>'
+       '数据文件：<code>%s</code></div>'
+       % (_html_escape(rep.get("record_id")), _html_escape(rep.get("generated_at")),
+          _html_escape(rep.get("interval")), _html_escape(rep.get("elapsed")),
+          _html_escape(rep.get("file"))))
+
+    ap('<h2>结论与建议</h2>')
     for it in (a.get("items") or []):
-        ap("- **[%s] %s**：%s → %s" % (it.get("severity"), it.get("component"),
-                                        it.get("reason"), it.get("suggestion")))
-    ap("")
-    ap("## 指标统计（avg/p95/max/min）")
-    ap("")
-    ap("| 指标 | avg | p95 | max | min |")
-    ap("|---|---|---|---|---|")
+        c = sev_color.get(it.get("severity"), "#aab3c5")
+        ap('<div class="card"><span class="badge" style="color:%s;border-color:%s">[%s]</span> '
+           '<b>%s</b>：%s<div class="sug">→ %s</div></div>'
+           % (c, c, _html_escape(it.get("severity")), _html_escape(it.get("component")),
+              _html_escape(it.get("reason")), _html_escape(it.get("suggestion"))))
+
+    ap('<h2>指标统计（avg / p95 / max / min）</h2>')
+    ap('<table><tr><th>指标</th><th>avg</th><th>p95</th><th>max</th><th>min</th></tr>')
     st = rep.get("stats") or {}
-    ap(_stat_row("CPU 占用 (%)", st.get("cpu_pct")))
-    ap(_stat_row("内存使用率 (%)", st.get("mem_used_pct")))
-    ap(_stat_row("可用内存 (GB)", st.get("mem_available_gb")))
-    ap(_stat_row("虚拟内存使用 (%)", st.get("swap_pct")))
+
+    def _row(title, s):
+        if not s:
+            return '<tr><td>%s</td><td colspan="4" style="color:#8a93a5">--</td></tr>' % _html_escape(title)
+        return ('<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>'
+                % (_html_escape(title), s["avg"], s["p95"], s["max"], s["min"]))
+
+    ap(_row("CPU 占用 (%)", st.get("cpu_pct")))
+    ap(_row("内存使用率 (%)", st.get("mem_used_pct")))
+    ap(_row("可用内存 (GB)", st.get("mem_available_gb")))
+    ap(_row("虚拟内存使用 (%)", st.get("swap_pct")))
+    if st.get("cpu_temp_c"):
+        ap(_row("CPU 温度 (°C)", st.get("cpu_temp_c")))
+    if st.get("gpu_temp_c"):
+        ap(_row("GPU 温度 (°C)", st.get("gpu_temp_c")))
     for name, ds in (rep.get("disk_stats") or {}).items():
-        ap(_stat_row("磁盘 %s busy (%%)" % name, ds.get("busy_pct")))
-        ap(_stat_row("磁盘 %s 读 (MB/s)" % name, ds.get("read_mb_s")))
-        ap(_stat_row("磁盘 %s 写 (MB/s)" % name, ds.get("write_mb_s")))
-        ap(_stat_row("磁盘 %s IOPS" % name, ds.get("iops")))
-    ap("")
-    ap("## 饱和判定（阈值：CPU>%g%%、内存可用<%g%%、磁盘busy>%g%%）"
+        ap(_row("磁盘 %s 活跃 (%)" % name, ds.get("busy_pct")))
+        ap(_row("磁盘 %s 读 (MB/s)" % name, ds.get("read_mb_s")))
+        ap(_row("磁盘 %s 写 (MB/s)" % name, ds.get("write_mb_s")))
+        ap(_row("磁盘 %s IOPS" % name, ds.get("iops")))
+    ap('</table>')
+
+    ap('<h2>饱和判定（阈值：CPU&gt;%g%%、内存可用&lt;%g%%、磁盘活跃&gt;%g%%）</h2>'
        % (_SAT["cpu_pct"], _SAT["mem_avail_pct"], _SAT["disk_busy_pct"]))
-    ap("")
     comps = rep.get("components") or []
-    if comps:
-        ap("| 组件 | 饱和时长(s) | 占比 | p95 | 阈值说明 |")
-        ap("|---|---|---|---|---|")
-        for c in comps:
-            ap("| %s | %s | %.0f%% | %s %s | %s |" % (
-                c.get("name"), c.get("saturation_seconds"),
-                (c.get("saturation_ratio") or 0) * 100,
-                c.get("p95") if c.get("p95") is not None else "--", c.get("unit") or "",
-                c.get("threshold_text")))
-    ap("")
+    ap('<table><tr><th>#</th><th>组件</th><th>饱和时长(s)</th><th>占比</th><th>p95</th><th>阈值说明</th></tr>')
+    for i, c in enumerate(comps, 1):
+        p95 = c.get("p95")
+        ap('<tr><td>#%d</td><td>%s</td><td>%s</td><td>%.0f%%</td><td>%s %s</td><td>%s</td></tr>'
+           % (i, _html_escape(c.get("name")), _html_escape(c.get("saturation_seconds")),
+              (c.get("saturation_ratio") or 0) * 100,
+              _html_escape(p95 if p95 is not None else "--"), _html_escape(c.get("unit") or ""),
+              _html_escape(c.get("threshold_text"))))
+    ap('</table>')
     dsk_sat = rep.get("disk_saturation") or {}
     if dsk_sat:
-        ap("### 各磁盘饱和时长（秒）")
-        ap("")
-        for name, sec in dsk_sat.items():
-            ap("- %s：%s" % (name, sec))
-        ap("")
-    ap("### 瓶颈排序")
-    ap("")
-    for i, c in enumerate(comps, 1):
-        ap("%d. %s（压力占比 %.0f%%）" % (i, c.get("name"), (c.get("saturation_ratio") or 0) * 100))
-    ap("")
-    ap("> 本报告由 winhelper 性能分析模块自动生成。")
-    return "\n".join(lines)
+        ap('<div class="meta" style="margin-top:8px">各磁盘饱和时长：' +
+           "；".join("%s %ss" % (_html_escape(k), v) for k, v in dsk_sat.items()) + "</div>")
+    ap('<h2>瓶颈排序</h2><ol>')
+    for c in comps:
+        ap('<li>%s（压力占比 %.0f%%）</li>' % (_html_escape(c.get("name")), (c.get("saturation_ratio") or 0) * 100))
+    ap('</ol>')
+    ap('<div class="foot">本报告由 winhelper 性能分析模块自动生成；单文件自包含 HTML，可直接浏览器打开或打印。</div>')
+    return _html_doc("观枢终端平台｜EyeTerm - 性能分析报告 %s" % rep.get("record_id"), "\n".join(h))
 
 
 # ============================================================
@@ -1041,6 +1098,7 @@ def _run_cpu_stage(task, cancel, seconds, out, params):
     threads = [threading.Thread(target=_burner, daemon=True) for _ in range(n)]
     state = {"ct": None, "ct_t": None}
     samples = []
+    temp_samples = []
     t0 = time.time()
     for t in threads:
         t.start()
@@ -1050,13 +1108,20 @@ def _run_cpu_stage(task, cancel, seconds, out, params):
         pct = _cpu_pct_from_state(state)
         if pct is not None:
             samples.append(round(pct, 1))
-            task["stage_detail"]["live"] = {"cpu_pct": round(pct, 1), "workers": n}
+            tv = _temps_cache.get("cpu_temp")  # 管理员模式下温度轮询在更新
+            if tv:
+                temp_samples.append(tv)
+            live = {"cpu_pct": round(pct, 1), "workers": n}
+            if tv:
+                live["cpu_temp"] = tv
+            task["stage_detail"]["live"] = live
         stop.wait(1.0)
     stop.set()
     for t in threads:
         t.join(timeout=2)
     elapsed = int(time.time() - t0)
-    out.update({"workers": n, "duration": elapsed, "worker_errors": errors})
+    out.update({"workers": n, "duration": elapsed, "worker_errors": errors,
+                "cpu_temp_max": (round(max(temp_samples), 1) if temp_samples else None)})
     if samples:
         out["samples"] = {"avg": round(sum(samples) / len(samples), 1), "max": round(max(samples), 1),
                           "min": round(min(samples), 1), "unit": "%", "n": len(samples)}
@@ -1364,67 +1429,91 @@ def handle_perf_stress_cancel(params: dict) -> dict:
     return {"success": True, "cancelled": False}
 
 
-def _stress_markdown(task):
+def _stress_html(task):
+    """压测报告 → 单文件自包含 HTML（深色风格，ADR-012）"""
     res = task.get("result") or {}
-    lines = []
-    ap = lines.append
-    ap("# 性能检测（压测）报告")
-    ap("")
-    ap("- 任务ID：%s（模式 %s）" % (task["id"], task["mode"]))
-    ap("- 编排时长：%s 秒（计划）" % task["total_seconds"])
-    ap("- 状态：%s" % task["status"])
-    ap("")
     ov = res.get("overall") or {}
-    ap("## 综合结论：%s" % ov.get("text", "--"))
-    ap("")
-    for d in ov.get("detail", []):
-        ap("- %s" % d)
-    ap("")
-    ap("## 各阶段结果")
+    color = {"ok": "#81c784", "edge": "#ffd54f", "bad": "#e57373"}.get(ov.get("level"), "#aab3c5")
+    lv_color = {"ok": "#81c784", "stable": "#81c784", "edge": "#ffd54f",
+                "bad": "#e57373", "unstable": "#e57373", "skip": "#8a93a5"}
+    h = []
+    ap = h.append
+    ap('<h1>观枢终端平台｜EyeTerm · 性能检测报告<span class="badge" style="color:%s;border-color:%s">%s</span></h1>'
+       % (color, color, _html_escape(ov.get("text"))))
+    ap('<div class="meta">任务ID：%s（模式 %s） · 编排时长：%s 秒（计划） · 状态：%s<br>'
+       '生成时间：%s</div>'
+       % (_html_escape(task["id"]), _html_escape(task["mode"]),
+          _html_escape(task["total_seconds"]), _html_escape(task["status"]),
+          _html_escape(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))))
+    detail = ov.get("detail") or []
+    if detail:
+        ap('<h2>综合结论</h2><ul>')
+        for d in detail:
+            ap('<li>%s</li>' % _html_escape(d))
+        ap('</ul>')
+    ap('<h2>各阶段结果</h2>')
+    labels = {"disk": "磁盘读写上限", "cpu": "CPU 稳定性", "mem": "内存稳定性", "gpu": "GPU 稳定性"}
     for key in _STRESS_STAGE_ORDER:
         st = (res.get("stages") or {}).get(key)
         if not st:
             continue
-        ap("")
-        ap("### %s" % {"disk": "磁盘读写上限", "cpu": "CPU 稳定性", "mem": "内存稳定性", "gpu": "GPU 稳定性"}[key])
-        ap("")
-        if st.get("status") == "skipped":
-            ap("- %s" % st.get("reason", "跳过"))
-            continue
-        if st.get("write"):
-            ap("- 顺序写：avg %s MB/s / peak %s MB/s" % (st["write"].get("avg_mb_s"), st["write"].get("peak_mb_s")))
-        if st.get("read"):
-            ap("- 顺序+随机读：avg %s MB/s / peak %s MB/s（%s）" % (st["read"].get("avg_mb_s"), st["read"].get("peak_mb_s"), st["read"].get("note", "")))
-        if st.get("samples"):
-            s = st["samples"]
-            ap("- CPU 占用：avg %s%% / max %s%%（%d 线程）" % (s.get("avg"), s.get("max"), st.get("workers", 0)))
-        if st.get("peak_percent") is not None:
-            ap("- 内存峰值占用：%s%%（释放后 %s%%）" % (st.get("peak_percent"), st.get("percent_after_release")))
-        if st.get("util_max") is not None:
-            ap("- GPU 峰值占用：%s%%（来源 %s）" % (st.get("util_max"), st.get("src")))
         c = st.get("conclusion") or {}
-        if c:
-            ap("- 结论：[%s] %s → %s" % (c.get("level"), c.get("text"), c.get("suggestion")))
-    ap("")
-    ap("> 报告由 winhelper 性能检测模块自动生成；压测编排硬上限 60s，临时文件已清理。")
-    return "\n".join(lines)
+        cc = lv_color.get(c.get("level"), "#aab3c5")
+        ap('<div class="card" style="border-left-color:%s"><b>%s</b>'
+           '<span class="badge" style="color:%s;border-color:%s">%s</span>'
+           % (cc, _html_escape(labels[key]), cc, cc, _html_escape(c.get("level") or st.get("status") or "")))
+        ap('<ul>')
+        if st.get("status") == "skipped":
+            ap('<li>%s</li>' % _html_escape(st.get("reason", "跳过")))
+        else:
+            if st.get("write"):
+                ap('<li>顺序写：<b>%s MB/s</b>（峰值 %s MB/s）</li>'
+                   % (st["write"].get("avg_mb_s"), st["write"].get("peak_mb_s")))
+            if st.get("read"):
+                ap('<li>顺序+随机读：<b>%s MB/s</b>（峰值 %s MB/s，%s）</li>'
+                   % (st["read"].get("avg_mb_s"), st["read"].get("peak_mb_s"),
+                      _html_escape(st["read"].get("note", ""))))
+            if st.get("samples"):
+                s = st["samples"]
+                ap('<li>CPU 占用：avg <b>%s%%</b> / max %s%%（%s 线程，达标 %s）</li>'
+                   % (s.get("avg"), s.get("max"), st.get("workers", 0),
+                      "是" if st.get("achieved") else "否"))
+            if st.get("cpu_temp_max") is not None:
+                ap('<li>CPU 温度峰值：%s°C</li>' % st.get("cpu_temp_max"))
+            if st.get("peak_percent") is not None:
+                ap('<li>内存峰值占用：<b>%s%%</b>（目标 ≥%s%%，释放后 %s%%）</li>'
+                   % (st.get("peak_percent"), st.get("target_percent"),
+                      st.get("percent_after_release")))
+            if st.get("util_max") is not None:
+                ap('<li>GPU 峰值占用：<b>%s%%</b>（来源 %s）</li>'
+                   % (st.get("util_max"), _html_escape(st.get("src"))))
+            if st.get("reason") and st.get("status") != "skipped":
+                ap('<li>%s</li>' % _html_escape(st.get("reason")))
+        if c.get("text"):
+            ap('<li>结论：%s</li>' % _html_escape(c.get("text")))
+        if c.get("suggestion"):
+            ap('<li>建议：%s</li>' % _html_escape(c.get("suggestion")))
+        ap('</ul></div>')
+    ap('<div class="foot">报告由 winhelper 性能检测模块自动生成；压测编排硬上限 60s，磁盘测试临时文件已清理。'
+       '单文件自包含 HTML，可直接浏览器打开或打印。</div>')
+    return _html_doc("观枢终端平台｜EyeTerm - 性能检测报告 %s" % task["id"], "\n".join(h))
 
 
 def handle_perf_stress_export(params: dict) -> dict:
-    """导出最近一次压测报告 Markdown 到记录目录"""
+    """导出最近一次压测报告为单文件自包含 HTML 到记录目录"""
     with _stress_lock:
         done = [t for t in _stress_tasks.values() if t["status"] in ("done", "cancelled")]
     if not done:
         return {"success": False, "error": "暂无可导出的压测结果（先完成一次压测）"}
     task = done[-1]
-    md = _stress_markdown(task)
-    out = os.path.join(_records_dir(), "perf_stress_%s.md" % task["id"])
+    html = _stress_html(task)
+    out = os.path.join(_records_dir(), "perf_stress_%s.html" % task["id"])
     try:
         with io.open(out, "w", encoding="utf-8") as f:
-            f.write(md)
+            f.write(html)
     except Exception as e:
         return {"success": False, "error": str(e)}
-    return {"success": True, "path": out, "markdown": md}
+    return {"success": True, "path": out, "html_size": len(html)}
 
 
 # ============================================================
@@ -1646,6 +1735,210 @@ def handle_perf_hwinfo(params: dict) -> dict:
 
 
 # ============================================================
+# 7. 温度（能力分级，ADR-011）：GPU nvidia-smi 全员可读；CPU 需管理员 + LibreHardwareMonitorLib
+# ============================================================
+
+_lhm_state = {"tried": False, "computer": None, "error": None}
+_lhm_lock = threading.Lock()
+_temps_cache = {"ts": 0.0, "cpu_temp": None, "gpu_temp": None}  # 供记录/压测附加温度
+
+
+def _is_admin():
+    try:
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+
+def _lhm_libs_dir():
+    base = getattr(sys, "_MEIPASS", None)
+    if base:
+        d = os.path.join(base, "libs")
+        if os.path.isdir(d):
+            return d
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "libs")
+
+
+def _lhm_computer():
+    """LHM Computer 单例（Open 一次复用防句柄泄漏；失败降级不重试爆破）"""
+    with _lhm_lock:
+        if _lhm_state["tried"]:
+            return _lhm_state["computer"]
+        _lhm_state["tried"] = True
+        try:
+            import clr
+            libs = _lhm_libs_dir()
+            lp = os.path.join(libs, "LibreHardwareMonitorLib.dll")
+            if not os.path.exists(lp):
+                _lhm_state["error"] = "lhm_dll_missing"
+                return None
+            hp = os.path.join(libs, "HidSharp.dll")
+            if os.path.exists(hp):
+                clr.AddReference(hp)
+            clr.AddReference(lp)
+            from LibreHardwareMonitor import Hardware
+            comp = Hardware.Computer()
+            comp.IsCpuEnabled = True
+            comp.IsGpuEnabled = True
+            comp.Open()
+            _lhm_state["computer"] = comp
+        except Exception as e:
+            _lhm_state["error"] = str(e)
+        return _lhm_state["computer"]
+
+
+def _lhm_close():
+    with _lhm_lock:
+        comp = _lhm_state.get("computer")
+        if comp is not None:
+            try:
+                comp.Close()
+            except Exception:
+                pass
+            _lhm_state["computer"] = None
+            _lhm_state["tried"] = False
+
+
+def _lhm_cpu_temp():
+    """返回 (available, info)；MSR 读取有开销，调用方轮询 ≥2s"""
+    comp = _lhm_computer()
+    if comp is None:
+        return False, None
+    temps = []
+    try:
+        for hw in comp.Hardware:
+            if "cpu" not in str(hw.HardwareType).lower():
+                continue
+            try:
+                hw.Update()
+            except Exception:
+                continue
+            for s in hw.Sensors:
+                try:
+                    if int(s.SensorType) == 2 and s.Value is not None:  # SensorType.Temperature
+                        temps.append((str(s.Name), float(s.Value)))
+                except Exception:
+                    continue
+            for sub in hw.SubHardware:
+                try:
+                    sub.Update()
+                except Exception:
+                    continue
+                for s in sub.Sensors:
+                    try:
+                        if int(s.SensorType) == 2 and s.Value is not None:
+                            temps.append((str(s.Name), float(s.Value)))
+                    except Exception:
+                        continue
+    except Exception:
+        return False, None
+    if not temps:
+        return False, None
+    package = None
+    core_max = None
+    for name, v in temps:
+        ln = name.lower()
+        if "package" in ln and package is None:
+            package = v
+        if ln.startswith("core") and "max" not in ln:
+            core_max = v if core_max is None else max(core_max, v)
+    return True, {"package": package, "core_max": core_max,
+                  "max": max(v for _, v in temps)}
+
+
+def _nvidia_temp():
+    try:
+        r = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,temperature.gpu", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=3)
+        if r.returncode == 0 and r.stdout.strip():
+            parts = [p.strip() for p in r.stdout.strip().splitlines()[0].split(",")]
+            if len(parts) >= 2:
+                return {"available": True, "temp_c": float(parts[1]),
+                        "name": parts[0], "src": "nvidia-smi"}
+    except Exception:
+        pass
+    return {"available": False, "reason": "no_nvidia_gpu"}
+
+
+def handle_perf_temps(params: dict) -> dict:
+    """温度轮询（前端建议 2s，不并入 1s snapshot）；任何失败优雅降级不报 error"""
+    try:
+        admin = _is_admin()
+        gpu = _nvidia_temp()
+        cpu = {"available": False, "temp_c": None, "reason": "need_admin"}
+        if admin:
+            ok, t = _lhm_cpu_temp()
+            if ok and t:
+                v = t.get("package") or t.get("core_max") or t.get("max")
+                cpu = {"available": True, "temp_c": round(v, 1), "detail": t, "reason": None}
+            else:
+                cpu = {"available": False, "temp_c": None, "reason": "lhm_unavailable"}
+        if gpu.get("available") and gpu.get("temp_c") is not None:
+            _temps_cache["gpu_temp"] = gpu["temp_c"]
+        if cpu.get("available") and cpu.get("temp_c") is not None:
+            _temps_cache["cpu_temp"] = cpu["temp_c"]
+        _temps_cache["ts"] = time.time()
+        return {"success": True, "admin": admin, "cpu": cpu, "gpu": gpu}
+    except Exception as e:
+        try:
+            admin = _is_admin()
+        except Exception:
+            admin = False
+        return {"success": True, "admin": admin,
+                "cpu": {"available": False, "temp_c": None, "reason": "internal"},
+                "gpu": {"available": False, "reason": "internal"},
+                "internal_error": str(e)}
+
+
+# ---- 以管理员重启（desktop.py 注册 exit hook，避免 bridge→desktop 循环导入）----
+
+_exit_hook = {"fn": None}
+
+
+def register_exit_hook(fn):
+    _exit_hook["fn"] = fn
+
+
+def _request_exit():
+    fn = _exit_hook.get("fn")
+    if fn is not None:
+        try:
+            fn()
+            return
+        except Exception:
+            pass
+    os._exit(0)
+
+
+def handle_perf_restart_admin(params: dict) -> dict:
+    """以管理员重启自身：UAC 确认后 ShellExecuteW runas 启动新实例并退出当前实例"""
+    try:
+        # 进行中的记录先停止落盘（flush 后随新实例恢复展示）
+        with _records_lock:
+            running = [r for r in _records.values() if r["status"] == "running"]
+        for r in running:
+            try:
+                handle_perf_record_stop({"record_id": r["id"]})
+            except Exception:
+                pass
+        exe = sys.executable
+        if getattr(sys, "frozen", False):
+            args = ""  # 打包态：winhelper.exe 直启
+        else:  # 开发态：python desktop.py
+            args = '"%s"' % os.path.join(os.path.dirname(os.path.abspath(__file__)), "desktop.py")
+        ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", exe, args, None, 1)
+        if ret > 32:
+            threading.Timer(0.3, _request_exit).start()  # 给响应返回留时间，再销毁窗口
+            return {"success": True, "restarting": True}
+        if ret in (5, 1223):  # SE_ERR_ACCESSDENIED / ERROR_CANCELLED：用户在 UAC 点了取消
+            return {"success": False, "error": "uac_cancelled"}
+        return {"success": False, "error": "shell_error_%s" % ret}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# ============================================================
 # 路由注册表（供 bridge.py / 独立运行时使用）
 # ============================================================
 
@@ -1661,6 +1954,8 @@ PERF_ROUTES = {
     "/api/perf/stress-cancel": handle_perf_stress_cancel,
     "/api/perf/stress-export": handle_perf_stress_export,
     "/api/perf/hwinfo": handle_perf_hwinfo,
+    "/api/perf/temps": handle_perf_temps,
+    "/api/perf/restart-admin": handle_perf_restart_admin,
 }
 
 

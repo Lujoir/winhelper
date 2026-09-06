@@ -48,6 +48,7 @@ var perfState = {
     webglActive: false,    // GPU WebGL 负载运行中
     stressDoneVisible: false,
     hwLoaded: false,       // 硬件规格已加载
+    tempsTimer: null,      // 温度轮询（2s）
 };
 
 // ===================== 初始化（主应用 switchTab 守卫调用） =====================
@@ -57,6 +58,7 @@ function initPerfTab() {
     if (!sec) return;
     perfEnsureCharts();
     perfStartPolling();
+    perfStartTempsPolling();
     perfRestoreReport();
     perfLoadHwInfo();
 }
@@ -72,6 +74,78 @@ function perfStopPolling() {
         clearInterval(perfState.pollTimer);
         perfState.pollTimer = null;
     }
+}
+
+// ===================== 温度（能力分级，2s 轮询，ADR-011） =====================
+
+function perfStartTempsPolling() {
+    if (perfState.tempsTimer) return;
+    perfTempsTick();
+    perfState.tempsTimer = setInterval(perfTempsTick, 2000);
+}
+
+function perfStopTempsPolling() {
+    if (perfState.tempsTimer) {
+        clearInterval(perfState.tempsTimer);
+        perfState.tempsTimer = null;
+    }
+}
+
+async function perfTempsTick() {
+    var sec = document.getElementById("tab-perf");
+    if (!sec || !sec.classList.contains("active")) { perfStopTempsPolling(); return; }
+    var d = await perfApi("/api/perf/temps");
+    if (!d || !d.success) return;
+    renderPerfTemps(d);
+}
+
+function renderPerfTemps(d) {
+    var gpu = d.gpu || {}, cpu = d.cpu || {};
+    var gv = document.getElementById("perfGpuTempVal");
+    if (gv) gv.textContent = (gpu.available && gpu.temp_c !== null && gpu.temp_c !== undefined)
+        ? Math.round(gpu.temp_c) + "°C" : "--";
+    var cv = document.getElementById("perfCpuTempVal");
+    var extra = document.getElementById("perfCpuTempExtra");
+    if (!cv) return;
+    if (cpu.available) {
+        cv.textContent = (cpu.temp_c !== null && cpu.temp_c !== undefined) ? Math.round(cpu.temp_c) + "°C" : "--";
+        cv.style.color = "";
+        if (extra) {
+            extra.innerHTML = d.admin ? '<span class="hw-badge">管理员模式</span>' : "";
+            extra.style.display = d.admin ? "" : "none";
+        }
+    } else if (cpu.reason === "need_admin") {
+        cv.textContent = "需管理员模式";
+        cv.style.color = "var(--warn, #ffb74d)";
+        if (extra) {
+            extra.innerHTML = '<button class="btn btn-ghost" style="font-size:11px;padding:2px 8px;margin-top:2px" onclick="restartPerfAdmin()">以管理员重启</button>';
+            extra.style.display = "";
+        }
+    } else if (cpu.reason === "lhm_unavailable") {
+        cv.textContent = "温度组件不可用";
+        cv.style.color = "";
+        if (extra) { extra.innerHTML = ""; extra.style.display = "none"; }
+    } else {
+        cv.textContent = "--";
+        cv.style.color = "";
+        if (extra) { extra.innerHTML = ""; extra.style.display = "none"; }
+    }
+}
+
+async function restartPerfAdmin() {
+    if (!confirm("将以管理员身份重启应用以启用 CPU 温度检测。\n\n重启后界面显示「管理员模式」徽章，CPU 温度实时显示。\n\n注意：若杀毒软件拦截系统级驱动（WinRing0），请选择允许——该驱动仅用于读取传感器数据。确定继续？")) return;
+    var d = await perfApi("/api/perf/restart-admin");
+    if (d && d.success && d.restarting) {
+        var cv = document.getElementById("perfCpuTempVal");
+        if (cv) cv.textContent = "重启中…";
+        return;
+    }
+    if (d && d.error === "uac_cancelled") {
+        alert("未提权：您在 UAC 弹窗中取消了操作，应用仍在普通模式运行。");
+        renderPerfTemps({ admin: false, cpu: { available: false, reason: "need_admin" }, gpu: {} });
+        return;
+    }
+    alert("重启失败: " + ((d && d.error) || "未知错误"));
 }
 
 async function perfTick() {
@@ -395,7 +469,7 @@ function renderPerfReport(report) {
 
     // 操作
     html.push('<div class="disk-toolbar" style="margin-top:10px">');
-    html.push('<button class="btn btn-primary" onclick="perfExportReport()">导出 Markdown 报告</button>');
+    html.push('<button class="btn btn-primary" onclick="perfExportReport()">导出 HTML 报告</button>');
     html.push('<span class="progress-text" id="perfExportPath"></span>');
     html.push('<button class="btn btn-ghost" id="perfOpenLocBtn" style="display:none" onclick="perfOpenReportLocation()">打开位置</button>');
     html.push('</div>');
@@ -616,7 +690,7 @@ function renderStressResult(result, taskStatus) {
     }
 
     html.push('<div class="disk-toolbar" style="margin-top:10px">');
-    html.push('<button class="btn btn-primary" onclick="perfStressExport()">导出检测报告</button>');
+    html.push('<button class="btn btn-primary" onclick="perfStressExport()">导出 HTML 报告</button>');
     html.push('<span class="progress-text" id="stressExportPath"></span>');
     html.push('<button class="btn btn-ghost" id="stressOpenLocBtn" style="display:none" onclick="perfOpenStressLocation()">打开位置</button>');
     html.push('</div></div>');

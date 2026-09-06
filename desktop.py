@@ -29,6 +29,7 @@ def main() -> None:
     try:
         import webview
         from bridge import ApiBridge
+        import bridge as _bridge_mod
     except ImportError as e:
         fatal(f"桌面组件缺失：{e}\n\n请安装 pywebview（pip install pywebview）后重试。")
         return
@@ -38,7 +39,7 @@ def main() -> None:
         fatal(f"前端资源缺失：{index_path}\n\n请重新安装本程序。")
         return
 
-    webview.create_window(
+    window = webview.create_window(
         "Windows 系统故障分析系统",
         index_path,
         js_api=ApiBridge(),
@@ -47,6 +48,11 @@ def main() -> None:
         min_size=(1100, 700),
         background_color="#0f1117",
     )
+    # 「以管理员重启」：性能模块通过该钩子销毁窗口退出当前实例（防双实例）
+    try:
+        _bridge_mod.register_exit_hook(window.destroy)
+    except Exception:
+        pass
     # 不强制指定 gui: pywebview 自动优先 Edge Chromium(WebView2)
     try:
         webview.start()

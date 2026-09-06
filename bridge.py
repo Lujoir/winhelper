@@ -25,7 +25,7 @@ from perf_service import (
     handle_perf_record_report, handle_perf_record_export,
     handle_perf_stress_start, handle_perf_stress_status,
     handle_perf_stress_cancel, handle_perf_stress_export,
-    handle_perf_hwinfo,
+    handle_perf_hwinfo, handle_perf_temps, handle_perf_restart_admin,
 )
 
 # 路由表：前端请求路径 -> 业务处理器
@@ -62,6 +62,8 @@ ROUTES = {
     "/api/perf/stress-cancel": handle_perf_stress_cancel,
     "/api/perf/stress-export": handle_perf_stress_export,
     "/api/perf/hwinfo": handle_perf_hwinfo,
+    "/api/perf/temps": handle_perf_temps,
+    "/api/perf/restart-admin": handle_perf_restart_admin,
 }
 
 
