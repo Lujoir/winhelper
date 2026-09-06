@@ -464,11 +464,62 @@
                 .perf-sat-item { display: flex; gap: 10px; align-items: flex-start; background: rgba(255,255,255,.02); border: 1px solid var(--border-color, #262b3a); border-radius: 10px; padding: 10px 12px; font-size: 13px; }
                 .perf-sat-rank { font-weight: 800; color: var(--accent-cyan, #4fc3f7); font-size: 15px; }
                 .perf-sat-detail { color: var(--text-secondary, #8a93a5); font-size: 12px; margin-top: 3px; }
+                .hw-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; padding: 14px 18px; }
+                .hw-group { background: rgba(255,255,255,.02); border: 1px solid var(--border-color, #262b3a); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+                .hw-grid .hw-group { margin-bottom: 0; }
+                .hw-title { font-size: 13.5px; font-weight: 700; margin-bottom: 8px; }
+                .hw-body { display: flex; flex-direction: column; gap: 4px; }
+                .hw-name { font-size: 13.5px; }
+                .hw-meta { font-size: 12.5px; color: var(--text-secondary, #8a93a5); line-height: 1.6; }
+                .hw-badge { display: inline-block; font-size: 11px; border: 1px solid var(--accent-cyan, #4fc3f7); color: var(--accent-cyan, #4fc3f7); border-radius: 4px; padding: 0 6px; margin-left: 6px; }
+                .hw-badge-sys { border-color: var(--warn, #ffb74d); color: var(--warn, #ffb74d); }
+                .perf-progress-row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; padding: 10px 18px; font-size: 13px; color: var(--text-secondary, #8a93a5); }
+                .perf-progress-row b { color: var(--text-primary, #e8ebf2); }
+                .perf-gpu-wrap { padding: 0 18px 12px; display: none; }
+                .perf-gpu-wrap canvas { border: 1px solid var(--border-color, #262b3a); border-radius: 8px; }
             </style>
             <div class="page-header">
                 <h2>性能分析</h2>
                 <p class="page-subtitle">实时指标 · 长时间记录 · 瓶颈分析与硬件优化评估</p>
                 <button class="btn btn-ghost" onclick="toggleAllCards(this)">📁 收纳全部</button>
+            </div>
+
+            <!-- 性能检测（压测）——首行 -->
+            <div class="section-card" data-collapse>
+                <div class="card-header">
+                    <h3>性能检测（压测）</h3>
+                    <span class="card-badge" id="perfStressBadge">未运行</span>
+                    <div class="disk-toolbar">
+                        <button class="btn btn-primary" data-stress-mode="full" onclick="startPerfStress('full')">🚀 全面检测（约58秒）</button>
+                        <button class="btn" data-stress-mode="disk" onclick="startPerfStress('disk')">💾 磁盘读写上限</button>
+                        <button class="btn" data-stress-mode="cpu" onclick="startPerfStress('cpu')">🧠 CPU稳定性</button>
+                        <button class="btn" data-stress-mode="mem" onclick="startPerfStress('mem')">🧊 内存稳定性</button>
+                        <button class="btn" data-stress-mode="gpu" onclick="startPerfStress('gpu')">🎮 GPU稳定性</button>
+                        <button class="btn btn-ghost" id="perfStressCancelBtn" style="display:none" onclick="cancelPerfStress()">✖ 取消压测</button>
+                    </div>
+                </div>
+                <div class="disk-note">全面检测依次执行：磁盘读写上限(25s) → CPU稳定性(15s) → 内存稳定性(10s) → GPU稳定性(8s，无独显自动跳过)，总时长 ≤60s。<b>压测期间系统会短暂满载，请提前保存工作</b>；可随时取消，磁盘测试临时文件自动清理。</div>
+                <div id="perfStressProgress" style="display:none">
+                    <div class="perf-progress-row">
+                        <span><b id="perfStressStageText">准备中…</b></span>
+                        <span id="perfStressRemaining"></span>
+                        <span id="perfStressLive"></span>
+                        <span id="perfStressLatency"></span>
+                    </div>
+                    <div style="padding:0 18px 4px"><div class="progress-bar"><div class="progress-fill" id="perfStressBar" style="width:0%"></div></div></div>
+                    <div class="perf-gpu-wrap" id="perfGpuStressWrap"><canvas id="perfGpuStressCanvas" width="120" height="90"></canvas><span style="font-size:12px;color:var(--text-secondary,#8a93a5);margin-left:8px">GPU WebGL 满载负载运行中</span></div>
+                </div>
+                <div id="perfStressResultBox" style="display:none"></div>
+            </div>
+
+            <!-- 硬件配置 -->
+            <div class="section-card" data-collapse>
+                <div class="card-header">
+                    <h3>硬件配置</h3>
+                    <span class="card-badge">静态信息</span>
+                </div>
+                <div class="hw-grid" id="perfHwInfoBox" style="display:none"></div>
+                <div class="disk-note" id="perfHwInfoPlaceholder">正在读取硬件规格…</div>
             </div>
 
             <!-- 实时指标 -->

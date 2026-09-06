@@ -12,10 +12,15 @@
 路径约束：禁止硬编码盘符，记录目录用 LOCALAPPDATA/TEMP 等环境变量组装。
 """
 
+import gc
+import hashlib
 import io
 import json
 import os
+import random
+import shutil
 import subprocess
+import tempfile
 import threading
 import time
 import uuid
@@ -793,6 +798,854 @@ def _report_markdown(rep):
 
 
 # ============================================================
+# 5. 性能检测（压测）——硬约束见 ADR-008/009：每阶段 ≤60s，编排总时长 58s
+# ============================================================
+
+_STRESS_STAGE_SECONDS = {"disk": 25, "cpu": 15, "mem": 10, "gpu": 8}
+_STRESS_STAGE_ORDER = ("disk", "cpu", "mem", "gpu")
+_STRESS_RUNNERS = {}
+_stress_tasks = {}
+_stress_lock = threading.Lock()
+
+
+def _scan_recent_errors(minutes, sources):
+    """只读扫描 System 事件日志最近 N 分钟的指定来源错误/警告（pywin32 缺失返回 None）"""
+    try:
+        import win32evtlog  # 可选依赖（主应用已含 pywin32）
+    except ImportError:
+        return None
+    found = []
+    try:
+        hand = win32evtlog.OpenEventLog(None, "System")
+    except Exception:
+        return []
+    try:
+        flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
+        cutoff = time.time() - minutes * 60
+        for _ in range(50):  # 每批最多约2000条，足够回溯几分钟
+            try:
+                evs = win32evtlog.ReadEventLog(hand, flags, 0)
+            except Exception:
+                break
+            if not evs:
+                break
+            stop = False
+            for ev in evs:
+                try:
+                    t = time.mktime(ev.TimeGenerated.timetuple())
+                except Exception:
+                    continue
+                if t < cutoff:
+                    stop = True
+                    break
+                src = ev.SourceName or ""
+                if any(s.lower() in src.lower() for s in sources) and ev.EventType in (1, 2):
+                    found.append({
+                        "source": src,
+                        "event_id": ev.EventID & 0xFFFF,
+                        "time": time.strftime("%H:%M:%S", time.localtime(t)),
+                    })
+            if stop:
+                break
+    except Exception:
+        pass
+    finally:
+        try:
+            win32evtlog.CloseEventLog(hand)
+        except Exception:
+            pass
+    return found
+
+
+def _looks_dgpu(name):
+    """独显命名判定（ADR-009）：Intel 仅 Arc；NVIDIA 系列均独显；AMD 需 RX/R9/Pro/FirePro"""
+    n = (name or "").lower()
+    if not n:
+        return False
+    if "intel" in n:
+        return "arc" in n
+    if "geforce" in n or "gtx" in n or "rtx" in n or "quadro" in n or "tesla" in n or "nvidia" in n:
+        return True
+    if "radeon" in n:
+        return ("rx" in n) or ("r9" in n) or ("pro" in n) or ("firepro" in n)
+    return ("arc" in n) or ("firepro" in n)
+
+
+def _detect_gpus():
+    try:
+        import wmi  # 可选依赖（主应用已含 wmi==1.5.1）
+        return [v.Name for v in wmi.WMI().Win32_VideoController() if v.Name]
+    except Exception:
+        pass
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name }"],
+            capture_output=True, text=True, timeout=10)
+        if r.returncode == 0:
+            return [ln.strip() for ln in r.stdout.splitlines() if ln.strip()]
+    except Exception:
+        pass
+    return []
+
+
+def _gpu_metrics():
+    """GPU 指标：nvidia-smi 优先，降级 typeperf GPU Engine 计数器（多实例求和夹取100）"""
+    try:
+        r = subprocess.run(
+            ["nvidia-smi", "--query-gpu=utilization.gpu,memory.used,temperature.gpu",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=3)
+        if r.returncode == 0 and r.stdout.strip():
+            parts = [p.strip() for p in r.stdout.strip().splitlines()[0].split(",")]
+            if len(parts) >= 3:
+                return {"util": float(parts[0]), "mem_mb": float(parts[1]),
+                        "temp": float(parts[2]), "src": "nvidia-smi"}
+    except Exception:
+        pass
+    try:
+        r = subprocess.run(["typeperf", r"\GPU Engine(*)\Utilization Percentage", "-sc", "1"],
+                           capture_output=True, text=True, timeout=8)
+        if r.returncode == 0 and r.stdout:
+            total = 0.0
+            for ln in r.stdout.splitlines():
+                ln = ln.strip()
+                if not ln.startswith('"'):
+                    continue
+                for cell in ln.split('","'):
+                    c = cell.strip('"')
+                    try:
+                        total += float(c)
+                    except ValueError:
+                        continue
+            if total > 0:
+                return {"util": round(min(total, 100.0), 1), "mem_mb": None, "temp": None,
+                        "src": "GPU Engine计数器"}
+    except Exception:
+        pass
+    return None
+
+
+# ---------- 阶段 1：磁盘读写上限 ----------
+
+def _run_disk_stage(task, cancel, seconds, out, params):
+    drive = params.get("drive") or os.environ.get("SystemDrive") or "C:"
+    if not drive.endswith("\\"):
+        drive += "\\"
+    sysd = os.environ.get("SystemDrive") or "C:"
+    if not sysd.endswith("\\"):
+        sysd += "\\"
+    # 系统盘用用户 TEMP 目录（权限稳妥）；其他盘用盘根临时目录（禁止碰用户数据）
+    base = tempfile.gettempdir() if os.path.normcase(drive) == os.path.normcase(sysd) else drive
+    tmp = tempfile.mkdtemp(prefix="winhelper_perf_", dir=base)
+    fpath = os.path.join(tmp, "seq.bin")
+    out["drive"] = drive
+    write_samples = []
+    read_samples = []
+    written = 0
+    read_total = 0
+    try:
+        buf = b"\xa5" * (64 * 1024 * 1024)  # 64MB 大缓冲
+        half = seconds / 2.0
+        # ---- 顺序写 ----
+        t0 = time.time()
+        last_t = t0
+        last_b = 0
+        with io.open(fpath, "wb") as f:
+            while True:
+                if time.time() - t0 >= half or cancel.is_set():
+                    break
+                f.write(buf)
+                f.flush()
+                written += len(buf)
+                now = time.time()
+                if now - last_t >= 0.5:
+                    rate = (written - last_b) / (now - last_t) / 1048576.0
+                    write_samples.append(rate)
+                    task["stage_detail"]["live"] = {"phase": "顺序写", "mb_s": round(rate, 1)}
+                    last_t = now
+                    last_b = written
+        w_elapsed = max(time.time() - t0, 0.001)
+        out["write"] = {
+            "peak_mb_s": round(max(write_samples), 1) if write_samples else round(written / w_elapsed / 1048576.0, 1),
+            "avg_mb_s": round(written / w_elapsed / 1048576.0, 1),
+        }
+        # ---- 读（顺序回读至 EOF 后随机偏移交替；注明缓存影响）----
+        fsize = os.path.getsize(fpath)
+        chunk = 32 * 1024 * 1024
+        t0 = time.time()
+        last_t = t0
+        last_b = 0
+        with io.open(fpath, "rb") as f:
+            while True:
+                if time.time() - t0 >= half or cancel.is_set():
+                    break
+                data = f.read(chunk)
+                if not data:
+                    try:
+                        f.seek(random.randrange(0, max(1, fsize - chunk)))
+                    except ValueError:
+                        f.seek(0)
+                read_total += len(data)
+                now = time.time()
+                if now - last_t >= 0.5:
+                    rate = (read_total - last_b) / (now - last_t) / 1048576.0
+                    read_samples.append(rate)
+                    task["stage_detail"]["live"] = {"phase": "顺序+随机读", "mb_s": round(rate, 1)}
+                    last_t = now
+                    last_b = read_total
+        r_elapsed = max(time.time() - t0, 0.001)
+        out["read"] = {
+            "peak_mb_s": round(max(read_samples), 1) if read_samples else round(read_total / r_elapsed / 1048576.0, 1),
+            "avg_mb_s": round(read_total / r_elapsed / 1048576.0, 1),
+            "note": "读速受OS文件缓存影响，为上限乐观值",
+        }
+        # ---- 结论（ADR-009 阈值）----
+        w = out["write"]["avg_mb_s"]
+        r = out["read"]["avg_mb_s"]
+        if w >= 200 and r >= 300:
+            out["conclusion"] = {"level": "ok", "text": "磁盘性能满足日常使用（SSD 级，写 %d / 读 %d MB/s）" % (w, r),
+                                 "suggestion": "无需升级"}
+        elif w < 150:
+            out["conclusion"] = {"level": "bad",
+                                 "text": "磁盘为机械盘水平（顺序写 %d MB/s）" % w,
+                                 "suggestion": "建议升级 SSD（系统盘优先）"}
+        else:
+            out["conclusion"] = {"level": "edge",
+                                 "text": "磁盘性能处于边缘水平（写 %d / 读 %d MB/s）" % (w, r),
+                                 "suggestion": "轻度使用尚可；重度读写场景建议升级 SSD"}
+    finally:
+        try:
+            shutil.rmtree(tmp, ignore_errors=True)
+        except Exception:
+            pass
+        out["tmp_cleaned"] = not os.path.exists(fpath)
+
+
+# ---------- 阶段 2：CPU 稳定性 ----------
+
+def _run_cpu_stage(task, cancel, seconds, out, params):
+    n = max(1, (psutil.cpu_count() or 2) - 1)
+    stop = threading.Event()
+    buf = bytes(256 * 1024)  # hashlib >2047B 在 C 层释放 GIL，多线程真满载
+    errors = []
+
+    def _burner():
+        try:
+            sha = hashlib.sha256
+            while not stop.is_set():
+                sha(buf).hexdigest()
+        except Exception as e:  # 负载线程异常视为不稳定信号
+            errors.append(str(e))
+
+    threads = [threading.Thread(target=_burner, daemon=True) for _ in range(n)]
+    state = {"ct": None, "ct_t": None}
+    samples = []
+    t0 = time.time()
+    for t in threads:
+        t.start()
+    while True:
+        if time.time() - t0 >= seconds or cancel.is_set():
+            break
+        pct = _cpu_pct_from_state(state)
+        if pct is not None:
+            samples.append(round(pct, 1))
+            task["stage_detail"]["live"] = {"cpu_pct": round(pct, 1), "workers": n}
+        stop.wait(1.0)
+    stop.set()
+    for t in threads:
+        t.join(timeout=2)
+    elapsed = int(time.time() - t0)
+    out.update({"workers": n, "duration": elapsed, "worker_errors": errors})
+    if samples:
+        out["samples"] = {"avg": round(sum(samples) / len(samples), 1), "max": round(max(samples), 1),
+                          "min": round(min(samples), 1), "unit": "%", "n": len(samples)}
+        over = [s for s in samples if s > 90]
+        out["achieved"] = len(over) >= max(1, len(samples) // 2)
+    else:
+        out["achieved"] = False
+    out["status_gaps"] = task.get("_status_gaps", 0)
+    out["post_events"] = _scan_recent_errors(5, ("WHEA-Logger", "Kernel-Power")) or []
+    stable = (not errors) and bool(samples) and bool(out.get("achieved")) \
+        and out["status_gaps"] <= 2 and not out["post_events"]
+    avg = out.get("samples", {}).get("avg", 0)
+    out["conclusion"] = {
+        "level": "stable" if stable else "unstable",
+        "text": ("满载 %ds（%d 线程），平均 %.1f%%，系统响应正常，未见硬件级错误" % (elapsed, n, avg)
+                 if stable else "CPU 满载期间存在异常（线程错误/响应间隙/WHEA事件/未达标）"),
+        "suggestion": ("CPU 满载下系统运行稳定，满足高负载使用" if stable
+                       else "建议排查高负载异常：散热、电源计划、驱动与后台程序"),
+    }
+
+
+# ---------- 阶段 3：内存稳定性 ----------
+
+def _run_mem_stage(task, cancel, seconds, out, params):
+    vm0 = psutil.virtual_memory()
+    total = vm0.total
+    before_pct = vm0.percent
+    floor = max(1.5 * 1024 ** 3, 0.08 * total)  # 红线：可用内存硬下限
+    step = 256 * 1024 * 1024
+    touched = bytes(4 * 1024 * 1024)
+    blocks = []
+    stop_flag = threading.Event()
+    peak_pct = before_pct
+    err = None
+    reached_target = False
+    hit_floor = False
+
+    def _watchdog():
+        # 临界可用内存 800MB：立即全部释放（ADR-009 安全底线）
+        while not stop_flag.is_set() and not cancel.is_set():
+            try:
+                if psutil.virtual_memory().available < 800 * 1024 * 1024:
+                    stop_flag.set()
+                    return
+            except Exception:
+                return
+            time.sleep(0.15)
+
+    wt = threading.Thread(target=_watchdog, daemon=True)
+    wt.start()
+    t0 = time.time()
+    try:
+        # 渐进分配 + 触摸（真实提交）
+        while time.time() - t0 < seconds and not cancel.is_set() and not stop_flag.is_set():
+            vm = psutil.virtual_memory()
+            peak_pct = max(peak_pct, vm.percent)
+            if vm.percent >= 90:
+                reached_target = True
+                break
+            if vm.available - step < floor:
+                hit_floor = True
+                break
+            try:
+                ba = bytearray(step)
+                for off in range(0, step, len(touched)):
+                    ba[off:off + len(touched)] = touched
+                blocks.append(ba)
+            except MemoryError:
+                err = "MemoryError（分配阶段，已安全停止）"
+                break
+            task["stage_detail"]["live"] = {"mem_pct": vm.percent,
+                                            "blocks_gb": round(len(blocks) * step / 1073741824.0, 1)}
+        # 维持至阶段结束
+        while time.time() - t0 < seconds and not cancel.is_set() and not stop_flag.is_set():
+            vm = psutil.virtual_memory()
+            peak_pct = max(peak_pct, vm.percent)
+            task["stage_detail"]["live"] = {"mem_pct": vm.percent,
+                                            "blocks_gb": round(len(blocks) * step / 1073741824.0, 1)}
+            time.sleep(0.4)
+    except MemoryError as e:
+        err = "MemoryError（%s）" % e
+    finally:
+        blocks.clear()
+        gc.collect()
+        time.sleep(0.6)
+        after_pct = psutil.virtual_memory().percent
+    out.update({
+        "target_percent": 90, "achieved": reached_target,
+        "peak_percent": round(peak_pct, 1), "before_percent": round(before_pct, 1),
+        "percent_after_release": round(after_pct, 1),
+        "floor_gb": round(floor / 1073741824.0, 2), "hit_floor": hit_floor, "error": err,
+    })
+    released_ok = after_pct <= before_pct + 5
+    stable = (err is None) and released_ok and task.get("_status_gaps", 0) <= 2
+    if hit_floor:
+        text = "接近安全红线（可用下限 %.1fGB）即停止推进，峰值占用 %.1f%%，释放后回落 %.1f%%" \
+               % (floor / 1073741824.0, peak_pct, after_pct)
+    elif reached_target:
+        text = "系统占用推至 %.1f%% 并维持，释放后回落至 %.1f%%" % (peak_pct, after_pct)
+    elif err:
+        text = "分配触达系统上限触发保护性停止（MemoryError 已安全捕获，系统未崩溃），峰值 %.1f%%，释放后回落 %.1f%%；90%% 维持测试未完成" \
+               % (peak_pct, after_pct)
+    else:
+        text = "峰值占用 %.1f%%（受阶段时长/安全底线限制未达 90%%），释放后回落 %.1f%%" % (peak_pct, after_pct)
+    out["conclusion"] = {
+        "level": "stable" if stable else "unstable",
+        "text": text + ("，全程无异常" if stable else "，期间出现异常"),
+        "suggestion": ("内存高占用下系统运行稳定，满足多任务使用" if stable
+                       else "建议排查高内存占用下的稳定性（关闭后台程序/检查内存条）"),
+    }
+
+
+# ---------- 阶段 4：GPU 稳定性 ----------
+
+def _run_gpu_stage(task, cancel, seconds, out, params):
+    cards = _detect_gpus()
+    out["cards"] = [{"name": c, "dedicated": _looks_dgpu(c)} for c in cards]
+    dgpus = [c for c in cards if _looks_dgpu(c)]
+    if not dgpus:
+        out["status"] = "skipped"
+        out["reason"] = "未检测到独立显卡，GPU检测跳过"
+        out["conclusion"] = {"level": "skip", "text": "未检测到独立显卡",
+                             "suggestion": "核显机器无需 GPU 压测"}
+        return
+    task["need_webgl"] = True  # 前端轮询到该标志后启动 WebGL 满载渲染
+    metrics = []
+    metrics_unavailable = False
+    t0 = time.time()
+    while True:
+        if time.time() - t0 >= seconds or cancel.is_set():
+            break
+        m = _gpu_metrics()
+        if m:
+            metrics.append(m)
+            task["stage_detail"]["live"] = {"gpu_util": m.get("util"),
+                                            "gpu_temp": m.get("temp"), "src": m.get("src")}
+        else:
+            metrics_unavailable = True
+            task["stage_detail"]["live"] = {"note": "指标不可用（WebGL负载运行中）"}
+        time.sleep(1.0)
+    task["need_webgl"] = False
+    post = _scan_recent_errors(5, ("nvlddmkm", "Display")) or []
+    out.update({"metrics_count": len(metrics), "metrics_unavailable": metrics_unavailable,
+                "post_events": post})
+    if metrics:
+        utils = [m["util"] for m in metrics if m.get("util") is not None]
+        temps = [m["temp"] for m in metrics if m.get("temp") is not None]
+        out["util_max"] = max(utils) if utils else None
+        out["util_avg"] = round(sum(utils) / len(utils), 1) if utils else None
+        out["temp_max"] = max(temps) if temps else None
+        out["src"] = metrics[0].get("src")
+    stable = (not post) and (len(metrics) >= 2 or metrics_unavailable)
+    detail = "，峰值占用 %s%%" % out["util_max"] if out.get("util_max") is not None \
+        else "（指标不可用）"
+    out["conclusion"] = {
+        "level": "stable" if stable else "unstable",
+        "text": ("满载 %ds，无驱动重置（TDR）事件%s" % (seconds, detail) if stable
+                 else "满载期间出现异常（驱动事件/采样中断）"),
+        "suggestion": ("GPU 满载下运行稳定" if stable else "建议更新显卡驱动并排查满载异常"),
+    }
+
+
+_STRESS_RUNNERS["disk"] = _run_disk_stage
+_STRESS_RUNNERS["cpu"] = _run_cpu_stage
+_STRESS_RUNNERS["mem"] = _run_mem_stage
+_STRESS_RUNNERS["gpu"] = _run_gpu_stage
+
+
+def _stress_overall(stages):
+    parts = []
+    levels = []
+    for key in _STRESS_STAGE_ORDER:
+        st = stages.get(key)
+        if not st:
+            continue
+        c = st.get("conclusion") or {}
+        if c.get("level"):
+            levels.append(c["level"])
+        label = {"disk": "磁盘", "cpu": "CPU", "mem": "内存", "gpu": "GPU"}[key]
+        if st.get("status") == "skipped":
+            parts.append("%s：跳过（%s）" % (label, st.get("reason", "")))
+        else:
+            parts.append("%s：%s" % (label, c.get("text", "")))
+    if any(l in ("bad", "unstable") for l in levels):
+        overall = {"level": "bad", "text": "存在未达标的部件，建议优化"}
+    elif any(l == "edge" for l in levels):
+        overall = {"level": "edge", "text": "整体可用，个别部件处于边缘水平"}
+    else:
+        overall = {"level": "ok", "text": "各部件检测通过，硬件满足使用需求"}
+    overall["detail"] = parts
+    return overall
+
+
+def _stress_worker(task):
+    try:
+        for stage_key, secs in task["plan"]:
+            if task["_cancel"].is_set():
+                break
+            task["current_stage"] = stage_key
+            task["_stage_started"] = time.time()
+            task["stage_detail"] = {"name": stage_key, "seconds": secs, "live": {}}
+            out = {}
+            try:
+                runner = _STRESS_RUNNERS[stage_key]
+                runner(task, task["_cancel"], secs, out, task.get("params", {}).get(stage_key, {}))
+                if "status" not in out:
+                    out["status"] = "cancelled" if task["_cancel"].is_set() else "done"
+            except Exception as e:
+                out = {"status": "error", "error": str(e)}
+            task["result"]["stages"][stage_key] = out
+            task["stage_detail"] = None
+            task["current_stage"] = None
+        task["result"]["overall"] = _stress_overall(task["result"]["stages"])
+        task["status"] = "cancelled" if task["_cancel"].is_set() else "done"
+        task["finished_at"] = time.time()
+    except Exception as e:
+        task["status"] = "error"
+        task["error"] = str(e)
+    finally:
+        task["need_webgl"] = False
+        task["stage_detail"] = None
+
+
+def handle_perf_stress_start(params: dict) -> dict:
+    """开始压测：mode=full|disk|cpu|mem|gpu；同任务不幂等（running 时明确拒绝，ADR-008）"""
+    if psutil is None:
+        return {"success": False, "error": "缺少依赖 psutil，请先 pip install psutil"}
+    mode = (params.get("mode") or "full").strip().lower()
+    if mode not in ("full",) + _STRESS_STAGE_ORDER:
+        return {"success": False, "error": "未知压测模式: %s" % mode}
+    with _stress_lock:
+        for t in _stress_tasks.values():
+            if t["status"] == "running":
+                return {"success": False, "error": "已有压测进行中（%s），请先取消或等待完成" % t["mode"]}
+        if mode == "full":
+            plan = [(k, _STRESS_STAGE_SECONDS[k]) for k in _STRESS_STAGE_ORDER]
+        else:
+            plan = [(mode, _STRESS_STAGE_SECONDS[mode])]
+        sid = uuid.uuid4().hex[:12]
+        task = {
+            "id": sid, "mode": mode, "plan": plan,
+            "total_seconds": sum(s for _, s in plan),
+            "status": "running", "started_at": time.time(), "finished_at": None,
+            "current_stage": None, "stage_detail": None, "_stage_started": None,
+            "result": {"stages": {}}, "error": None, "need_webgl": False,
+            "_cancel": threading.Event(), "_status_gaps": 0, "_last_status_ts": time.time(),
+            "params": {"disk": {"drive": (params.get("drive") or "").strip()}},
+        }
+        _stress_tasks[sid] = task
+    threading.Thread(target=_stress_worker, args=(task,), daemon=True).start()
+    return {"success": True, "stress_id": sid, "mode": mode, "total_seconds": task["total_seconds"],
+            "plan": [{"stage": k, "seconds": s} for k, s in plan]}
+
+
+def _stress_task_view(task, now):
+    stage_detail = None
+    if task.get("stage_detail"):
+        sd = dict(task["stage_detail"])
+        st = task.get("_stage_started") or now
+        sd["elapsed"] = round(now - st, 1)
+        sd["remaining"] = round(max(0.0, sd.get("seconds", 0) - (now - st)), 1)
+        stage_detail = sd
+    return {
+        "id": task["id"], "mode": task["mode"], "status": task["status"],
+        "total_seconds": task["total_seconds"],
+        "elapsed": round(now - task["started_at"], 1),
+        "remaining": (round(max(0.0, task["total_seconds"] - (now - task["started_at"])), 1)
+                      if task["status"] == "running" else 0),
+        "plan": [{"stage": k, "seconds": s} for k, s in task["plan"]],
+        "current_stage": task["current_stage"],
+        "stage_detail": stage_detail,
+        "need_webgl": task.get("need_webgl", False),
+        "result": (task["result"] if task["status"] in ("done", "cancelled", "error") else None),
+        "error": task["error"],
+    }
+
+
+def handle_perf_stress_status(params: dict) -> dict:
+    """轮询压测状态：当前阶段/剩余秒/实时指标/完成后结果"""
+    sid = (params.get("stress_id") or "").strip()
+    with _stress_lock:
+        task = _stress_tasks.get(sid)
+    if task is None:
+        return {"success": False, "error": "压测任务不存在或已过期"}
+    now = time.time()
+    if task["status"] == "running":
+        gap = now - task.get("_last_status_ts", now)
+        if gap > 5.0:  # 响应间隙：主进程可能被压测拖慢的佐证（ADR-009）
+            task["_status_gaps"] = task.get("_status_gaps", 0) + 1
+        task["_last_status_ts"] = now
+    return {"success": True, "task": _stress_task_view(task, now)}
+
+
+def handle_perf_stress_cancel(params: dict) -> dict:
+    """立即取消：停所有负载并释放（磁盘临时文件在 runner finally 必删）"""
+    sid = (params.get("stress_id") or "").strip()
+    with _stress_lock:
+        task = _stress_tasks.get(sid)
+    if task is None:
+        return {"success": False, "error": "压测任务不存在"}
+    if task["status"] == "running":
+        task["_cancel"].set()
+        task["need_webgl"] = False
+        return {"success": True, "cancelled": True}
+    return {"success": True, "cancelled": False}
+
+
+def _stress_markdown(task):
+    res = task.get("result") or {}
+    lines = []
+    ap = lines.append
+    ap("# 性能检测（压测）报告")
+    ap("")
+    ap("- 任务ID：%s（模式 %s）" % (task["id"], task["mode"]))
+    ap("- 编排时长：%s 秒（计划）" % task["total_seconds"])
+    ap("- 状态：%s" % task["status"])
+    ap("")
+    ov = res.get("overall") or {}
+    ap("## 综合结论：%s" % ov.get("text", "--"))
+    ap("")
+    for d in ov.get("detail", []):
+        ap("- %s" % d)
+    ap("")
+    ap("## 各阶段结果")
+    for key in _STRESS_STAGE_ORDER:
+        st = (res.get("stages") or {}).get(key)
+        if not st:
+            continue
+        ap("")
+        ap("### %s" % {"disk": "磁盘读写上限", "cpu": "CPU 稳定性", "mem": "内存稳定性", "gpu": "GPU 稳定性"}[key])
+        ap("")
+        if st.get("status") == "skipped":
+            ap("- %s" % st.get("reason", "跳过"))
+            continue
+        if st.get("write"):
+            ap("- 顺序写：avg %s MB/s / peak %s MB/s" % (st["write"].get("avg_mb_s"), st["write"].get("peak_mb_s")))
+        if st.get("read"):
+            ap("- 顺序+随机读：avg %s MB/s / peak %s MB/s（%s）" % (st["read"].get("avg_mb_s"), st["read"].get("peak_mb_s"), st["read"].get("note", "")))
+        if st.get("samples"):
+            s = st["samples"]
+            ap("- CPU 占用：avg %s%% / max %s%%（%d 线程）" % (s.get("avg"), s.get("max"), st.get("workers", 0)))
+        if st.get("peak_percent") is not None:
+            ap("- 内存峰值占用：%s%%（释放后 %s%%）" % (st.get("peak_percent"), st.get("percent_after_release")))
+        if st.get("util_max") is not None:
+            ap("- GPU 峰值占用：%s%%（来源 %s）" % (st.get("util_max"), st.get("src")))
+        c = st.get("conclusion") or {}
+        if c:
+            ap("- 结论：[%s] %s → %s" % (c.get("level"), c.get("text"), c.get("suggestion")))
+    ap("")
+    ap("> 报告由 winhelper 性能检测模块自动生成；压测编排硬上限 60s，临时文件已清理。")
+    return "\n".join(lines)
+
+
+def handle_perf_stress_export(params: dict) -> dict:
+    """导出最近一次压测报告 Markdown 到记录目录"""
+    with _stress_lock:
+        done = [t for t in _stress_tasks.values() if t["status"] in ("done", "cancelled")]
+    if not done:
+        return {"success": False, "error": "暂无可导出的压测结果（先完成一次压测）"}
+    task = done[-1]
+    md = _stress_markdown(task)
+    out = os.path.join(_records_dir(), "perf_stress_%s.md" % task["id"])
+    try:
+        with io.open(out, "w", encoding="utf-8") as f:
+            f.write(md)
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    return {"success": True, "path": out, "markdown": md}
+
+
+# ============================================================
+# 6. 硬件规格信息（静态，进程内缓存；PowerShell CIM 一次性子进程 + 降级）
+# ============================================================
+
+_hwinfo_cache = {"data": None}
+_SMBIOS_MEM_TYPE = {20: "DDR", 21: "DDR2", 24: "DDR3", 26: "DDR4", 34: "DDR5"}
+
+_PS_CIM_SCRIPT = (
+    "$ErrorActionPreference='SilentlyContinue';"
+    "Write-Output '==CPU==';"
+    "Get-CimInstance Win32_Processor | ForEach-Object { '{0}|{1}|{2}|{3}|{4}' -f $_.Name,$_.NumberOfCores,$_.NumberOfLogicalProcessors,$_.MaxClockSpeed,$_.CurrentClockSpeed };"
+    "Write-Output '==MEM==';"
+    "Get-CimInstance Win32_PhysicalMemory | ForEach-Object { '{0}|{1}|{2}|{3}' -f $_.DeviceLocator,$_.Capacity,$_.SMBIOSMemoryType,$_.ConfiguredClockSpeed };"
+    "Write-Output '==DISK==';"
+    "Get-CimInstance Win32_DiskDrive | ForEach-Object { '{0}|{1}|{2}|{3}' -f $_.Index,$_.Model,$_.Size,$_.InterfaceType };"
+    "Write-Output '==PD==';"
+    "Get-PhysicalDisk | ForEach-Object { '{0}|{1}|{2}' -f $_.DeviceId,$_.MediaType,$_.BusType };"
+    "Write-Output '==D2P==';"
+    "Get-CimInstance Win32_DiskDriveToDiskPartition | ForEach-Object { '{0}=>{1}' -f $_.Antecedent.DeviceID,$_.Dependent.DeviceID };"
+    "Write-Output '==P2L==';"
+    "Get-CimInstance Win32_LogicalDiskToPartition | ForEach-Object { '{0}=>{1}' -f $_.Antecedent.DeviceID,$_.Dependent.DeviceID };"
+    "Write-Output '==GPU==';"
+    "Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name };"
+)
+
+
+def _ps_cim_dump():
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", _PS_CIM_SCRIPT],
+            capture_output=True, text=True, timeout=15)
+        if r.returncode == 0 and r.stdout and "==CPU==" in r.stdout:
+            return r.stdout
+    except Exception:
+        pass
+    return None
+
+
+def _media_of(model, mediatype, bustype):
+    """SSD/HDD 判定链（ADR-010）：Get-PhysicalDisk.MediaType → BusType=NVMe → 模型名启发式 → 未知"""
+    mt = (mediatype or "").strip().lower()
+    if mt == "ssd":
+        return "SSD"
+    if mt == "hdd":
+        return "HDD"
+    if (bustype or "").strip().lower() == "nvme":
+        return "SSD"
+    m = (model or "").lower()
+    if "ssd" in m or "nvme" in m:
+        return "SSD"
+    return "--"
+
+
+def _reg_cpu_name():
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            r"HARDWARE\DESCRIPTION\System\CentralProcessor\0") as k:
+            name, _ = winreg.QueryValueEx(k, "ProcessorNameString")
+            return (name or "").strip()
+    except Exception:
+        return None
+
+
+def _parse_cim_sections(text):
+    sec = None
+    data = {"cpu": [], "mem": [], "disk": [], "pd": [], "d2p": [], "p2l": [], "gpu": []}
+    for ln in text.splitlines():
+        ln = ln.strip()
+        if not ln:
+            continue
+        if ln.startswith("=="):
+            sec = ln.strip("=").lower()
+            continue
+        if sec in data:
+            data[sec].append(ln)
+    return data
+
+
+def _collect_hwinfo():
+    info = {"cpu": {}, "memory": {"total": None, "modules": []},
+            "disks": [], "gpu": [], "source": "cim"}
+    raw = _ps_cim_dump()
+    if not raw:
+        info["source"] = "fallback"
+    p = _parse_cim_sections(raw) if raw else {}
+
+    # ---- CPU ----
+    if p.get("cpu"):
+        f = p["cpu"][0].split("|")
+        if f and f[0].strip():
+            def _int_or_none(s):
+                try:
+                    return int(float(s))
+                except (TypeError, ValueError):
+                    return None
+            info["cpu"] = {
+                "name": f[0].strip(),
+                "cores": _int_or_none(f[1]) if len(f) > 1 else None,
+                "logical": _int_or_none(f[2]) if len(f) > 2 else None,
+                "max_mhz": _int_or_none(f[3]) if len(f) > 3 else None,
+                "cur_mhz": _int_or_none(f[4]) if len(f) > 4 else None,
+            }
+    if not info["cpu"].get("name"):
+        info["cpu"] = {
+            "name": _reg_cpu_name() or "--",
+            "cores": psutil.cpu_count(logical=False) if psutil else None,
+            "logical": psutil.cpu_count() if psutil else None,
+            "max_mhz": (round(psutil.cpu_freq().max) if psutil and psutil.cpu_freq() and psutil.cpu_freq().max else None),
+            "cur_mhz": _freq_mhz(),
+        }
+
+    # ---- 内存 ----
+    try:
+        if psutil:
+            info["memory"]["total"] = psutil.virtual_memory().total
+    except Exception:
+        pass
+    for ln in p.get("mem", []):
+        f = ln.split("|")
+        if len(f) < 4:
+            continue
+        try:
+            cap = int(float(f[1]))
+        except (TypeError, ValueError):
+            cap = 0
+        try:
+            smt = int(float(f[2]))
+        except (TypeError, ValueError):
+            smt = 0
+        try:
+            speed = int(float(f[3]))
+        except (TypeError, ValueError):
+            speed = 0
+        info["memory"]["modules"].append({
+            "slot": f[0].strip() or "--",
+            "size": cap or None,
+            "type": _SMBIOS_MEM_TYPE.get(smt, "--"),
+            "speed_mhz": speed or None,
+        })
+
+    # ---- 磁盘（物理盘维度 + SSD/HDD + 系统盘标注）----
+    pd_map = {}
+    for ln in p.get("pd", []):
+        f = ln.split("|")
+        if len(f) >= 3:
+            pd_map[f[0].strip()] = (f[1].strip(), f[2].strip())  # (MediaType, BusType)
+    part_to_disk = {}
+    for ln in p.get("d2p", []):
+        if "=>" in ln:
+            a, b = ln.split("=>", 1)
+            # a: "\\.\PHYSICALDRIVE0"  b: "Disk #0, Partition #1"
+            m = a.strip().upper()
+            part_to_disk[b.strip()] = m.replace("\\\\.\\PHYSICALDRIVE", "").strip()
+    part_to_letters = {}
+    for ln in p.get("p2l", []):
+        if "=>" in ln:
+            a, b = ln.split("=>", 1)
+            letter = b.strip().strip('"').upper()
+            part_to_letters.setdefault(a.strip(), []).append(letter + "\\")
+
+    disk_rows = p.get("disk", [])
+    for ln in disk_rows:
+        f = ln.split("|")
+        if len(f) < 2:
+            continue
+        try:
+            idx = int(float(f[0]))
+        except (TypeError, ValueError):
+            continue
+        model = f[1].strip()
+        try:
+            size = int(float(f[2])) if len(f) > 2 and f[2].strip() else None
+        except (TypeError, ValueError):
+            size = None
+        iface = f[3].strip() if len(f) > 3 else ""
+        mt, bt = pd_map.get(str(idx), ("", ""))
+        vols = []
+        for part, dnum in part_to_disk.items():
+            if dnum == str(idx):
+                vols.extend(part_to_letters.get(part, []))
+        media = _media_of(model, mt, bt or iface)
+        info["disks"].append({
+            "name": "PhysicalDrive%d" % idx, "model": model or "--",
+            "size": size, "bus": (bt or iface or "--"),
+            "media": media, "volumes": sorted(set(vols)),
+            "system": any(v.rstrip("\\").upper() == (os.environ.get("SystemDrive", "C:").upper()) for v in vols),
+        })
+    if not info["disks"] and psutil:
+        # PowerShell 失败降级：psutil 盘名单，规格字段以 "--" 呈现
+        try:
+            for name in psutil.disk_io_counters(perdisk=True):
+                if str(name).startswith("PhysicalDrive"):
+                    info["disks"].append({"name": name, "model": "--", "size": None,
+                                          "bus": "--", "media": "--", "volumes": [],
+                                          "system": None})
+        except Exception:
+            pass
+
+    # ---- GPU ----
+    for n in p.get("gpu", []):
+        if n.strip():
+            info["gpu"].append({"name": n.strip(), "dedicated": _looks_dgpu(n)})
+    if not info["gpu"]:
+        info["gpu"] = [{"name": n, "dedicated": _looks_dgpu(n)} for n in _detect_gpus()]
+    return info
+
+
+def handle_perf_hwinfo(params: dict) -> dict:
+    """硬件规格（静态信息，首次获取后进程内缓存）"""
+    try:
+        if _hwinfo_cache["data"] is None:
+            _hwinfo_cache["data"] = _collect_hwinfo()
+        return {"success": True, "hwinfo": _hwinfo_cache["data"]}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# ============================================================
 # 路由注册表（供 bridge.py / 独立运行时使用）
 # ============================================================
 
@@ -803,6 +1656,11 @@ PERF_ROUTES = {
     "/api/perf/record-stop": handle_perf_record_stop,
     "/api/perf/record-report": handle_perf_record_report,
     "/api/perf/record-export": handle_perf_record_export,
+    "/api/perf/stress-start": handle_perf_stress_start,
+    "/api/perf/stress-status": handle_perf_stress_status,
+    "/api/perf/stress-cancel": handle_perf_stress_cancel,
+    "/api/perf/stress-export": handle_perf_stress_export,
+    "/api/perf/hwinfo": handle_perf_hwinfo,
 }
 
 
