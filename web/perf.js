@@ -281,6 +281,33 @@ function perfRenderSnapshot(d) {
         }
     }
 
+    // 卷容量可视化（横向条形图，阈值着色：<75青 / 75-90黄 / >90红）
+    var vc = document.getElementById("perfVolsCanvas");
+    if (vc && vols.length) {
+        var vLabels = vols.map(function (v) { return v.mount; });
+        var vPcts = vols.map(function (v) { return v.percent === null || v.percent === undefined ? 0 : v.percent; });
+        var vColors = vPcts.map(function (p) { return p > 90 ? "#ef5350" : (p > 75 ? "#ffb74d" : "#4dd0e1"); });
+        if (perfState.chartVols) {
+            perfState.chartVols.data.labels = vLabels;
+            perfState.chartVols.data.datasets[0].data = vPcts;
+            perfState.chartVols.data.datasets[0].backgroundColor = vColors;
+            perfState.chartVols.update("none");
+        } else if (window.Chart) {
+            perfState.chartVols = new Chart(vc.getContext("2d"), {
+                type: "bar",
+                data: { labels: vLabels, datasets: [{ data: vPcts, backgroundColor: vColors, borderRadius: 4, barThickness: 14 }] },
+                options: {
+                    indexAxis: "y", responsive: true, maintainAspectRatio: false, animation: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { min: 0, max: 100, ticks: { callback: function (v) { return v + "%"; }, color: "#8a93a5", font: { size: 10 } }, grid: { color: "rgba(255,255,255,.06)" } },
+                        y: { ticks: { color: "#aab3c5", font: { size: 11 } }, grid: { display: false } }
+                    }
+                }
+            });
+        }
+    }
+
     // 曲线数据（60 点窗口）
     var h = perfState.hist;
     var ts = new Date();
@@ -458,6 +485,14 @@ function renderPerfReport(report) {
     });
     html.push('</tbody></table></div>');
 
+    // 综合运行状态曲线（记录时序，服务端降采样 series）
+    var sr = report.series;
+    if (sr && sr.t && sr.t.length) {
+        html.push('<div class="perf-report-chart"><div style="font-size:13px;font-weight:600;margin:14px 0 6px">运行状态综合曲线（CPU / 内存 / 磁盘活跃峰值）</div>' +
+            '<div style="height:170px"><canvas id="perfReportChart"></canvas></div>' +
+            '<div class="perf-report-suggestion">纵轴 0-100%，横轴为记录时间轴（秒）</div></div>');
+    }
+
     // 饱和与瓶颈
     html.push('<div class="perf-sat-row">');
     (report.components || []).forEach(function (c, i) {
@@ -477,6 +512,32 @@ function renderPerfReport(report) {
 
     box.innerHTML = html.join("");
     box.style.display = "";
+
+    // 综合曲线初始化（必须在 innerHTML 之后；旧报告无 series 自动跳过）
+    var sr2 = report.series;
+    if (sr2 && sr2.t && sr2.t.length && window.Chart) {
+        var rc = document.getElementById("perfReportChart");
+        if (rc) {
+            if (perfState.chartReport) { perfState.chartReport.destroy(); perfState.chartReport = null; }
+            var mkLine = function (label, arr, color) {
+                return { label: label, data: arr, borderColor: color, backgroundColor: "transparent",
+                         borderWidth: 1.5, pointRadius: 0, tension: 0.25, spanGaps: true };
+            };
+            perfState.chartReport = new Chart(rc.getContext("2d"), {
+                type: "line",
+                data: { labels: sr2.t.map(function (s) { return s + "s"; }),
+                        datasets: [mkLine("CPU %", sr2.cpu, "#4fc3f7"),
+                                   mkLine("内存 %", sr2.mem, "#ffd54f"),
+                                   mkLine("磁盘活跃 %", sr2.disk_max, "#81c784")] },
+                options: { responsive: true, maintainAspectRatio: false, animation: false,
+                           plugins: { legend: { labels: { color: "#aab3c5", font: { size: 11 }, boxWidth: 12 } } },
+                           scales: {
+                               x: { ticks: { color: "#8a93a5", maxTicksLimit: 8, font: { size: 10 } }, grid: { color: "rgba(255,255,255,.05)" } },
+                               y: { min: 0, max: 100, ticks: { callback: function (v) { return v + "%"; }, color: "#8a93a5", font: { size: 10 } }, grid: { color: "rgba(255,255,255,.06)" } }
+                           } }
+            });
+        }
+    }
 }
 
 async function perfExportReport() {

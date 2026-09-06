@@ -472,6 +472,7 @@ def _analyze_jsonl(path, interval):
     cols = {"cpu": [], "mem_pct": [], "mem_avail": [], "swap_pct": [], "cpu_temp": [], "gpu_temp": []}
     sat_pairs = {"cpu": [], "mem": [], "swap": []}
     per_disk = {}
+    series_raw = []
     bad_lines = 0
     total_lines = 0
     t_first = None
@@ -530,6 +531,14 @@ def _analyze_jsonl(path, interval):
                         d["write"].append(m["write_mb_s"])
                     if m.get("iops") is not None:
                         d["iops"].append(m["iops"])
+
+                # 时序采样原始点（综合曲线用）
+                _bmax = None
+                for _m in (o.get("disks") or {}).values():
+                    b = _m.get("busy_pct")
+                    if b is not None and (_bmax is None or b > _bmax):
+                        _bmax = b
+                series_raw.append((ts, o.get("cpu_pct"), o.get("mem_pct"), _bmax))
     except FileNotFoundError:
         return {"success": False, "error": "记录文件丢失"}
 
@@ -618,12 +627,26 @@ def _analyze_jsonl(path, interval):
                          cpu_p95, mem_p95_avail_gb, disk_p95_busy,
                          stats, worst_disk_name)
 
+    # ---- 时序降采样（综合运行状态曲线，最多 240 点）----
+    series = None
+    if series_raw:
+        step = max(1, (len(series_raw) + 239) // 240)
+        picked = series_raw[::step]
+        t0 = picked[0][0]
+        series = {
+            "t": [round(r[0] - t0, 1) for r in picked],
+            "cpu": [round(r[1], 1) if r[1] is not None else None for r in picked],
+            "mem": [round(r[2], 1) if r[2] is not None else None for r in picked],
+            "disk_max": [round(r[3], 1) if r[3] is not None else None for r in picked],
+        }
+
     return {
         "duration_seconds": round(duration, 1),
         "sample_lines": total_lines,
         "bad_lines": bad_lines,
         "interval": interval,
         "stats": stats,
+        "series": series,
         "disk_stats": disk_stats,
         "disk_saturation": disk_sats,
         "saturation_thresholds": dict(_SAT),
@@ -835,6 +858,40 @@ def _report_html(rep):
         ap(_row("磁盘 %s 写 (MB/s)" % name, ds.get("write_mb_s")))
         ap(_row("磁盘 %s IOPS" % name, ds.get("iops")))
     ap('</table>')
+
+    # ---- 运行状态综合曲线（内联 SVG，单文件自包含，可打印）----
+    sr = rep.get("series") or {}
+    if sr.get("t"):
+        W, H = 860, 250
+        pl, pr, pt, pb = 44, 16, 16, 28
+        iw, ih = W - pl - pr, H - pt - pb
+        tmax = sr["t"][-1] or 1.0
+        g = ['<svg viewBox="0 0 %d %d" xmlns="http://www.w3.org/2000/svg" '
+             'style="width:100%%;height:auto;background:#12141c;border:1px solid #262b3a;border-radius:8px">' % (W, H)]
+        for gy in (0, 25, 50, 75, 100):
+            y = round(pt + ih * (1 - gy / 100.0), 1)
+            g.append('<line x1="%d" y1="%g" x2="%d" y2="%g" stroke="#262b3a"/>' % (pl, y, W - pr, y))
+            g.append('<text x="%d" y="%g" fill="#8a93a5" font-size="10">%d%%</text>' % (6, y + 3, gy))
+        for fx, lab, anchor in ((0.0, "0s", "start"), (0.5, "%gs" % round(tmax / 2), "middle"), (1.0, "%gs" % round(tmax), "end")):
+            x = round(pl + iw * fx, 1)
+            g.append('<text x="%g" y="%d" fill="#8a93a5" font-size="10" text-anchor="%s">%s</text>' % (x, H - 8, anchor, lab))
+        for key, color, label in (("cpu", "#4fc3f7", "CPU"), ("mem", "#ffd54f", "内存使用率"), ("disk_max", "#81c784", "磁盘活跃峰值")):
+            xs = []
+            for i in range(len(sr["t"])):
+                v = sr[key][i] if i < len(sr[key]) else None
+                if v is None:
+                    continue
+                v = max(0.0, min(100.0, float(v)))
+                x = pl + iw * (sr["t"][i] / tmax if tmax else 0)
+                y = pt + ih * (1 - v / 100.0)
+                xs.append("%g,%g" % (round(x, 1), round(y, 1)))
+            if xs:
+                g.append('<polyline fill="none" stroke="%s" stroke-width="1.5" points="%s"/>' % (color, " ".join(xs)))
+        g.append('</svg>')
+        g.append('<div class="meta">图例：<span style="color:#4fc3f7">CPU</span> · '
+                 '<span style="color:#ffd54f">内存使用率</span> · <span style="color:#81c784">磁盘活跃峰值</span>（纵轴 0-100%）</div>')
+        ap('<h2>运行状态综合曲线</h2>')
+        ap("".join(g))
 
     ap('<h2>饱和判定（阈值：CPU&gt;%g%%、内存可用&lt;%g%%、磁盘活跃&gt;%g%%）</h2>'
        % (_SAT["cpu_pct"], _SAT["mem_avail_pct"], _SAT["disk_busy_pct"]))
