@@ -22,7 +22,7 @@ def resource_path(rel: str) -> str:
 
 def fatal(msg: str) -> None:
     """无降级手段时的原生弹窗提示"""
-    ctypes.windll.user32.MessageBoxW(0, msg, "Windows 系统故障分析系统", 0x10)
+    ctypes.windll.user32.MessageBoxW(0, msg, "观枢终端平台｜EyeTerm", 0x10)
 
 
 def main() -> None:
@@ -40,7 +40,7 @@ def main() -> None:
         return
 
     window = webview.create_window(
-        "Windows 系统故障分析系统",
+        "观枢终端平台｜EyeTerm",
         index_path,
         js_api=ApiBridge(),
         width=1380,
