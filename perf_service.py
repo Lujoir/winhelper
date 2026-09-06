@@ -429,7 +429,9 @@ def handle_perf_record_report(params: dict) -> dict:
         d = _records_dir()
         files = [f for f in os.listdir(d) if f.startswith("analysis_") and f.endswith(".json")]
         if files:
-            path = os.path.join(d, sorted(files)[-1])
+            # 文件名为随机哈希，字典序≠时间序；必须按修改时间取最新
+            files.sort(key=lambda f: os.path.getmtime(os.path.join(d, f)))
+            path = os.path.join(d, files[-1])
             with io.open(path, "r", encoding="utf-8") as f:
                 return {"success": True, "found": True, "report": json.load(f)}
     except Exception:
@@ -828,7 +830,7 @@ def _report_html(rep):
     if st.get("gpu_temp_c"):
         ap(_row("GPU 温度 (°C)", st.get("gpu_temp_c")))
     for name, ds in (rep.get("disk_stats") or {}).items():
-        ap(_row("磁盘 %s 活跃 (%)" % name, ds.get("busy_pct")))
+        ap(_row("磁盘 %s 活跃 (%%)" % name, ds.get("busy_pct")))
         ap(_row("磁盘 %s 读 (MB/s)" % name, ds.get("read_mb_s")))
         ap(_row("磁盘 %s 写 (MB/s)" % name, ds.get("write_mb_s")))
         ap(_row("磁盘 %s IOPS" % name, ds.get("iops")))
