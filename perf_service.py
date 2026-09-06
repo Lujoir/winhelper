@@ -20,6 +20,10 @@ import os
 import random
 import shutil
 import subprocess
+
+# GUI（无控制台）程序中调用控制台子进程（nvidia-smi/powershell/typeperf）必须隐藏窗口，
+# 否则每次调用都会弹出一个 cmd 窗口（温度 2s 轮询 = 不停循环弹窗）
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 import sys
 import tempfile
 import threading
@@ -938,7 +942,7 @@ def _detect_gpus():
         r = subprocess.run(
             ["powershell", "-NoProfile", "-Command",
              "Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name }"],
-            capture_output=True, text=True, timeout=10)
+            capture_output=True, text=True, timeout=10, creationflags=_NO_WINDOW)
         if r.returncode == 0:
             return [ln.strip() for ln in r.stdout.splitlines() if ln.strip()]
     except Exception:
@@ -952,7 +956,7 @@ def _gpu_metrics():
         r = subprocess.run(
             ["nvidia-smi", "--query-gpu=utilization.gpu,memory.used,temperature.gpu",
              "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=3)
+            capture_output=True, text=True, timeout=3, creationflags=_NO_WINDOW)
         if r.returncode == 0 and r.stdout.strip():
             parts = [p.strip() for p in r.stdout.strip().splitlines()[0].split(",")]
             if len(parts) >= 3:
@@ -962,7 +966,7 @@ def _gpu_metrics():
         pass
     try:
         r = subprocess.run(["typeperf", r"\GPU Engine(*)\Utilization Percentage", "-sc", "1"],
-                           capture_output=True, text=True, timeout=8)
+                           capture_output=True, text=True, timeout=8, creationflags=_NO_WINDOW)
         if r.returncode == 0 and r.stdout:
             total = 0.0
             for ln in r.stdout.splitlines():
@@ -1546,7 +1550,7 @@ def _ps_cim_dump():
     try:
         r = subprocess.run(
             ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", _PS_CIM_SCRIPT],
-            capture_output=True, text=True, timeout=15)
+            capture_output=True, text=True, timeout=15, creationflags=_NO_WINDOW)
         if r.returncode == 0 and r.stdout and "==CPU==" in r.stdout:
             return r.stdout
     except Exception:
@@ -1850,7 +1854,7 @@ def _nvidia_temp():
     try:
         r = subprocess.run(
             ["nvidia-smi", "--query-gpu=name,temperature.gpu", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=3)
+            capture_output=True, text=True, timeout=3, creationflags=_NO_WINDOW)
         if r.returncode == 0 and r.stdout.strip():
             parts = [p.strip() for p in r.stdout.strip().splitlines()[0].split(",")]
             if len(parts) >= 2:
