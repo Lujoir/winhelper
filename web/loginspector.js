@@ -299,7 +299,7 @@ function liRenderTable(data) {
                 '<td><strong>' + ev.event_id + '</strong>' + (ev.is_known ? '<span class="known-tag">已知</span>' : '') + '</td>' +
                 '<td>' + liEscapeHtml(liTruncate(ev.source, 34)) + '</td>' +
                 '<td><span class="level-badge ' + liEscapeHtml(ev.level_class) + '">' + liEscapeHtml(ev.level_name) + '</span></td>' +
-                '<td title="' + liEscapeHtml(ev.description) + '">' + liEscapeHtml(liTruncate(ev.description, 80)) + '</td>' +
+                '<td>' + liDescBlock(ev.description, 80) + '</td>' +
                 '</tr>';
         }).join("");
     }
@@ -477,7 +477,7 @@ function liRenderAnalysis(data) {
             var evHtml = (f.evidence || []).map(function (e) {
                 return '<li><code>' + liEscapeHtml(e.timestamp) + '</code> [' +
                     liEscapeHtml(liTruncate(e.source, 30)) + ' / ID ' + e.event_id + '] ' +
-                    liEscapeHtml(liTruncate((e.description || "").replace(/\s+/g, " "), 90)) + '</li>';
+                    liDescBlock((e.description || "").replace(/\s+/g, " "), 90) + '</li>';
             }).join("");
             var sugHtml = (f.suggestions || []).map(function (s) { return "<li>" + liEscapeHtml(s) + "</li>"; }).join("");
             return '<div class="fault-card" onclick="liToggleFault(this)">' +
@@ -510,7 +510,7 @@ function liRenderAnalysis(data) {
                 '<td>' + liEscapeHtml(ev.known_name) + ' <span class="known-tag">已知</span></td>' +
                 '<td>' + liEscapeHtml(liTruncate(ev.source, 30)) + '</td>' +
                 '<td><span class="level-badge ' + liEscapeHtml(ev.level_class) + '">' + liEscapeHtml(ev.level_name) + '</span></td>' +
-                '<td title="' + liEscapeHtml(ev.description) + '">' + liEscapeHtml(liTruncate(ev.description, 60)) + '</td>' +
+                '<td>' + liDescBlock(ev.description, 60) + '</td>' +
                 '</tr>';
         }).join("");
     }
@@ -765,4 +765,25 @@ async function liExportReport() {
     } finally {
         btn.disabled = false;
     }
+}
+
+// ===================== 描述收缩/展开（文字可复制） =====================
+var liDescSeq = 0;
+function liDescBlock(text, maxChars) {
+    text = (text === null || text === undefined) ? "" : String(text);
+    var id = "liDesc" + (++liDescSeq);
+    var clamped = text.replace(/\s+/g, " ").length > maxChars;
+    var html = '<div class="li-desc' + (clamped ? ' li-desc-clamp' : '') + '" id="' + id + '">' + liEscapeHtml(text) + '</div>';
+    if (clamped) {
+        html += '<a href="javascript:void(0)" class="li-desc-toggle" data-target="' + id + '" onclick="liToggleDesc(\'' + id + '\', event);return false;">展开</a>';
+    }
+    return html;
+}
+function liToggleDesc(id, ev) {
+    if (ev) { ev.stopPropagation(); }
+    var el = document.getElementById(id);
+    if (!el) return;
+    var clamped = el.classList.toggle("li-desc-clamp");
+    var t = document.querySelector('.li-desc-toggle[data-target="' + id + '"]');
+    if (t) { t.textContent = clamped ? "展开" : "收起"; }
 }

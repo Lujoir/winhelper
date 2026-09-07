@@ -27,7 +27,7 @@ import log_reader
 
 SEARCH_MAX_EVENTS = 20000     # 检索上限保护（ADR-002）
 ANALYZE_MAX_EVENTS = 30000    # 分析上限保护
-DESC_TRUNC = 500              # 事件描述返回前端的最大长度
+DESC_TRUNC = 2000             # 事件描述返回前端的最大长度（前端收缩/展开展示，需保留完整内容）
 
 LEVEL_NAME_MAP = {"critical": "关键", "error": "错误", "warning": "警告", "info": "信息"}
 
