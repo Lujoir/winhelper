@@ -653,7 +653,10 @@ function liRenderSystemPanel() {
         var h = liState.hwinfo || {};
         var cpu = h.cpu || {};
         var mem = h.memory || {};
-        var osText = h.os || "--";
+        var osRaw = h.os;
+        var osText = (osRaw && typeof osRaw === "object")
+            ? (osRaw.text || [osRaw.caption, osRaw.version].filter(Boolean).join(" ") || "--")
+            : (osRaw || "--");
         var hostText = h.hostname || h.computer || "--";
 
         html += '<h4>操作系统</h4>';
@@ -670,7 +673,7 @@ function liRenderSystemPanel() {
                     '<td>' + liEscapeHtml(n.ipv4 || "--") + '</td>' +
                     '<td style="font-size:11px">' + liEscapeHtml(liTruncate(n.ipv6 || "--", 26)) + '</td>' +
                     '<td style="font-size:11px">' + liEscapeHtml(n.mac || "--") + '</td>' +
-                    '<td>' + liEscapeHtml(n.state || "--") + '</td>' +
+                    '<td>' + liEscapeHtml(n.status === "up" || n.state === "up" ? "在线" : (n.status || n.state || "--")) + '</td>' +
                     '<td style="font-size:11px">' + liEscapeHtml(liTruncate(n.gateway || "--", 20)) +
                     (n.dns ? ' / ' + liEscapeHtml(liTruncate(n.dns, 20)) : '') + '</td></tr>';
             });
@@ -721,8 +724,13 @@ function liRenderSystemPanel() {
         var gpus = h.gpu || [];
         if (gpus.length) {
             gpus.forEach(function (g) {
+                var spec = [];
+                if (g.vram_text && g.vram_text !== "--") spec.push("显存 " + g.vram_text);
+                if (g.driver && g.driver !== "--") spec.push("驱动 " + g.driver);
+                if (g.resolution && g.resolution !== "--") spec.push(g.resolution);
                 html += liSysRow(liEscapeHtml(liTruncate(g.name || "--", 40)),
-                    '<span class="li-sys-gpu-tag">' + (g.dedicated ? "独显" : "核显") + '</span>');
+                    '<span class="li-sys-gpu-tag">' + (g.dedicated ? "独显" : "核显") + '</span>' +
+                    (spec.length ? '<div class="li-sys-v" style="font-size:12px">' + liEscapeHtml(spec.join(" · ")) + '</div>' : ''));
             });
         } else {
             html += '<div class="li-sys-none">未获取到显卡信息</div>';
