@@ -104,6 +104,7 @@ function switchTab(tab) {
     document.querySelector(`[data-tab="${tab}"]`).classList.add("active");
     document.getElementById(`tab-${tab}`).classList.add("active");
 
+    if (tab === "home" && typeof initHomeTab === "function") initHomeTab();
     if (tab === "loginspector" && typeof initLogInspectorTab === "function") initLogInspectorTab();
     if (tab === "disk" && typeof initDiskTab === "function") initDiskTab();
     if (tab === "perf" && typeof initPerfTab === "function") initPerfTab();

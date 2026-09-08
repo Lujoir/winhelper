@@ -34,6 +34,7 @@ from uplink import (
     handle_uplink_status, handle_uplink_save, handle_uplink_register,
     autostart as uplink_autostart,
 )
+from home_service import handle_home_network
 
 # 路由表：前端请求路径 -> 业务处理器
 ROUTES = {
@@ -79,6 +80,8 @@ ROUTES = {
     "/api/perf/uplink/status": handle_uplink_status,
     "/api/perf/uplink/save": handle_uplink_save,
     "/api/perf/uplink/register": handle_uplink_register,
+    # 主页（终端概览）
+    "/api/home/network": handle_home_network,
 }
 
 

@@ -18,7 +18,11 @@
             <span class="nav-title">观枢终端平台｜EyeTerm</span>
         </div>
         <div class="nav-tabs">
-            <button class="nav-tab active" data-tab="loginspector" onclick="switchTab('loginspector')">
+            <button class="nav-tab active" data-tab="home" onclick="switchTab('home')">
+                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 3l9 8h-3v9h-5v-6h-2v6H6v-9H3l9-8z" fill="currentColor"/></svg>
+                主页
+            </button>
+            <button class="nav-tab" data-tab="loginspector" onclick="switchTab('loginspector')">
                 <svg viewBox="0 0 24 24" width="16" height="16"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6zm8-2h2v-2h-2v2zm0-4h2v-4h-2v4z" fill="currentColor"/></svg>
                 日志诊断
             </button>
@@ -41,8 +45,80 @@
 
     <!-- 页面内容 -->
     <main class="main-content">
+        <!-- ==================== 主页 ==================== -->
+        <div id="tab-home" class="tab-content active">
+            <style>
+                /* 主页模块特有样式（ADR-001：仅作用于本 section，不改 style.css） */
+                .home-wrap { padding: 16px 20px; }
+                .home-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+                .home-title { font-size: 17px; font-weight: 600; color: var(--text-primary); }
+                .home-refresh { background: var(--bg-card); color: var(--accent-cyan); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 6px 16px; cursor: pointer; font-size: 12.5px; }
+                .home-refresh:hover { background: var(--bg-hover); }
+                .home-refresh:disabled { opacity: .5; cursor: default; }
+                .home-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 14px; align-items: start; }
+                .hm-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 15px 17px; }
+                .hm-card > h3 { margin: 0 0 12px; font-size: 13.5px; font-weight: 600; color: var(--accent-cyan); letter-spacing: .5px; }
+                .hm-row { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: 12.5px; border-bottom: 1px dashed rgba(42,47,69,.6); }
+                .hm-row:last-child { border-bottom: none; }
+                .hm-row-label { color: var(--text-secondary); flex-shrink: 0; }
+                .hm-row-value { color: var(--text-primary); text-align: right; word-break: break-all; }
+                .hm-badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; margin-left: 6px; vertical-align: 1px; }
+                .hm-ok { color: #66bb6a; background: rgba(102,187,106,.12); border: 1px solid rgba(102,187,106,.4); }
+                .hm-warn { color: #ffb74d; background: rgba(255,183,77,.12); border: 1px solid rgba(255,183,77,.4); }
+                .hm-err { color: #ef5350; background: rgba(239,83,80,.12); border: 1px solid rgba(239,83,80,.4); }
+                .hm-info { color: #4fc3f7; background: rgba(79,195,247,.12); border: 1px solid rgba(79,195,247,.4); }
+                .hm-muted { color: var(--text-muted); background: var(--bg-hover); border: 1px solid var(--border-color); }
+                .hm-hint { color: var(--text-muted); font-size: 11px; font-style: normal; }
+                .hm-empty { color: var(--text-muted); font-size: 12.5px; padding: 10px 0; }
+                .hm-err-line { color: #ef9a9a; font-size: 11.5px; padding-top: 6px; word-break: break-all; }
+                .hm-sub { color: var(--text-primary); font-size: 12.5px; margin-top: 8px; }
+                .hm-sub:first-child { margin-top: 0; }
+                .hm-kv { color: var(--text-secondary); font-size: 11.5px; margin: 2px 0 4px; }
+                .hm-meter { margin-bottom: 12px; }
+                .hm-meter:last-child { margin-bottom: 0; }
+                .hm-meter-head { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--text-secondary); margin-bottom: 4px; }
+                .hm-meter-head b { color: var(--text-primary); font-weight: 600; }
+                .hm-meter-head i { font-weight: 400; }
+                .hm-bar { height: 7px; background: var(--bg-hover); border-radius: 4px; overflow: hidden; }
+                .hm-bar-fill { height: 100%; border-radius: 4px; transition: width .4s ease; }
+                .hm-vol { margin-bottom: 8px; }
+                .hm-vol:last-child { margin-bottom: 0; }
+                .hm-net-card { border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 10px; background: var(--bg-secondary); }
+                .hm-net-card:last-child { margin-bottom: 0; }
+                .hm-net-down { opacity: .55; }
+                .hm-net-head { display: flex; align-items: center; font-size: 13px; color: var(--text-primary); margin-bottom: 4px; }
+                .hm-net-head b { margin-right: auto; }
+                .hm-net-grid .hm-row { border-bottom: none; padding: 2px 0; }
+            </style>
+            <div class="home-wrap">
+                <div class="home-header">
+                    <div class="home-title">终端概览</div>
+                    <button class="home-refresh" id="homeRefreshBtn" onclick="hmRefreshAll()">刷新</button>
+                </div>
+                <div class="home-grid">
+                    <section class="hm-card">
+                        <h3>终端配置</h3>
+                        <div id="homeOsBody"><div class="hm-empty">加载中…</div></div>
+                        <div style="margin-top:12px;padding-top:8px;border-top:1px solid var(--border-color)">
+                            <div id="homeUplinkBody"><div class="hm-empty">加载中…</div></div>
+                        </div>
+                    </section>
+                    <section class="hm-card">
+                        <h3>硬件状态</h3>
+                        <div id="homeLiveBody"><div class="hm-empty">加载中…</div></div>
+                        <div id="homeTempsBody" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border-color)"><div class="hm-empty">加载中…</div></div>
+                        <div id="homeHwStatic" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border-color)"><div class="hm-empty">加载中…</div></div>
+                    </section>
+                    <section class="hm-card">
+                        <h3>本地网络配置</h3>
+                        <div id="homeNetBody"><div class="hm-empty">加载中…</div></div>
+                    </section>
+                </div>
+            </div>
+        </div>
+
         <!-- ==================== 日志诊断 ==================== -->
-        <div id="tab-loginspector" class="tab-content active">
+        <div id="tab-loginspector" class="tab-content">
             <style>
                 /* loginspector 模块特有样式（ADR-001：仅作用于本 section，不改 style.css） */
                 .li-flow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 11px 18px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); margin-bottom: 14px; font-size: 12.5px; color: var(--text-secondary); }
@@ -683,6 +759,7 @@
     </div>
 
     <script src="app.js"></script>
+    <script src="home.js"></script>
     <script src="loginspector.js"></script>
     <script src="disk.js"></script>
     <script src="appdata.js"></script>
