@@ -24,6 +24,7 @@ from perf_service import (
     handle_perf_stress_start, handle_perf_stress_status,
     handle_perf_stress_cancel, handle_perf_stress_export,
     handle_perf_hwinfo, handle_perf_temps, handle_perf_restart_admin,
+    handle_perf_app_config,
 )
 from log_service import (
     handle_log_access, handle_log_search,
@@ -75,6 +76,7 @@ ROUTES = {
     "/api/perf/stress-export": handle_perf_stress_export,
     "/api/perf/hwinfo": handle_perf_hwinfo,
     "/api/perf/temps": handle_perf_temps,
+    "/api/perf/app-config": handle_perf_app_config,
     "/api/perf/restart-admin": handle_perf_restart_admin,
     # 平台接入（EyeTerm 服务端联动）
     "/api/perf/uplink/status": handle_uplink_status,

@@ -2145,8 +2145,89 @@ def _nvidia_temp():
     return {"available": False, "reason": "no_nvidia_gpu"}
 
 
+# ---- 应用配置（客户端本地 %LOCALAPPDATA%/winhelper/app_config.json）----
+# 温度采样间隔（2026-09-08 用户决策：默认 300s=5min，静默运行降载；
+# 请求驱动 + 后端节流：间隔内复用缓存响应，不产生 nvidia-smi/LHM 子进程开销）
+
+_TEMPS_INTERVAL_DEFAULT = 300
+_TEMPS_INTERVAL_MIN = 30
+_TEMPS_INTERVAL_MAX = 3600
+_app_config_lock = threading.Lock()
+_temps_last = {"ts": 0.0, "resp": None}   # 上次完整温度响应（节流窗口内复用）
+
+
+def _app_config_path():
+    base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    d = os.path.join(base, "winhelper")
+    try:
+        os.makedirs(d, exist_ok=True)
+    except Exception:
+        pass
+    return os.path.join(d, "app_config.json")
+
+
+def _load_app_config():
+    cfg = {"temperature_interval_sec": _TEMPS_INTERVAL_DEFAULT}
+    try:
+        with open(_app_config_path(), "r", encoding="utf-8") as f:
+            saved = json.load(f)
+        if isinstance(saved, dict):
+            cfg.update({k: v for k, v in saved.items() if k in cfg})
+    except Exception:
+        pass
+    return cfg
+
+
+def _save_app_config(cfg):
+    path = _app_config_path()
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=1)
+    try:
+        os.replace(tmp, path)
+    except Exception:
+        pass
+
+
+def _clamp_temps_interval(v):
+    try:
+        v = int(float(v))
+    except (TypeError, ValueError):
+        return None
+    return max(_TEMPS_INTERVAL_MIN, min(_TEMPS_INTERVAL_MAX, v))
+
+
+def handle_perf_app_config(params: dict) -> dict:
+    """应用配置：无参=读取；带 temperature_interval_sec=保存（30~3600s，默认 300）。"""
+    cfg = _load_app_config()
+    raw = params.get("temperature_interval_sec") if params else None
+    if raw is not None and str(raw).strip() != "":
+        v = _clamp_temps_interval(raw)
+        if v is None:
+            return {"success": False,
+                    "error": "temperature_interval_sec 必须为数字（30~3600 秒）"}
+        cfg["temperature_interval_sec"] = v
+        with _app_config_lock:
+            _save_app_config(cfg)
+        _temps_last["ts"] = 0.0   # 间隔变更后允许立即重新采样一次
+    interval = _clamp_temps_interval(
+        cfg.get("temperature_interval_sec") or _TEMPS_INTERVAL_DEFAULT)
+    return {"success": True, "config": {
+        "temperature_interval_sec": interval,
+        "min": _TEMPS_INTERVAL_MIN, "max": _TEMPS_INTERVAL_MAX,
+        "default": _TEMPS_INTERVAL_DEFAULT}}
+
+
 def handle_perf_temps(params: dict) -> dict:
-    """温度轮询（前端建议 2s，不并入 1s snapshot）；任何失败优雅降级不报 error"""
+    """温度采样（请求驱动 + 后端节流：间隔内返回缓存，不跑 nvidia-smi/LHM 子进程）；
+    任何失败优雅降级不报 error"""
+    now = time.time()
+    last = _temps_last
+    if last["resp"] is not None and now - last["ts"] < _clamp_temps_interval(
+            _load_app_config().get("temperature_interval_sec") or _TEMPS_INTERVAL_DEFAULT):
+        cached = dict(last["resp"])
+        cached["cached"] = True
+        return cached
     try:
         admin = _is_admin()
         gpu = _nvidia_temp()
@@ -2163,7 +2244,10 @@ def handle_perf_temps(params: dict) -> dict:
         if cpu.get("available") and cpu.get("temp_c") is not None:
             _temps_cache["cpu_temp"] = cpu["temp_c"]
         _temps_cache["ts"] = time.time()
-        return {"success": True, "admin": admin, "cpu": cpu, "gpu": gpu}
+        resp = {"success": True, "admin": admin, "cpu": cpu, "gpu": gpu}
+        _temps_last["ts"] = time.time()
+        _temps_last["resp"] = dict(resp)
+        return resp
     except Exception as e:
         try:
             admin = _is_admin()

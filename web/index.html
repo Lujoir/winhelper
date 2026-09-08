@@ -749,6 +749,13 @@
                     <input id="perfUplinkServer" type="text" placeholder="服务端地址，如 http://172.17.5.215:18090" style="background:var(--panel2,#1d212e);color:var(--text-primary,#e8ebf2);border:1px solid var(--border-color,#262b3a);border-radius:8px;padding:6px 10px;font-size:12.5px;width:250px">
                     <input id="perfUplinkToken" type="password" placeholder="接入 Token（留空不修改）" autocomplete="new-password" style="background:var(--panel2,#1d212e);color:var(--text-primary,#e8ebf2);border:1px solid var(--border-color,#262b3a);border-radius:8px;padding:6px 10px;font-size:12.5px;width:180px">
                     <button class="btn btn-primary" id="perfUplinkSaveBtn" onclick="savePerfUplink(true)">保存并启用</button>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;margin-top:12px">
+                    <label style="font-size:12.5px;color:var(--text-secondary,#9aa0b0);min-width:110px">温度采样间隔（秒）</label>
+                    <input id="tempsIntervalInput" type="number" min="30" max="3600" step="30" value="300" style="background:var(--panel2,#1d212e);color:var(--text-primary,#e8ebf2);border:1px solid var(--border-color,#262b3a);border-radius:8px;padding:6px 10px;font-size:12.5px;width:120px">
+                    <button class="btn btn-primary" onclick="saveTempsInterval()">保存</button>
+                </div>
+                <div class="disk-note" style="margin-top:8px">CPU/GPU 温度按此间隔采样（默认 300 秒 = 5 分钟，范围 30~3600）。降低频率可显著减少静默运行时的资源占用；保存于本机 <b>%LOCALAPPDATA%\winhelper\app_config.json</b>。</div>
                     <button class="btn" id="perfUplinkRegBtn" onclick="registerPerfUplink()">立即注册</button>
                     <button class="btn" id="perfUplinkDisableBtn" onclick="savePerfUplink(false)">停用接入</button>
                 </div>

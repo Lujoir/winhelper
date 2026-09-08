@@ -47,8 +47,9 @@ var perfState = {
     stressTimer: null,     // 压测轮询（0.5s）
     webglActive: false,    // GPU WebGL 负载运行中
     stressDoneVisible: false,
+    tempsIntervalMs: 300000,  // 温度采样间隔（毫秒，默认 300s，设置可改）
     hwLoaded: false,       // 硬件规格已加载
-    tempsTimer: null,      // 温度轮询（2s）
+    tempsTimer: null,      // 温度轮询（间隔可配置，默认 300s）
     uplinkTimer: null,     // 平台接入状态轮询（10s）
 };
 
@@ -62,6 +63,7 @@ function initPerfTab() {
     perfStartTempsPolling();
     perfRestoreReport();
     perfLoadHwInfo();
+    perfLoadAppConfig();
     perfLoadUplink();
     perfStartUplinkPolling();
 }
@@ -84,13 +86,43 @@ function perfStopPolling() {
 function perfStartTempsPolling() {
     if (perfState.tempsTimer) return;
     perfTempsTick();
-    perfState.tempsTimer = setInterval(perfTempsTick, 2000);
+    perfState.tempsTimer = setInterval(perfTempsTick, perfState.tempsIntervalMs || 300000);
 }
 
 function perfStopTempsPolling() {
     if (perfState.tempsTimer) {
         clearInterval(perfState.tempsTimer);
         perfState.tempsTimer = null;
+    }
+}
+
+/* 读取应用配置（温度采样间隔），并回显设置弹窗输入框 */
+function perfLoadAppConfig() {
+    perfApi("/api/perf/app-config").then(function (d) {
+        if (d && d.success && d.config) {
+            perfState.tempsIntervalMs = (d.config.temperature_interval_sec || 300) * 1000;
+            var inp = document.getElementById("tempsIntervalInput");
+            if (inp) inp.value = d.config.temperature_interval_sec;
+            if (perfState.tempsTimer) { perfStopTempsPolling(); perfStartTempsPolling(); }
+        }
+    }).catch(function () {});
+}
+
+/* 保存温度采样间隔（30~3600 秒），成功后重启轮询 */
+async function saveTempsInterval() {
+    var inp = document.getElementById("tempsIntervalInput");
+    var v = parseInt(inp && inp.value, 10);
+    if (isNaN(v) || v < 30 || v > 3600) {
+        alert("采样间隔需在 30~3600 秒之间");
+        return;
+    }
+    var d = await perfApi("/api/perf/app-config?temperature_interval_sec=" + v);
+    if (d && d.success) {
+        perfState.tempsIntervalMs = (d.config.temperature_interval_sec) * 1000;
+        if (perfState.tempsTimer) { perfStopTempsPolling(); perfStartTempsPolling(); }
+        alert("已保存：温度每 " + d.config.temperature_interval_sec + " 秒采样一次");
+    } else {
+        alert("保存失败：" + ((d && d.error) || "未知错误"));
     }
 }
 
@@ -958,6 +990,7 @@ function openAppSettings() {
     if (!ov) return;
     ov.style.display = "flex";
     perfLoadUplink();
+    perfLoadAppConfig();
     perfStartUplinkPolling();
 }
 
