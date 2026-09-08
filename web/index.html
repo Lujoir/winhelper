@@ -33,6 +33,9 @@
         </div>
         <div class="nav-actions">
             <span class="mode-badge" id="modeBadge" title="终端类型：Windows（点击查看本机基础信息）" onclick="liShowSystemPanel()">Windows</span>
+            <button class="settings-btn" id="appSettingsBtn" title="设置" onclick="openAppSettings()">
+                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z" fill="currentColor"/></svg>
+            </button>
         </div>
     </nav>
 
@@ -575,25 +578,6 @@
                 <div class="disk-note" id="perfHwInfoPlaceholder">正在读取硬件规格…</div>
             </div>
 
-            <!-- 平台接入（EyeTerm 服务端联动） -->
-            <div class="section-card" data-collapse>
-                <div class="card-header">
-                    <h3>平台接入</h3>
-                    <span class="card-badge" id="perfUplinkBadge">未启用</span>
-                    <div class="disk-toolbar">
-                        <input id="perfUplinkServer" type="text" placeholder="服务端地址，如 http://172.17.5.215:18090"
-                            style="background:var(--panel2,#1d212e);color:var(--text-primary,#e8ebf2);border:1px solid var(--border-color,#262b3a);border-radius:8px;padding:6px 10px;font-size:12.5px;width:250px">
-                        <input id="perfUplinkToken" type="password" placeholder="接入 Token（留空不修改）" autocomplete="new-password"
-                            style="background:var(--panel2,#1d212e);color:var(--text-primary,#e8ebf2);border:1px solid var(--border-color,#262b3a);border-radius:8px;padding:6px 10px;font-size:12.5px;width:180px">
-                        <button class="btn btn-primary" id="perfUplinkSaveBtn" onclick="savePerfUplink(true)">保存并启用</button>
-                        <button class="btn" id="perfUplinkRegBtn" onclick="registerPerfUplink()">立即注册</button>
-                        <button class="btn" id="perfUplinkDisableBtn" onclick="savePerfUplink(false)">停用接入</button>
-                    </div>
-                </div>
-                <div class="perf-rec-status" id="perfUplinkStatus"><span>状态 <b>读取中…</b></span></div>
-                <div class="disk-note">接入观枢终端平台（EyeTerm）服务端后，本终端将注册资产信息并按 30s 心跳保持在线，随心跳上报性能指标快照；平台可按需下发网络测试（iperf3 已内置）、网络探测等命令。接入 Token 仅保存在本机 <b>%LOCALAPPDATA%\winhelper\uplink_config.json</b>，不会上传到任何其他位置，也不在此回显。</div>
-            </div>
-
             <!-- 实时指标 -->
             <div class="section-card" data-collapse>
                 <div class="card-header">
@@ -663,6 +647,40 @@
             </div>
         </div>
     </main>
+
+    <!-- 设置（中心平台配置） -->
+    <style>
+        .app-settings-overlay { display: none; position: fixed; inset: 0; background: rgba(6,8,12,.72); z-index: 998; align-items: center; justify-content: center; }
+        .app-settings-panel { width: min(760px, 92vw); max-height: 84vh; overflow: auto; background: var(--bg-card, #171a23); border: 1px solid var(--border-color, #262b3a); border-radius: 12px; box-shadow: 0 12px 44px rgba(0,0,0,.55); }
+        .app-settings-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border-color, #262b3a); position: sticky; top: 0; background: var(--bg-card, #171a23); z-index: 1; }
+        .app-settings-head h3 { font-size: 15px; margin: 0; }
+        .app-settings-close { background: none; border: none; color: var(--text-secondary, #8a93a5); font-size: 22px; cursor: pointer; line-height: 1; }
+        .app-settings-close:hover { color: var(--text-primary, #e8ebf2); }
+        .app-settings-body { padding: 14px 18px 18px; }
+        .settings-btn { background: none; border: 1px solid var(--border-color, #262b3a); border-radius: 8px; color: var(--text-secondary, #8a93a5); padding: 5px 7px; cursor: pointer; display: inline-flex; align-items: center; }
+        .settings-btn:hover { color: var(--accent-cyan, #4fc3f7); border-color: var(--accent-cyan, #4fc3f7); }
+        .uplink-toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+    </style>
+    <div class="app-settings-overlay" id="appSettingsOverlay">
+        <div class="app-settings-panel">
+            <div class="app-settings-head">
+                <h3>设置 · 中心平台配置</h3>
+                <button class="app-settings-close" onclick="closeAppSettings()" title="关闭">×</button>
+            </div>
+            <div class="app-settings-body">
+                <div class="uplink-toolbar">
+                    <span class="card-badge" id="perfUplinkBadge">未启用</span>
+                    <input id="perfUplinkServer" type="text" placeholder="服务端地址，如 http://172.17.5.215:18090" style="background:var(--panel2,#1d212e);color:var(--text-primary,#e8ebf2);border:1px solid var(--border-color,#262b3a);border-radius:8px;padding:6px 10px;font-size:12.5px;width:250px">
+                    <input id="perfUplinkToken" type="password" placeholder="接入 Token（留空不修改）" autocomplete="new-password" style="background:var(--panel2,#1d212e);color:var(--text-primary,#e8ebf2);border:1px solid var(--border-color,#262b3a);border-radius:8px;padding:6px 10px;font-size:12.5px;width:180px">
+                    <button class="btn btn-primary" id="perfUplinkSaveBtn" onclick="savePerfUplink(true)">保存并启用</button>
+                    <button class="btn" id="perfUplinkRegBtn" onclick="registerPerfUplink()">立即注册</button>
+                    <button class="btn" id="perfUplinkDisableBtn" onclick="savePerfUplink(false)">停用接入</button>
+                </div>
+                <div class="perf-rec-status" id="perfUplinkStatus"><span>状态 <b>读取中…</b></span></div>
+                <div class="disk-note">接入观枢终端平台（EyeTerm）服务端后，本终端将注册资产信息并按 30s 心跳保持在线，随心跳上报性能指标快照；平台可按需下发网络测试（iperf3 已内置）、网络探测等命令。接入 Token 仅保存在本机 <b>%LOCALAPPDATA%\winhelper\uplink_config.json</b>，不会上传到任何其他位置，也不在此回显。</div>
+            </div>
+        </div>
+    </div>
 
     <script src="app.js"></script>
     <script src="loginspector.js"></script>

@@ -948,10 +948,22 @@ function perfStopUplinkPolling() {
 }
 
 async function perfTickUplink() {
-    var sec = document.getElementById("tab-perf");
-    if (!sec || !sec.classList.contains("active")) { perfStopUplinkPolling(); return; }
+    // 平台接入已迁至全局设置弹窗：状态轮询不再依赖性能分析页签激活
     var d = await perfApi("/api/perf/uplink/status");
     if (d && d.success) renderPerfUplink(d.uplink || {});
+}
+
+function openAppSettings() {
+    var ov = document.getElementById("appSettingsOverlay");
+    if (!ov) return;
+    ov.style.display = "flex";
+    perfLoadUplink();
+    perfStartUplinkPolling();
+}
+
+function closeAppSettings() {
+    var ov = document.getElementById("appSettingsOverlay");
+    if (ov) ov.style.display = "none";
 }
 
 async function perfLoadUplink() {
