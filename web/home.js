@@ -306,6 +306,8 @@ function hmNetCard(a, d) {
     html += hmRow("DNS", (a.dns && a.dns.length) ? hmEscapeHtml(a.dns.join("，")) : "--");
     html += hmRow("MAC", hmDash(a.mac));
     html += hmRow("速率", hmDash(a.speed));
+    html += hmRow("DHCP", (a.dhcp === null || a.dhcp === undefined)
+        ? "--" : (a.dhcp ? "是" : "否"));
     html += '</div></div>';
     return html;
 }

@@ -10,6 +10,7 @@
 """
 
 import json
+import re
 import subprocess
 import threading
 import time
@@ -88,12 +89,136 @@ def _collect_powershell():
                 "ipv4": [str(x) for x in (a.get("ipv4") or [])],
                 "plen": [int(x) for x in (a.get("plen") or []) if str(x).strip().lstrip("-").isdigit()],
                 "gw": a.get("gw") or None,
+                "dhcp": None,
                 "dns": [str(x) for x in (a.get("dns") or [])
                         if x not in (None, "", "None")],
             })
         return adapters or None
     except Exception:
         return None
+
+
+def _collect_ipconfig():
+    """解析 ipconfig /all → {适配器名: {ipv4, plen, gw, dns, dhcp}}。
+
+    权威数据源（2026-09-08 用户指定）：Get-NetIPConfiguration 的 DNSServer
+    在部分环境取不到值；ipconfig /all 输出最完整（含多行 DNS 续行）。
+    兼容中英文字段标签与中英文系统；输出为 OEM 代码页（中文系统 GBK）。"""
+    try:
+        r = subprocess.run(["ipconfig", "/all"], capture_output=True,
+                           timeout=15, creationflags=_NO_WINDOW)
+        if r.returncode != 0 or not r.stdout:
+            return {}
+        raw = r.stdout
+        text = None
+        for enc in ("gbk", "utf-8"):
+            try:
+                text = raw.decode(enc)
+                break
+            except UnicodeDecodeError:
+                continue
+        if text is None:
+            text = raw.decode("utf-8", "replace")
+    except Exception:
+        return {}
+
+    result = {}
+    info = None
+
+    def _clean(v):
+        v = v.strip()
+        for tag in ("(Preferred)", "(首选)", "(Duplicate)", "(重复)"):
+            v = v.replace(tag, "").strip()
+        return v
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        low = stripped.lower()
+        # 适配器节头：以冒号结尾、含 adapter/适配器、非字段行
+        if (line.rstrip().endswith(":") and ". ." not in stripped
+                and ("adapter" in low or "适配器" in stripped)):
+            name = stripped.rstrip(":").strip()
+            for kw in ("adapter", "适配器"):
+                i = name.lower().rfind(kw)
+                if i >= 0:
+                    name = name[i + len(kw):].strip()
+                    break
+            info = {"ipv4": [], "plen": [], "gw": None, "dns": [],
+                    "dhcp": None, "_last": None}
+            result[name] = info
+            continue
+        if info is None:
+            continue
+        # 值续行（深缩进、无点号分隔符）→ 追加到上一列表字段（多行 DNS 等）
+        if ". ." not in line and (len(line) - len(line.lstrip())) >= 25:
+            last = info["_last"]
+            if last:
+                v = _clean(stripped)
+                if v and v not in info[last]:
+                    info[last].append(v)
+            continue
+        # 字段行：key . . . : value
+        pos = line.find(": ")
+        if pos < 0 or ". ." not in line:
+            continue
+        key = line[:pos]
+        val = _clean(line[pos + 2:])
+        k = key.replace(" ", "").replace(".", "")
+        tgt = None
+        if k in ("DNSServers", "DNS服务器"):
+            tgt = "dns"
+        elif k in ("DefaultGateway", "默认网关"):
+            tgt = "gw"
+        elif k in ("IPv4Address", "IPv4地址"):
+            tgt = "ipv4"
+        elif k in ("SubnetMask", "子网掩码"):
+            tgt = "plen"
+        elif k in ("DHCPEnabled", "DHCP已启用"):
+            info["dhcp"] = val in ("Yes", "是")
+            info["_last"] = None
+            continue
+        info["_last"] = tgt
+        if tgt == "gw":
+            info["gw"] = val or None
+        elif tgt is not None and val:
+            info[tgt].append(val)
+
+    out = {}
+    for name, info in result.items():
+        info.pop("_last", None)
+        ipv4, plen = [], []
+        for ip in info["ipv4"]:
+            if "/" in ip:
+                addr, _, p2 = ip.partition("/")
+                ipv4.append(addr)
+                try:
+                    plen.append(int(p2))
+                except Exception:
+                    pass
+            else:
+                ipv4.append(ip)
+        out[name] = {"ipv4": ipv4, "plen": plen, "gw": info["gw"],
+                     "dns": info["dns"], "dhcp": info["dhcp"]}
+    return out
+
+
+def _merge_ipconfig(adapters, ipmap):
+    """ipconfig 权威值补全 PowerShell/psutil 采集的空缺字段（IPv4/掩码/网关/DNS），并附 DHCP。"""
+    for a in adapters:
+        info = ipmap.get((a.get("name") or "").strip())
+        if not info:
+            continue
+        if not a.get("ipv4") and info["ipv4"]:
+            a["ipv4"] = info["ipv4"]
+            a["plen"] = info["plen"]
+        if not a.get("gw") and info["gw"]:
+            a["gw"] = info["gw"]
+        if not a.get("dns") and info["dns"]:
+            a["dns"] = info["dns"]
+        a["dhcp"] = info["dhcp"]
+    return adapters
 
 
 def _collect_psutil():
@@ -113,6 +238,7 @@ def _collect_psutil():
             "status": ("Up" if (st and st.isup) else "Down"),
             "mac": "--",
             "speed": (("%.0f Mbps" % st.speed) if (st and st.speed and st.speed > 0) else "--"),
+            "dhcp": None,
             "ipv4": [], "plen": [], "gw": None, "dns": [],
         }
         for a in ifs:
@@ -148,6 +274,8 @@ def handle_home_network(params=None):
     if adapters is None:
         adapters = _collect_psutil()
         source = "psutil"
+    if adapters:
+        adapters = _merge_ipconfig(adapters, _collect_ipconfig())
     if adapters is None:
         return {"success": False, "error": "无法获取网络配置（PowerShell 与 psutil 均不可用）"}
     with _cache_lock:
