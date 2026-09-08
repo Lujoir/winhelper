@@ -25,6 +25,7 @@ _ps_cache = {"ts": 0.0, "data": None}
 _cache_lock = threading.Lock()
 
 _PS_SCRIPT = (
+    "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;"
     "$ErrorActionPreference='SilentlyContinue';"
     "$out=@();"
     "Get-NetAdapter | Sort-Object -Property Status -Descending | ForEach-Object {"
@@ -44,16 +45,32 @@ _PS_SCRIPT = (
 )
 
 
+def _decode_ps_output(raw):
+    """PS 输出解码：优先 UTF-8（脚本已设 OutputEncoding），失败退系统 ANSI(GBK)。"""
+    for enc in ("utf-8-sig", "utf-8", "gbk"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", "replace")
+
+
 def _collect_powershell():
-    """PowerShell 采集：失败返回 None（调用方降级 psutil）。"""
+    """PowerShell 采集：失败返回 None（调用方降级 psutil）。
+
+    编码红线：PS 5.1 默认输出 ANSI，中文网卡名按 UTF-8 解码会变 U+FFFD
+    （2026-09-08 主页网卡名乱码教训）——脚本内强制 OutputEncoding=UTF8，
+    解码侧再以 utf-8-sig/utf-8/gbk 三级兜底。"""
     try:
         r = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", _PS_SCRIPT],
-            capture_output=True, text=True, timeout=20,
-            encoding="utf-8", errors="replace", creationflags=_NO_WINDOW)
-        if r.returncode != 0 or not r.stdout or not r.stdout.strip():
+            capture_output=True, timeout=20, creationflags=_NO_WINDOW)
+        if r.returncode != 0 or not r.stdout:
             return None
-        data = json.loads(r.stdout)
+        text = _decode_ps_output(r.stdout)
+        if not text.strip():
+            return None
+        data = json.loads(text)
         if isinstance(data, dict):
             data = [data]
         if not isinstance(data, list):

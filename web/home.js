@@ -81,7 +81,9 @@ function hmDash(v) {
 // ===================== 数据加载 =====================
 function hmLoadStatic() {
     hmApiFetch("/api/perf/hwinfo").then(function (d) {
-        if (d && d.success !== false) { hmState.hwinfo = d; }
+        // 真实接口结构为 {success, hwinfo:{...}}（loginspector 本机信息面板同源）；
+        // 兼容顶层结构，防止字段漂移
+        if (d && d.success !== false) { hmState.hwinfo = d.hwinfo || d; }
         hmRenderStatic();
     }).catch(function () { hmRenderStatic(); });
     hmApiFetch("/api/perf/uplink/status").then(function (d) {

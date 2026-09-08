@@ -21,7 +21,7 @@ MAIN_INDEX = ROOT / "web" / "index.html"
 
 STUB_JS = r"""
 window.__stubCalls = [];
-window.__stubHwinfo = {
+window.__stubHwinfo = { success: true, hwinfo: {
     source: "cim",
     hostname: "STUB-PC",
     os: { caption: "Stub Windows 11 Pro", version: "10.0.26200", build: "26200", text: "Stub Windows 11 Pro" },
@@ -33,7 +33,7 @@ window.__stubHwinfo = {
           volumes: ["C:\\"], system: true } ],
     gpu: [
         { name: "Stub GeForce RTX 4090", dedicated: true, vram_text: "24 GB", driver: "566.36", resolution: "3840x2160" } ]
-};
+} };
 window.__stubSnapshot = {
     success: true, ts: 1,
     cpu: { percent: 23.5, count: 32, freq_mhz: 3500 },
