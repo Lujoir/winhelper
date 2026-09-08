@@ -47,7 +47,7 @@ window.__stubTemps = { success: true, admin: false,
     cpu: { available: false, temp_c: null, reason: "not_admin" },
     gpu: { available: true, temp_c: 46.5, reason: null } };
 window.__stubUplink = { success: true, uplink: {
-    enabled: true, running: true, server_url: "http://172.17.5.215:18090",
+    enabled: true, running: true, server_url: "http://127.0.0.1:18090",
     terminal_id: "WIN-STUB-PC", state: "connected", registered: true,
     last_hb_ts: 1788870000, last_error: null, has_token: true,
     executed_count: 1, iperf3_available: true, heartbeat_interval: 30, client_version: "4.0.0" } };
@@ -96,7 +96,7 @@ def run_scenario_1(page):
     check("终端配置·CPU", "Stub CPU i9-13900K" in os_txt, os_txt[:80])
     up_txt = page.inner_text("#homeUplinkBody")
     check("终端配置·平台对接已连接", "已连接" in up_txt and "WIN-STUB-PC" in up_txt, up_txt[:80])
-    check("终端配置·服务地址", "172.17.5.215" in up_txt, up_txt[:80])
+    check("终端配置·服务地址", "127.0.0.1" in up_txt, up_txt[:80])
 
     live_txt = page.inner_text("#homeLiveBody")
     check("硬件·CPU使用率", "CPU 使用率" in live_txt and "23.5%" in live_txt, live_txt[:80])
