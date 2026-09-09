@@ -72,6 +72,12 @@ function initNetDoctorTab() {
     ndLoadConfig();
     ndLoadUplink();
     ndLoadHistory();
+    /* 设置弹窗：打开时渲染网络排障节点维护区块（与既有 onclick 共存） */
+    var sb = document.getElementById("appSettingsBtn");
+    if (sb && !sb.dataset.ndHook) {
+        sb.dataset.ndHook = "1";
+        sb.addEventListener("click", ndRenderSettings);
+    }
 }
 
 /* DOM 就绪：独立页默认激活时自动初始化（主应用由 switchTab 守卫调用） */
@@ -113,16 +119,10 @@ function ndLoadUplink() {
 function ndRenderUplink() {
     var el = document.getElementById("ndUplinkBody");
     if (!el) { return; }
-    var u = ndState.uplink;
-    var m = u ? (ndUplinkMap[u.state] || { text: u.state || "--", cls: "nd-muted" })
-              : { text: "状态不可用", cls: "nd-muted" };
-    var html = ndBadge(m.text, m.cls);
-    html += '<span class="nd-hint">　终端 ' + ndEscapeHtml(u && u.terminal_id ? u.terminal_id : "--") +
-        ' ｜ iperf3 ' + (u && u.iperf3_available ? "已内置" : "不可用") +
-        (u && u.server_url ? ' ｜ ' + ndEscapeHtml(u.server_url) : "") + '</span>';
-    el.innerHTML = html;
-    /* 依赖中心的功能置灰/解灰（如实标注，不虚构可用） */
+    /* 二元判定：已注册+心跳成功（state=connected）→ 已连接；其余一律未连接（无中间态） */
     var on = ndConnected();
+    el.innerHTML = ndBadge(on ? "已连接" : "未连接", on ? "nd-ok" : "nd-muted");
+    /* 依赖中心的功能置灰/解灰（如实标注，不虚构可用） */
     var ids = ["ndConflictBtn", "ndStressBtn"];
     for (var i = 0; i < ids.length; i++) {
         var b = document.getElementById(ids[i]);
@@ -231,6 +231,50 @@ function ndStartConfigCheck() {
     });
 }
 
+function ndAdapterCard(a) {
+    /* 单网卡卡片：权威配置明细（与主页 ipconfig /all 口径一致）+ 核查结论行 */
+    var head = '<div class="nd-adapter-head"><b>' + ndEscapeHtml(a.name) + '</b>';
+    head += a.active ? ndBadge("活动", "nd-info") : ndBadge("非活动", "nd-muted");
+    if (a.tunnel) { head += ndBadge("隧道", "nd-muted"); }
+    head += '</div>';
+    var meta = '<div class="nd-kv"><span class="k">描述</span><span>' + ndEscapeHtml(a.desc || "--") + '</span></div>';
+    if (a.mac) { meta += '<div class="nd-kv"><span class="k">MAC</span><span>' + ndEscapeHtml(a.mac) + '</span></div>'; }
+    meta += '<div class="nd-kv"><span class="k">IPv4</span><span>' +
+        ndEscapeHtml((a.ipv4 && a.ipv4.length) ? a.ipv4.join("，") : "--") + '</span></div>';
+    meta += '<div class="nd-kv"><span class="k">子网掩码</span><span>' +
+        ndEscapeHtml((a.subnet && a.subnet.length) ? a.subnet.join("，") : "--") + '</span></div>';
+    meta += '<div class="nd-kv"><span class="k">IPv6</span><span>' +
+        ndEscapeHtml((a.ipv6 && a.ipv6.length) ? a.ipv6.join("，") : "--") + '</span></div>';
+    meta += '<div class="nd-kv"><span class="k">DHCP 启用</span><span>' +
+        (a.dhcp === true ? "是" : (a.dhcp === false ? "否" : "--")) + '</span></div>';
+    meta += '<div class="nd-kv"><span class="k">DHCP 服务器</span><span>' + ndEscapeHtml(a.dhcp_server || "--") + '</span></div>';
+    meta += '<div class="nd-kv"><span class="k">租约获取</span><span>' + ndEscapeHtml(a.lease_obtained || "--") + '</span></div>';
+    meta += '<div class="nd-kv"><span class="k">租约到期</span><span>' + ndEscapeHtml(a.lease_expires || "--") + '</span></div>';
+    meta += '<div class="nd-kv"><span class="k">DNS 服务器</span><span>' +
+        ndEscapeHtml((a.dns && a.dns.length) ? a.dns.join("，") : "--") + '</span></div>';
+    meta += '<div class="nd-kv"><span class="k">网关</span><span>' +
+        ndEscapeHtml((a.gateway && a.gateway.length) ? a.gateway.join("，") : "--") + '</span></div>';
+    meta += '<div class="nd-kv"><span class="k">WINS</span><span>' +
+        ndEscapeHtml((a.wins && a.wins.length) ? a.wins.join("，") : "--") + '</span></div>';
+    var rows = "";
+    for (var j = 0; j < (a.checks || []).length; j++) {
+        var c = a.checks[j];
+        rows += '<div class="nd-check-row">' + ndStatusBadge(c.status)
+            + '<b>' + ndEscapeHtml(c.item) + '</b>'
+            + '<span class="nd-hint">' + ndEscapeHtml(c.reason || "") + '</span></div>';
+    }
+    return '<div class="nd-adapter' + (a.active ? "" : " nd-dim") + '">' + head + meta + rows + '</div>';
+}
+
+function ndToggleInactive() {
+    var wrap = document.getElementById("ndInactiveWrap");
+    var btn = document.getElementById("ndInactiveToggle");
+    if (!wrap || !btn) { return; }
+    var show = wrap.style.display === "none";
+    wrap.style.display = show ? "block" : "none";
+    btn.textContent = show ? "收起非活动网卡" : btn.getAttribute("data-label") || "查看非活动网卡";
+}
+
 function ndRenderConfig(r) {
     var el = document.getElementById("ndConfBody");
     if (!r || r.success === false) {
@@ -242,28 +286,24 @@ function ndRenderConfig(r) {
     ndSetTip("ndConfSummary", "");
     var badge = document.getElementById("ndConfBadge");
     if (badge) { badge.innerHTML = ndBadge(overall.text || "--", cls); }
-    var html = "";
-    for (var i = 0; i < (r.adapters || []).length; i++) {
-        var a = r.adapters[i];
-        var head = '<div class="nd-adapter-head"><b>' + ndEscapeHtml(a.name) + '</b>';
-        head += a.active ? ndBadge("活动", "nd-info") : ndBadge("非活动", "nd-muted");
-        if (a.tunnel) { head += ndBadge("隧道", "nd-muted"); }
-        head += '</div>';
-        var meta = '<div class="nd-kv"><span class="k">描述</span><span>' + ndEscapeHtml(a.desc || "--") + '</span></div>';
-        if (a.ipv4 && a.ipv4.length) {
-            meta += '<div class="nd-kv"><span class="k">IPv4</span><span>' + ndEscapeHtml(a.ipv4.join("，")) + '</span></div>';
-        }
-        if (a.mac) { meta += '<div class="nd-kv"><span class="k">MAC</span><span>' + ndEscapeHtml(a.mac) + '</span></div>'; }
-        var rows = "";
-        for (var j = 0; j < a.checks.length; j++) {
-            var c = a.checks[j];
-            rows += '<div class="nd-check-row">' + ndStatusBadge(c.status)
-                + '<b>' + ndEscapeHtml(c.item) + '</b>'
-                + '<span class="nd-hint">' + ndEscapeHtml(c.reason || "") + '</span></div>';
-        }
-        html += '<div class="nd-adapter' + (a.active ? "" : " nd-dim") + '">' + head + meta + rows + '</div>';
+    var adapters = r.adapters || [];
+    var actives = [], inactives = [];
+    for (var i = 0; i < adapters.length; i++) {
+        (adapters[i].active ? actives : inactives).push(adapters[i]);
     }
-    if (!html) { html = '<div class="nd-empty">未解析到网卡信息</div>'; }
+    var html = "";
+    for (var k = 0; k < actives.length; k++) { html += ndAdapterCard(actives[k]); }
+    if (!actives.length) {
+        html = '<div class="nd-empty">未发现活动网卡</div>';
+    }
+    if (inactives.length) {
+        var label = "查看 " + inactives.length + " 个非活动网卡";
+        html += '<button class="nd-btn" id="ndInactiveToggle" data-label="' + ndEscapeHtml(label)
+            + '" onclick="ndToggleInactive()">' + ndEscapeHtml(label) + '</button>';
+        html += '<div id="ndInactiveWrap" style="display:none">';
+        for (var m = 0; m < inactives.length; m++) { html += ndAdapterCard(inactives[m]); }
+        html += '</div>';
+    }
     el.innerHTML = html;
 }
 
@@ -602,4 +642,116 @@ function ndOpenStressLocation() {
     if (!p) { return; }
     ndApiFetch("/api/disk/open-location?path=" + encodeURIComponent(p))
         .catch(function () {});
+}
+
+/* ===================== 系统设置 · 网络排障节点维护 ===================== */
+
+var ND_DYNAMIC_KEYS = { gateway: 1, center: 1 };   /* 目标动态获取，不可编辑 */
+
+function ndRenderSettings() {
+    var host = document.getElementById("ndSettingsHost");
+    if (!host) { return; }
+    var rows = "";
+    for (var i = 0; i < ndState.nodes.length; i++) {
+        var n = ndState.nodes[i];
+        var dyn = !!ND_DYNAMIC_KEYS[n.key];
+        rows += '<tr data-ndidx="' + i + '">'
+            + '<td><input class="nd-input nd-set-name" value="' + ndEscapeHtml(n.name) + '" style="width:170px"></td>'
+            + '<td><select class="nd-select nd-set-method">'
+            + ['ping', 'nslookup', 'ntp'].map(function (m) {
+                return '<option value="' + m + '"' + (n.method === m ? " selected" : "") + '>' +
+                    (m === "ping" ? "ICMP ping" : (m === "nslookup" ? "DNS 解析" : "NTP 校时")) + '</option>';
+              }).join("")
+            + '</select></td>'
+            + '<td>' + (dyn
+                ? '<input class="nd-input" value="（动态获取）" disabled style="width:150px">'
+                : '<input class="nd-input nd-set-target" value="' + ndEscapeHtml(n.target || "") + '" placeholder="IP 或域名" style="width:150px">')
+            + '</td>'
+            + '<td><input class="nd-input nd-set-probe" value="' + ndEscapeHtml(n.probe || "") + '" placeholder="如 baidu.com" style="width:110px"></td>'
+            + '<td><button class="nd-btn" onclick="ndDelSettingRow(' + i + ')">删除</button></td></tr>';
+    }
+    var dnsVal = (ndState.expectedDns || []).join(", ");
+    host.innerHTML =
+        '<div class="nd-set-block" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-color,#262b3a)">'
+        + '<b style="font-size:13px">网络排障</b>'
+        + '<div class="nd-params" style="margin:8px 0 6px"><label>DNS 基线（逗号分隔，空=仅提示未配置）</label>'
+        + '<input class="nd-input" id="ndSetDns" value="' + ndEscapeHtml(dnsVal) + '" style="width:240px"></div>'
+        + '<table class="nd-table"><tr><th>节点名称</th><th>方式</th><th>目标</th><th>探测参数</th><th>操作</th></tr>'
+        + rows + '</table>'
+        + '<div class="nd-params" style="margin-top:6px">'
+        + '<button class="nd-btn" onclick="ndAddSettingRow()">＋ 添加节点</button>'
+        + '<button class="nd-btn" onclick="ndResetNetSettings()">恢复默认</button>'
+        + '<button class="nd-btn primary" id="ndSettingsSaveBtn" onclick="ndSaveNetSettings()">保存</button>'
+        + '<span class="nd-hint" id="ndSettingsTip">网关与中心服务器目标为动态获取，不可编辑</span>'
+        + '</div></div>';
+}
+
+function ndDelSettingRow(idx) {
+    if (idx >= 0 && idx < ndState.nodes.length) {
+        ndState.nodes.splice(idx, 1);
+        ndRenderSettings();
+    }
+}
+
+function ndAddSettingRow() {
+    ndState.nodes.push({ key: "custom-" + Date.now(), name: "新节点", method: "ping", target: "" });
+    ndRenderSettings();
+}
+
+function ndSaveNetSettings() {
+    var host = document.getElementById("ndSettingsHost");
+    var tip = document.getElementById("ndSettingsTip");
+    if (!host) { return; }
+    var trs = host.querySelectorAll("tr[data-ndidx]");
+    var nodes = [];
+    for (var i = 0; i < trs.length; i++) {
+        var tr = trs[i];
+        var n = ndState.nodes[Number(tr.getAttribute("data-ndidx"))] || {};
+        var nameEl = tr.querySelector(".nd-set-name");
+        var methodEl = tr.querySelector(".nd-set-method");
+        var targetEl = tr.querySelector(".nd-set-target");
+        var probeEl = tr.querySelector(".nd-set-probe");
+        var node = {
+            key: n.key || ("custom-" + i),
+            name: (nameEl && nameEl.value || "").trim(),
+            method: (methodEl && methodEl.value) || "ping",
+            target: (targetEl && targetEl.value || "").trim(),
+            probe: (probeEl && probeEl.value || "").trim()
+        };
+        if (!node.name) { node.name = "节点" + (i + 1); }
+        nodes.push(node);
+    }
+    var dnsRaw = (document.getElementById("ndSetDns") || {}).value || "";
+    var dns = dnsRaw.split(/[,，;；\s]+/).filter(function (s) { return !!s; });
+    if (tip) { tip.textContent = "保存中…"; }
+    ndApiFetch("/api/netdoctor/config?nodes_json=" + encodeURIComponent(JSON.stringify(nodes))
+        + "&expected_dns_json=" + encodeURIComponent(JSON.stringify(dns)))
+        .then(function (d) {
+            if (!d || d.success === false) {
+                if (tip) { tip.textContent = "保存失败：" + ((d && d.error) || "未知"); }
+                return;
+            }
+            ndState.nodes = d.nodes || nodes;
+            ndState.expectedDns = d.expected_dns || dns;
+            ndRenderNodes();
+            ndRenderSettings();
+            if (tip) { tip.textContent = "已保存，连通性检测即时生效"; }
+        }).catch(function (e) {
+            if (tip) { tip.textContent = "保存失败：" + String(e); }
+        });
+}
+
+function ndResetNetSettings() {
+    var tip = document.getElementById("ndSettingsTip");
+    ndApiFetch("/api/netdoctor/config?reset=1").then(function (d) {
+        if (d && d.success !== false) {
+            ndState.nodes = d.nodes || [];
+            ndState.expectedDns = d.expected_dns || [];
+            ndRenderNodes();
+            ndRenderSettings();
+            if (tip) { tip.textContent = "已恢复出厂节点表"; }
+        } else if (tip) {
+            tip.textContent = "恢复失败：" + ((d && d.error) || "未知");
+        }
+    }).catch(function (e) { if (tip) { tip.textContent = "恢复失败：" + String(e); } });
 }

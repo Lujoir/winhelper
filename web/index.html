@@ -909,6 +909,8 @@
                 </div>
                 <div class="perf-rec-status" id="perfUplinkStatus"><span>状态 <b>读取中…</b></span></div>
                 <div class="disk-note">接入观枢终端平台（EyeTerm）服务端后，本终端将注册资产信息并按 30s 心跳保持在线，随心跳上报性能指标快照；平台可按需下发网络测试（iperf3 已内置）、网络探测等命令。接入 Token 仅保存在本机 <b>%LOCALAPPDATA%\winhelper\uplink_config.json</b>，不会上传到任何其他位置，也不在此回显。</div>
+                <!-- 网络排障节点维护（net-doctor：渲染于 web/netdoctor.js ndRenderSettings） -->
+                <div id="ndSettingsHost"></div>
             </div>
         </div>
     </div>

@@ -327,6 +327,8 @@ def _ping_summary(host, count=4, timeout_ms=2000):
 
 
 _RE_IP = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b")
+# IPv6 token：至少含一个冒号的十六进制段组，容许 %zone 后缀（fe80::1%12）
+_RE_IPV6 = re.compile(r"\b([0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{0,4}){2,7}%?\d*)\b")
 
 
 def _nslookup_probe(server, domain):
@@ -350,30 +352,58 @@ def _nslookup_probe(server, domain):
     return res
 
 
-_RE_STRIPCHART = re.compile(r"o:\s*([+-]?\d+(?:\.\d+)?)s")
+# w32tm /stripchart 样本行两种实测格式：
+#   中文系统： 10:37:19, +01.0620337s   （HH:mm:ss, ±SS.sssssss，秒可两位数；error 行同头但无样本）
+#   英文系统： 17:00:01 d:+00.0012s o:-00.0123s  [*  |]
+_NTP_OFFSET_WARN_S = 0.5        # |offset| 均值阈值（秒）：>0.5s 判「偏差过大 · 需校时」
+_RE_STRIP_COMMA = re.compile(r"^\s*\d{1,2}:\d{2}:\d{2},\s*([+-]\d+(?:\.\d+)?)s", re.MULTILINE)
+_RE_STRIP_O = re.compile(r"o:\s*([+-]?\d+(?:\.\d+)?)s")
 _RE_STRIP_ERR = re.compile(r"error\s*:\s*0x[0-9A-Fa-f]+")
 
 
+def _parse_stripchart(out):
+    """w32tm 输出 → (offset 样本秒值列表, error 行数)。中英文头/空行/error 行容错跳过。
+    优先匹配逗号格式（中文系统实测），无样本时兜底 o: 格式。"""
+    vals = [float(m.group(1)) for m in _RE_STRIP_COMMA.finditer(out)]
+    if not vals:
+        vals = [float(m.group(1)) for m in _RE_STRIP_O.finditer(out)]
+    errs = len(_RE_STRIP_ERR.findall(out))
+    return vals, errs
+
+
+def _ntp_result(vals, errs, out=""):
+    """样本值（秒）→ 三态判定结果（纯函数，可单测）。
+    |均值|≤0.5s → ok（正常）；>0.5s → warn（偏差过大 · 需校时）；无样本 → err+错误码。"""
+    res = {"ok": False, "status": "err", "offset_ms": None, "max_abs_ms": None,
+           "samples": len(vals), "err_samples": errs, "detail": "", "error": None}
+    if vals:
+        avg = sum(vals) / len(vals)
+        max_abs = max(abs(v) for v in vals)
+        res["ok"] = True
+        res["offset_ms"] = round(avg * 1000.0, 1)
+        res["max_abs_ms"] = round(max_abs * 1000.0, 1)
+        if abs(avg) > _NTP_OFFSET_WARN_S:
+            res["status"] = "warn"
+            res["detail"] = "偏差 %+.1fms · 需校时（%d 样本）" % (res["offset_ms"], len(vals))
+        else:
+            res["status"] = "ok"
+            res["detail"] = "偏移 %+.1fms（%d 样本）" % (res["offset_ms"], len(vals))
+        return res
+    low = (out or "").lower()
+    if "timeout" in low or "无法访问" in out or "超时" in out or errs:
+        res["error"] = "ntp_timeout"
+    else:
+        res["error"] = "ntp_no_samples"
+    res["detail"] = res["error"]
+    return res
+
+
 def _ntp_probe(host, samples=5):
-    """w32tm /stripchart /computer:<host> /dataonly /samples:<n>：解析 offset 样本。
-    返回 {ok, offset_ms(样本均值), samples, err_samples, error}。"""
+    """w32tm /stripchart /computer:<host> /dataonly /samples:<n>：真实执行 + 判定。"""
     rc, out = _run(["w32tm", "/stripchart", "/computer:" + host, "/dataonly",
                     "/samples:" + str(samples)], timeout=samples * 5 + 20)
-    res = {"ok": False, "offset_ms": None, "samples": 0, "err_samples": 0, "error": None}
-    offs = [float(m.group(1)) * 1000.0 for m in _RE_STRIPCHART.finditer(out)]
-    errs = len(_RE_STRIP_ERR.findall(out))
-    res["samples"] = len(offs)
-    res["err_samples"] = errs
-    if offs:
-        res["ok"] = True
-        res["offset_ms"] = round(sum(offs) / len(offs), 2)
-    if not res["ok"]:
-        low = out.lower()
-        if "timeout" in low or "无法访问" in out or "超时" in out or errs:
-            res["error"] = "ntp_timeout"
-        else:
-            res["error"] = "ntp_no_samples"
-    return res
+    vals, errs = _parse_stripchart(out)
+    return _ntp_result(vals, errs, out)
 
 
 # ============================================================
@@ -413,7 +443,9 @@ def _collect_adapters():
             # 中式：组1=类型 组2=名称；英式：组3=类型 组4=名称
             title = (m.group(2) or m.group(4) or "").strip()
             cur = {"name": title, "desc": "", "mac": "", "dhcp": None, "dhcp_server": "",
-                   "ipv4": [], "gateway": [], "dns": [], "media_down": False,
+                   "ipv4": [], "subnet": [], "ipv6": [], "gateway": [], "dns": [],
+                   "lease_obtained": "", "lease_expires": "", "wins": [],
+                   "media_down": False,
                    "kind": (m.group(1) or m.group(3) or "").strip()}
             continue
         if cur is None:
@@ -451,6 +483,27 @@ def _collect_adapters():
             found = _RE_IP.findall(v)
             if found:
                 cur["ipv4"].extend(found)
+        elif "子网掩码" in line or "subnet mask" in low:
+            v = _field_value(line)
+            if v:
+                cur["subnet"].extend(_RE_IP.findall(v))
+        elif "ipv6" in low:
+            v = _field_value(line)
+            found = _RE_IPV6.findall(v)
+            if found:
+                cur["ipv6"].extend(found)
+        elif "获得租约" in line or "lease obtained" in low:
+            v = _field_value(line)
+            if v:
+                cur["lease_obtained"] = v
+        elif "租约过期" in line or "lease expires" in low:
+            v = _field_value(line)
+            if v:
+                cur["lease_expires"] = v
+        elif "wins" in low:
+            v = _field_value(line)
+            if v:
+                cur["wins"].extend(_RE_IP.findall(v))
         elif line[0].isspace() and line.strip() and (cur["dns"] or cur["gateway"]):
             # DNS/网关多行续行（缩进的裸 IP 行）
             v = line.strip()
@@ -518,8 +571,12 @@ def run_config_check_result():
                 checks.append({"item": "网关", "status": "muted", "reason": "未配置 IPv4"})
         out_adapters.append({
             "name": a["name"], "desc": a["desc"], "mac": a["mac"], "kind": a["kind"],
-            "ipv4": a["ipv4"], "gateway": a["gateway"], "dns": a["dns"],
-            "dhcp": a["dhcp"], "active": active, "tunnel": is_tunnel,
+            "ipv4": a["ipv4"], "subnet": a["subnet"], "ipv6": a["ipv6"],
+            "gateway": a["gateway"], "dns": a["dns"],
+            "dhcp": a["dhcp"], "dhcp_server": a["dhcp_server"],
+            "lease_obtained": a["lease_obtained"], "lease_expires": a["lease_expires"],
+            "wins": a["wins"],
+            "active": active, "tunnel": is_tunnel,
             "media_down": a["media_down"], "checks": checks,
         })
     # 总体结论：只统计非隧道、有 IPv4 的活动网卡
@@ -659,13 +716,13 @@ def run_ping_suite(task, params):
                      "avg_ms": None, "max_ms": None}
         elif method == "ntp":
             r = _ntp_probe(target)
-            entry["detail"] = ("偏移均值 %sms（%d 样本，%d 失败）" % (r["offset_ms"], r["samples"], r["err_samples"])
-                               if r["ok"] else (r.get("error") or "NTP 探测失败"))
+            entry["detail"] = r.get("detail") or (r.get("error") or "NTP 探测失败")
             entry["ok"] = r["ok"]
-            entry["status"] = "ok" if r["ok"] else "err"
+            entry["status"] = r["status"]          # ok | warn(偏差过大·需校时) | err
             jsonl = {"ts": int(time.time()), "key": key, "target": target, "ok": r["ok"],
                      "loss_pct": 0.0 if r["ok"] else 100.0,
-                     "avg_ms": r["offset_ms"], "max_ms": r["offset_ms"]}
+                     "avg_ms": (abs(r["offset_ms"]) if r["offset_ms"] is not None else None),
+                     "max_ms": r["max_abs_ms"]}
         else:
             r = _ping_summary(target, count=4)
             entry["ok"] = r["ok"]
@@ -1237,8 +1294,92 @@ def _cancel_task(task_id):
 # ============================================================
 
 
+_NODE_METHODS = ("ping", "nslookup", "ntp")
+_DYNAMIC_KEYS = ("gateway", "center")     # 目标动态解析（本地网关 / uplink server host）
+
+
+def _sanitize_nodes(raw):
+    """节点表校验：method 白名单 / 目标仅 IP·域名字符 / 动态键强制 target=""。"""
+    if not isinstance(raw, list):
+        return None
+    nodes = []
+    for n in raw:
+        if not isinstance(n, dict):
+            return None
+        key = str(n.get("key") or "").strip() or uuid.uuid4().hex[:8]
+        name = str(n.get("name") or "").strip()
+        method = str(n.get("method") or "ping").strip().lower()
+        target = str(n.get("target") or "").strip()
+        probe = str(n.get("probe") or "").strip()
+        if not name or method not in _NODE_METHODS:
+            return None
+        if target and not re.match(r"^[\w.\-]+$", target):
+            return None
+        if key in _DYNAMIC_KEYS:
+            target = ""                      # 网关/中心服务器：动态获取，不接受静态目标
+        node = {"key": key, "name": name[:60], "method": method, "target": target}
+        if probe and method == "nslookup":
+            node["probe"] = probe[:60]
+        nodes.append(node)
+    return nodes
+
+
+def _save_netdoctor_section(nd):
+    """merge 原子写：仅替换 app_config.json 的 netdoctor 键，其余模块键（perf.* 等）
+    原样保留（与 perf_service merge 语义对齐，ADR-018）。"""
+    path = os.path.join(_data_dir(), "app_config.json")
+    data = {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            saved = json.load(f)
+        if isinstance(saved, dict):
+            data = saved
+    except Exception:
+        data = {}
+    data["netdoctor"] = nd
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, path)
+
+
 def handle_net_config(params=None):
-    """读配置：节点表 / DNS 基线 / uplink 配置面状态（运行态由前端查 uplink/status）。"""
+    """读配置（无参）/ 写配置（nodes_json / expected_dns_json / reset=1）。
+    写入为 merge 原子写，保存后连通性检测即时生效（每次检测读取最新配置，无缓存）。"""
+    params = params or {}
+    raw_nodes = params.get("nodes_json")
+    raw_dns = params.get("expected_dns_json")
+    reset = str(params.get("reset") or "").strip().lower() in ("1", "true", "yes")
+    if raw_nodes is not None or raw_dns is not None or reset:
+        cur = _load_app_config()
+        nd = {}
+        if reset:
+            # 恢复出厂：不写 nodes 键（读取端回退内置默认表），基线清空
+            nd["expected_dns"] = []
+        else:
+            nd["nodes"] = cur["nodes"]
+            nd["expected_dns"] = cur["expected_dns"]
+        if raw_dns is not None:
+            try:
+                dns = json.loads(raw_dns)
+            except Exception:
+                return {"success": False, "error": "expected_dns_json 解析失败"}
+            if not isinstance(dns, list):
+                return {"success": False, "error": "expected_dns_json 须为字符串数组"}
+            nd["expected_dns"] = [str(x).strip() for x in dns if str(x).strip()][:16]
+        if raw_nodes is not None:
+            try:
+                nodes = _sanitize_nodes(json.loads(raw_nodes))
+            except Exception:
+                return {"success": False, "error": "nodes_json 解析失败"}
+            if nodes is None:
+                return {"success": False,
+                        "error": "节点表校验失败（名称必填；方式限 ping/nslookup/ntp；目标仅 IP/域名）"}
+            nd["nodes"] = nodes
+        try:
+            _save_netdoctor_section(nd)
+        except Exception as e:
+            return {"success": False, "error": "save_failed: %s" % e}
     cfg = _load_app_config()
     u = _uplink_config()
     return {"success": True,
