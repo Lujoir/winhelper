@@ -394,9 +394,11 @@
 - **状态**：在用
 - **登记记录**：2026-09-09，代码实证
 
-### 1.8 知识库（运维知识库 KB）
+### 1.8 知识库（运维知识库 KB，ADR-022）
 
-#### SRV-036 知识库路由表/新建 `GET|POST /api/v1/console/kb`
+> 组级语义修正（2026-09-09，commit 31f8e1d，代码实证 api.py:1396-1461 / kb_store.py）：①鉴权为登录控制台即可（X-ETP-Console-Token，**未限 admin**）；②**操作人服务端强制取会话用户名**（api.py:1403 `author = sess["username"]`），客户端传 author 一律忽略；③版本保留最近 5 版（kb_store.py:43 `_MAX_VERSIONS=5`）；④`{kb_id}` 为 TEXT 业务主键（非数字 id），含特殊字符时调用方需 URL 编码；⑤错误码：409 kb_id 重复 / 404 条目或版本不存在 / 400 参数缺失。预置数据：初始化幂等生成 `kb_id=route-nodes`（分类 route_nodes，标题「路由表 · 关键节点」，kb_store.py:59-61）。
+
+#### SRV-036 知识库列表/新建 `GET|POST /api/v1/console/kb`
 - **用途**：GET 取全量路由表；POST 新建条目（5 版本迭代存储）
 - **鉴权**：X-ETP-Console-Token
 - **请求参数**（POST）：`{"kb_id":"route-core","category":"路由","title":"核心路由","content":"...","author":"admin","note":"首版"}`
@@ -404,7 +406,7 @@
 - **调用方式**：`curl -X POST http://<server>/api/v1/console/kb -H "X-ETP-Console-Token: <token>" -d '{"kb_id":"route-core","title":"核心路由","content":"..."}'`
 - **代码出处**：api.py `_console_kb_api` → kb_store.py
 - **状态**：在用
-- **登记记录**：2026-09-09，代码实证
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：GET 列表新增 query `category`（精确过滤）/`q`（对 title/kb_id/content LIKE 模糊），响应新增 `categories[]`（DISTINCT 分类，kb_store.py:93-96），routes 按 updated_ts DESC；POST 的 author 改由服务端强制取会话用户名（commit 31f8e1d，ADR-022）
 
 #### SRV-037 知识库条目详情/更新/删除 `GET|PUT|DELETE /api/v1/console/kb/{kid}`
 - **用途**：单条目读取（含 history）/ 更新内容（版本+1）/ 删除
@@ -414,7 +416,7 @@
 - **调用方式**：`curl http://<server>/api/v1/console/kb/route-core -H "X-ETP-Console-Token: <token>"`
 - **代码出处**：api.py `_console_kb_api`
 - **状态**：在用
-- **登记记录**：2026-09-09，代码实证
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：PUT **字段缺省=保持原值**（api.py:1432-1438，title/content 未传沿用原值），每次保存 version+1 自动迭代，仅保留最近 5 版（kb_store.py:148 删超限版本）；DELETE 为 kb_entries **硬删**且 kb_versions 随条目一并清理（防同 kb_id 重建后版本号错乱，kb_store.py:157-160），kb_history 保留 delete 记录可追溯；author 同样服务端强制（commit 31f8e1d，ADR-022）
 
 #### SRV-038 知识库版本列表 `GET /api/v1/console/kb/{kid}/versions`
 - **用途**：条目全部历史版本号列表
@@ -424,7 +426,7 @@
 - **调用方式**：`curl http://<server>/api/v1/console/kb/route-core/versions -H "X-ETP-Console-Token: <token>"`
 - **代码出处**：api.py `_console_kb_api` → kb_store.py `versions`
 - **状态**：在用
-- **登记记录**：2026-09-09，代码实证
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：版本按 version DESC 返回，**最多 5 条**（`_MAX_VERSIONS=5` 滚动窗口）；注意条目删除后 versions 一并清理（见 SRV-037 更新行）（commit 31f8e1d，ADR-022）
 
 #### SRV-039 知识库指定版本 `GET /api/v1/console/kb/{kid}/versions/{ver}`
 - **用途**：读取指定版本快照
@@ -444,7 +446,7 @@
 - **调用方式**：`curl -X POST http://<server>/api/v1/console/kb/route-core/rollback -H "X-ETP-Console-Token: <token>" -d '{"version":1}'`
 - **代码出处**：api.py `_console_kb_api` → kb_store.py `rollback`
 - **状态**：在用
-- **登记记录**：2026-09-09，代码实证
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：语义明确——回滚**以旧版内容生成新版本**（version 单调递增不丢历史，非覆盖式回退）；author 服务端强制取会话用户名（commit 31f8e1d，ADR-022）
 
 #### SRV-041 知识库维护记录 `GET /api/v1/console/kb/{kid}/history`
 - **用途**：条目创建/更新/回滚/删除的维护履历
@@ -454,7 +456,7 @@
 - **调用方式**：`curl http://<server>/api/v1/console/kb/route-core/history -H "X-ETP-Console-Token: <token>"`
 - **代码出处**：api.py `_console_kb_api` → kb_store.py `history`
 - **状态**：在用
-- **登记记录**：2026-09-09，代码实证
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：history 字段为 actor/action/detail/ts（操作人不信任客户端传入）；DELETE 操作的 history 记录在条目硬删后仍保留（commit 31f8e1d，ADR-022）
 
 ### 1.9 静态资源
 
@@ -587,7 +589,7 @@
 - **调用方式**：`curl http://<server>/api/v1/terminals/WIN-HOST/netdoctor/route-nodes -H "X-ETP-Token: <token>"`
 - **代码出处**：api.py `_terminal_api`（settings 读取）
 - **状态**：在用
-- **登记记录**：2026-09-09，代码实证
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：①响应新增 `source` 字段（`"kb"|"settings"`）；②数据源变更（ADR-022，api.py:383-397 `_kb_route_nodes`）：优先 kb_entries 中 category='route_nodes' 最新条目（content 为 JSON 数组 [{match,zone,desc}]，即预置 kb_id=route-nodes），解析失败/无条目回退 settings `netdoctor.route_nodes`；注意响应节点字段为 match/zone/desc（首版登记的 cidr/name 为笔误，以本行为准）（commit 31f8e1d，代码实证）
 
 #### SRV-053 iperf 服务端起流（netdoctor）`POST /api/v1/terminals/{tid}/netdoctor/iperf-server`
 - **用途**：终端主动压测时，服务端起单会话 `iperf3 -s -1`（不经命令通道）
@@ -1373,6 +1375,6 @@
 
 ## 附：对账约定
 
-- 本台账对账基线 commit：工作区当前版本（bridge.py / uplink.py 有未提交修改，以台账登记时点代码为准）> 更新 2026-09-09：net-doctor 合入基线 commit 628c210（bridge.py ROUTES 含 /api/netdoctor/* 10 条）> 更新 2026-09-09：系统管理模块基线 commit 4d2924b（sysadmin 13 路由 + 多 token 模型 UPL-010 + session-info，代码实证 api.py:88-104/243-248/764-773/829+）
+- 本台账对账基线 commit：工作区当前版本（bridge.py / uplink.py 有未提交修改，以台账登记时点代码为准）> 更新 2026-09-09：net-doctor 合入基线 commit 628c210（bridge.py ROUTES 含 /api/netdoctor/* 10 条）> 更新 2026-09-09：系统管理模块基线 commit 4d2924b（sysadmin 13 路由 + 多 token 模型 UPL-010 + session-info，代码实证 api.py:88-104/243-248/764-773/829+）> 更新 2026-09-09：知识库模块语义修正基线 commit 31f8e1d（KB 9 端点 ADR-022 语义 + route-nodes source 字段，代码实证 api.py:1396-1461/1369-1377/383-397、kb_store.py:43/59/157）
 - 对账方法：grep api.py `_terminal_api`/`_console_api`/`_console_kb_api`/`_console_nettest` 分支 + bridge.py `ROUTES`，与台账逐条比对，输出差异清单（新增未登记/已废弃仍登记/字段不符）
 - 维护规则：接口变更（改参数/改路径/废弃）必须同步更新台账，条目内追加 `> 更新 YYYY-MM-DD：变更点（出处）`，保留历史痕迹
