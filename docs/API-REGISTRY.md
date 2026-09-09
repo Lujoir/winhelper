@@ -6,7 +6,7 @@
 - **事实来源**：代码实证（server-platform/server/api.py、bridge.py、uplink.py、net-doctor/net_service.py 等），每条注明文件+函数
 - **登记统计**：
   - 一、服务端 REST API（SRV）：55 条
-  - 二、终端本地桥接 API（BRG）：49 条（其中 netdoctor 10 条为开发中状态）
+  - 二、终端本地桥接 API（BRG）：49 条（netdoctor 10 条已于 2026-09-09 合入主应用转「在用」，commit 628c210）
   - 三、终端↔平台协议（UPL）：9 条
   - 四、外部依赖接口（EXT）：5 条
   - 五、废弃/规划接口（DEP）：5 条
@@ -952,75 +952,75 @@
 - **状态**：在用
 - **登记记录**：2026-09-09，代码实证
 
-### 2.7 网络排障（net-doctor 子系统，**开发中**）
+### 2.7 网络排障（net_service.py，已合入主应用）
 
-> net-doctor-dev 并行开发中：net-doctor/net_service.py 已实现 `handle_net_*` 处理器与 `_platform_get/_platform_post` 平台联动，web/netdoctor.js 已有调用方；**bridge.py ROUTES 尚未挂载以下路由**（待 net-doctor 交付合入主应用）。前端传参走 query/params，任务类接口返回 `task_id` 供轮询。
+> net-doctor 子系统已合入主应用（commit 628c210，main 下发；路由挂载已代码实证 bridge.py:94-103）：bridge.py `ROUTES` 已挂载全部 10 条 `/api/netdoctor/*` 路由（import 自 net_service.py `handle_net_*`）；前端调用方 web/netdoctor.js。前端传参走 query/params，任务类接口返回 `task_id` 供轮询。仓库同步契约见 net-doctor ADR-001（net_service.py/web 副本与主应用同步）。
 
-#### BRG-040 netdoctor 配置读取 `GET /api/netdoctor/config`（开发中）
+#### BRG-040 netdoctor 配置读取 `GET /api/netdoctor/config`
 - **用途**：节点表/DNS 基线/uplink 配置面状态
-- **代码出处**：net_service.py `handle_net_config`；调用方 net-doctor/web/netdoctor.js
-- **状态**：开发中（bridge 未挂载）
-- **登记记录**：2026-09-09，代码实证（net_service.py 定义，挂载待合入）
+- **代码出处**：bridge.py `ROUTES` → net_service.py `handle_net_config`；调用方 net-doctor/web/netdoctor.js（合入 commit 628c210，main 下发）
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证（net_service.py 定义，挂载待合入）> 更新 2026-09-09：bridge.py ROUTES 已挂载，转「在用」（代码实证 bridge.py:94-103）
 
-#### BRG-041 配置核查 `GET /api/netdoctor/config-check`（开发中）
+#### BRG-041 配置核查 `GET /api/netdoctor/config-check`
 - **用途**：DHCP/DNS 基线比对核查任务（离线可用）
-- **代码出处**：net_service.py `handle_net_config_check`
-- **状态**：开发中（bridge 未挂载）
-- **登记记录**：2026-09-09，代码实证
+- **代码出处**：bridge.py `ROUTES` → net_service.py `handle_net_config_check`（合入 commit 628c210，main 下发）
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：bridge.py ROUTES 已挂载，转「在用」（代码实证 bridge.py:95）
 
-#### BRG-042 IP 冲突检测 `GET /api/netdoctor/ipconflict`（开发中）
+#### BRG-042 IP 冲突检测 `GET /api/netdoctor/ipconflict`
 - **用途**：活动网卡 IP+MAC → 平台 ipconflict 端点交叉校验；未连中心拒绝（error=not_connected）；疑似时自动调 `/api/v1/ai/analyze`
-- **代码出处**：net_service.py `handle_net_ipconflict` → `run_ipconflict_result`
-- **状态**：开发中（bridge 未挂载）
-- **登记记录**：2026-09-09，代码实证
+- **代码出处**：bridge.py `ROUTES` → net_service.py `handle_net_ipconflict` → `run_ipconflict_result`（合入 commit 628c210，main 下发）
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：bridge.py ROUTES 已挂载，转「在用」（代码实证 bridge.py:96）
 
-#### BRG-043 连通性检测启动 `GET /api/netdoctor/ping-start`（开发中）
+#### BRG-043 连通性检测启动 `GET /api/netdoctor/ping-start`
 - **用途**：8 节点逐节点 ping / nslookup / w32tm(stripchart) 探测，JSONL 落盘
-- **代码出处**：net_service.py `handle_net_ping_start`
-- **状态**：开发中（bridge 未挂载）
-- **登记记录**：2026-09-09，代码实证
+- **代码出处**：bridge.py `ROUTES` → net_service.py `handle_net_ping_start`（合入 commit 628c210，main 下发）
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：bridge.py ROUTES 已挂载，转「在用」（代码实证 bridge.py:97）
 
-#### BRG-044 连通性历史 `GET /api/netdoctor/ping-history`（开发中）
+#### BRG-044 连通性历史 `GET /api/netdoctor/ping-history`
 - **用途**：连通性检测历史记录查询
 - **请求参数**：query `limit`（默认 100）
-- **代码出处**：net_service.py `handle_net_ping_history`
-- **状态**：开发中（bridge 未挂载）
-- **登记记录**：2026-09-09，代码实证
+- **代码出处**：bridge.py `ROUTES` → net_service.py `handle_net_ping_history`（合入 commit 628c210，main 下发）
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：bridge.py ROUTES 已挂载，转「在用」（代码实证 bridge.py:98）
 
-#### BRG-045 路由追踪 `GET /api/netdoctor/tracert-start`（开发中）
+#### BRG-045 路由追踪 `GET /api/netdoctor/tracert-start`
 - **用途**：tracert 逐跳解析 + 平台 route-nodes CIDR 区域标注
 - **请求参数**：query `target`
-- **代码出处**：net_service.py `handle_net_tracert_start`
-- **状态**：开发中（bridge 未挂载）
-- **登记记录**：2026-09-09，代码实证
+- **代码出处**：bridge.py `ROUTES` → net_service.py `handle_net_tracert_start`（合入 commit 628c210，main 下发）
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：bridge.py ROUTES 已挂载，转「在用」（代码实证 bridge.py:99）
 
-#### BRG-046 网络压测启动 `GET /api/netdoctor/stress-start`（开发中）
+#### BRG-046 网络压测启动 `GET /api/netdoctor/stress-start`
 - **用途**：多包大小持续 ping 中心 + 平台 iperf-server + 本地 iperf3 客户端（需连中心）
 - **请求参数**：query `duration_sec`、`sizes`、`udp_mbps`
-- **代码出处**：net_service.py `handle_net_stress_start`
-- **状态**：开发中（bridge 未挂载）
-- **登记记录**：2026-09-09，代码实证
+- **代码出处**：bridge.py `ROUTES` → net_service.py `handle_net_stress_start`（合入 commit 628c210，main 下发）
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：bridge.py ROUTES 已挂载，转「在用」（代码实证 bridge.py:100）
 
-#### BRG-047 任务状态轮询 `GET /api/netdoctor/task-status`（开发中）
+#### BRG-047 任务状态轮询 `GET /api/netdoctor/task-status`
 - **用途**：通用后台任务轮询
 - **请求参数**：query `task_id`
-- **代码出处**：net_service.py `handle_net_task_status`
-- **状态**：开发中（bridge 未挂载）
-- **登记记录**：2026-09-09，代码实证
+- **代码出处**：bridge.py `ROUTES` → net_service.py `handle_net_task_status`（合入 commit 628c210，main 下发）
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：bridge.py ROUTES 已挂载，转「在用」（代码实证 bridge.py:102）
 
-#### BRG-048 任务取消 `GET /api/netdoctor/task-cancel`（开发中）
+#### BRG-048 任务取消 `GET /api/netdoctor/task-cancel`
 - **用途**：取消运行中任务
 - **请求参数**：query `task_id`
-- **代码出处**：net_service.py `handle_net_task_cancel`
-- **状态**：开发中（bridge 未挂载）
-- **登记记录**：2026-09-09，代码实证
+- **代码出处**：bridge.py `ROUTES` → net_service.py `handle_net_task_cancel`（合入 commit 628c210，main 下发）
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：bridge.py ROUTES 已挂载，转「在用」（代码实证 bridge.py:103）
 
-#### BRG-049 压测报告导出 `GET /api/netdoctor/stress-export`（开发中）
+#### BRG-049 压测报告导出 `GET /api/netdoctor/stress-export`
 - **用途**：导出压测 HTML 报告（需先有完成的压测任务）
 - **请求参数**：query `task_id`
-- **代码出处**：net_service.py `handle_net_stress_export`
-- **状态**：开发中（bridge 未挂载）
-- **登记记录**：2026-09-09，代码实证
+- **代码出处**：bridge.py `ROUTES` → net_service.py `handle_net_stress_export`（合入 commit 628c210，main 下发）
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：bridge.py ROUTES 已挂载，转「在用」（代码实证 bridge.py:101）
 
 ---
 
@@ -1159,9 +1159,9 @@
 - **用途**：连通性测试节点之一「温州总院」，`w32tm /stripchart /computer:<host> /dataonly /samples:<n>` 解析偏移样本
 - **目标**：settings/net-doctor 节点表 `{"key":"ntp","method":"ntp","target":"ntp.eye.ac.cn"}`（net-doctor 节点配置默认值，可在 app_config.json netdoctor.nodes 调整）
 - **回执 error**：`ntp_timeout` / `ntp_no_samples`
-- **代码出处**：net-doctor/net_service.py `_ntp_probe`（节点表常量）
-- **状态**：开发中（随 net-doctor 子系统合入）
-- **登记记录**：2026-09-09，代码实证（net_service.py 定义）
+- **代码出处**：net-doctor/net_service.py `_ntp_probe`（节点表常量；已随子系统合入主应用，commit 628c210）
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证（net_service.py 定义）> 更新 2026-09-09：net-doctor 合入主应用，转「在用」
 
 ---
 
@@ -1196,11 +1196,11 @@
 - **状态**：废弃（已删除，保留记录）
 - **登记记录**：2026-09-09，代码实证
 
-#### DEP-005 netdoctor 本地桥接挂载 — 规划（开发中）
+#### DEP-005 netdoctor 本地桥接挂载 — 已完成（转正式条目 BRG-040~049）
 - **内容**：bridge.py ROUTES 挂载 `/api/netdoctor/*` 10 条（BRG-040~049），index.html 导航新增 data-tab="netdoctor"（性能分析之后），app.js switchTab 守卫
-- **负责**：net-doctor-dev（并行开发中，net_service.py + web/netdoctor.js 已备，E2E/smoke 齐备）
-- **状态**：规划（待 net-doctor 交付合入主应用后更新本台账为「在用」）
-- **登记记录**：2026-09-09，代码实证（net_service.py 定义 + bridge.py ROUTES 缺失佐证）
+- **负责**：net-doctor-dev（net_service.py + web/netdoctor.js 已备，E2E/smoke 齐备）
+- **状态**：已完成（本条保留作历史记录）
+- **登记记录**：2026-09-09，代码实证（net_service.py 定义 + bridge.py ROUTES 缺失佐证）> 更新 2026-09-09：已合入主应用 commit 628c210（main 下发，bridge.py:94-103 已代码实证），BRG-040~049 转「在用」
 
 ---
 
@@ -1215,6 +1215,6 @@
 
 ## 附：对账约定
 
-- 本台账对账基线 commit：工作区当前版本（bridge.py / uplink.py 有未提交修改，以台账登记时点代码为准）
+- 本台账对账基线 commit：工作区当前版本（bridge.py / uplink.py 有未提交修改，以台账登记时点代码为准）> 更新 2026-09-09：net-doctor 合入基线 commit 628c210（bridge.py ROUTES 含 /api/netdoctor/* 10 条）
 - 对账方法：grep api.py `_terminal_api`/`_console_api`/`_console_kb_api`/`_console_nettest` 分支 + bridge.py `ROUTES`，与台账逐条比对，输出差异清单（新增未登记/已废弃仍登记/字段不符）
 - 维护规则：接口变更（改参数/改路径/废弃）必须同步更新台账，条目内追加 `> 更新 YYYY-MM-DD：变更点（出处）`，保留历史痕迹
