@@ -80,7 +80,7 @@
 - **调用方式**：`curl http://<server>/api/v1/console/terminals/WIN-HOST -H "X-ETP-Console-Token: <token>"`
 - **代码出处**：api.py `_console_api`；store.py `get_terminal_asset`
 - **状态**：在用（asset 字段来源见待确认项 TBC-001）
-- **登记记录**：2026-09-09，代码实证
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：TBC-001 消项——`asset` 字段现优先返回 register 上报的 schema1 真实明细（asset_detail 列已入库），无则仍回退 hwinfo_json（commit 4d2924b，代码实证 api.py:339 / store.py:256-261）
 
 #### SRV-006 终端指标曲线 `GET /api/v1/console/terminals/{tid}/metrics`
 - **用途**：指定时间窗（分钟）内指标点序列
@@ -509,7 +509,7 @@
 - **调用方式**：`curl -X POST http://<server>/api/v1/terminals/register -H "X-ETP-Token: <token>" -d '{"terminal_id":"WIN-HOST"}'`
 - **代码出处**：api.py `_terminal_api` → store.py `register_terminal`
 - **状态**：在用（asset 透传见待确认项 TBC-001）
-- **登记记录**：2026-09-09，代码实证
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：①TBC-001 消项——register 分支已补传 `asset=data.get("asset")`（api.py:339），store 端 try/except 降级（store.py:256-261），实测 asset_detail NULL→1；②鉴权切多 token 模型（api.py:218 `check_terminal_token`，见 UPL-010）（commit 4d2924b，代码实证）
 
 #### SRV-046 终端心跳 `POST /api/v1/terminals/{tid}/heartbeat`
 - **用途**：保活 + 拉取待执行命令（命令通道）；顺带过期清理
@@ -623,7 +623,7 @@
 
 ### 1.11 控制台-系统管理（sysadmin，ADR-021，2026-09-09 新增）
 
-> 组级约定（代码出处：api.py `_console_sysadmin`，dispatch 分支 api.py:764-773）：全部接口要求 **X-ETP-Console-Token + admin 角色**，非 admin 返回 403 `"需要管理员权限"`（并记 ACCESS_DENIED 审计）；错误约定：参数缺失/非法 400、不存在 404、冲突 409。四功能：账户管理（console_auth.db）/ 算力网关（settings llm.*）/ 第三方接口登记（third_party_apis 表）/ 终端 token 维护（terminal_tokens 表）。敏感操作（建户/改户/删户/重置/token 创建/轮换/停用）均落 auth 审计。
+> 组级约定（代码出处：api.py `_console_sysadmin`，dispatch 分支 api.py:764-773）：全部接口要求 **X-ETP-Console-Token + admin 角色**，非 admin 返回 403 `"需要管理员权限"`（并记 ACCESS_DENIED 审计）——权限门 `auth.require_admin`（auth_upgrade.py:1053）**回库补查账号当前角色与状态**，不信任会话缓存角色，管理员调整角色后即时生效（2026-09-09 回库复核，team-lead 要求）；错误约定：参数缺失/非法 400、不存在 404、冲突 409。四功能：账户管理（console_auth.db）/ 算力网关（settings llm.*）/ 第三方接口登记（third_party_apis 表）/ 终端 token 维护（terminal_tokens 表）。敏感操作（建户/改户/删户/重置/token 创建/轮换/停用）均落 auth 审计。
 
 #### SRV-056 账户列表 `GET /api/v1/console/sysadmin/users`
 - **用途**：控制台账户清单（口令字段恒为 `'****'`，不出明文/哈希）
@@ -1187,7 +1187,7 @@
 - **触发**：启动 autostart、手动注册（BRG-038）、循环检测未注册时（指数退避，倍数上限 20）
 - **代码出处**：uplink.py `register_once` / `_register_payload` / `_loop`
 - **状态**：在用
-- **登记记录**：2026-09-09，代码实证
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：①X-ETP-Token 校验收敛为多 token 模型（见 UPL-010；config token 幂等迁移入 terminal_tokens 表 label='default'，register 请求契约与终端侧不变）；②payload `asset` 字段现已入库（TBC-001 消项，api.py:339）（commit 4d2924b，代码实证）
 
 #### UPL-002 心跳协议 `POST /api/v1/terminals/{tid}/heartbeat`
 - **用途**：保活 + 命令通道拉取；响应 `commands[]` 逐条 spawn 线程执行（不阻塞心跳）
@@ -1366,7 +1366,7 @@
 
 | 编号 | 事项 | 说明 |
 |------|------|------|
-| TBC-001 | register 的 `asset` 字段透传 | store.py `register_terminal` 签名已支持 `asset=None` 并写 `asset_detail` 列；但 api.py `_terminal_api` register 分支调用时**未传 asset**（仅 hwinfo）→ 终端上报的 schema1 资产明细未入库，SRV-005 的 `asset` 字段实际走 `get_terminal_asset` 的 hwinfo 回退。待 server-platform-dev 确认 a1 补丁后更新台账 |
+| TBC-001 | register 的 `asset` 字段透传 | **【已消项 2026-09-09】**修复：api.py register 分支补传 `asset=data.get("asset")`（api.py:339，缺键安全为 None）+ store.py 序列化 try/except (TypeError, ValueError) 降级加固（store.py:256-261）；真实终端 WIN-Jun-office-PC asset_detail NULL→1 验证通过。修复 commit 4d2924b（server-platform-dev 修复、team-lead 通知消项，代码实证） |
 | TBC-002 | settings 无预置键 | `llm.api_key`/`llm.model_fallback`/`iperf.server_ip`/`netdoctor.route_nodes`/`ftp.password` 不在 settings.py DEFAULTS（按需 set 后生效），GET settings 时未配置键不出现或为默认值 |
 | TBC-003 | BRG 各 handler 响应字段全集 | 39 条已挂载路由的响应以 success/error 公共字段 + 关键字段记录；逐字段全集可在联调对账时以 service 文件 handler 返回值补录 |
 | TBC-004 | config.json 键清单 | app.py dev 默认：port/terminal_token/console_password/session_ttl_hours/report_interval/retention_days/bottleneck_dedup_min/data_dir；生产 config.json 实际键以部署实例为准（口令已移除，登录走 console_auth.db） |
