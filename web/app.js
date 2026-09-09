@@ -33,14 +33,23 @@ function waitPywebviewBridge(timeout = 2500) {
  * @returns {Promise<object>} 后端返回的JSON对象
  */
 async function apiFetch(path) {
+    // 2026-09-09 冻结缺陷修复：pywebview IPC 通道挂死时调用永挂起，
+    // 上层静默 catch 导致 UI 永冻首帧。此处统一加超时保护（默认 15s，
+    // window.__apiFetchTimeout 可覆盖供 E2E 注入），超时 reject 交上层错误路径。
+    const timeoutMs = window.__apiFetchTimeout || 15000;
     const hasBridge = await waitPywebviewBridge(1500);
+    let call;
     if (hasBridge) {
-        // 桌面模式: pywebview js_api 返回 Promise<dict>
-        return await window.pywebview.api.call(path);
+        call = window.pywebview.api.call(path);
+        call.catch(() => {});   // 挂起原 promise 落超时后 reject，防 unhandledrejection
+    } else {
+        call = fetch(path).then(r => r.json());
     }
-    // Web模式: HTTP
-    const resp = await fetch(path);
-    return await resp.json();
+    return await Promise.race([
+        call,
+        new Promise((_, rej) => setTimeout(
+            () => rej(new Error("api_timeout_" + timeoutMs + "ms")), timeoutMs))
+    ]);
 }
 
 /** 标识终端类型（观枢终端平台：Windows + 安卓统一管理；modeBadge 同时作为日志诊断「本机信息」入口） */

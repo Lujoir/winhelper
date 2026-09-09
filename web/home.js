@@ -343,14 +343,32 @@ function hmRenderNetwork(d) {
     el.innerHTML = html;
 }
 
-/* uplink status 30s refresh (fix: stuck at connecting) */
+/* uplink status 30s refresh（2026-09-09 冻结缺陷修复：失败可见 + 恢复可见立即刷）
+   根因：apiFetch 挂起时静默 catch 导致平台接入卡永冻首帧。 */
+function hmUplinkTick() {
+    hmApiFetch("/api/perf/uplink/status").then(function (d) {
+        var u = d ? d.uplink : null;
+        hmRenderUplink(u);
+    }).catch(function () {
+        var el = document.getElementById("homeUplinkBody");
+        if (el) {
+            el.innerHTML = '<div class="hm-empty">状态刷新失败（下个周期自动重试）</div>';
+        }
+    });
+}
 setInterval(function () {
     if (document.hidden) { return; }
     var sec = document.getElementById("tab-home");
     if (!sec) { return; }
     if (!sec.classList.contains("active")) { return; }
-    hmApiFetch("/api/perf/uplink/status").then(function (d) {
-        var u = d ? d.uplink : null;
-        hmRenderUplink(u);
-    }).catch(function () {});
+    hmUplinkTick();
 }, 30000);
+/* 窗口恢复可见时立即主动刷一次（不等下一 tick），并刷新实时指标 */
+document.addEventListener("visibilitychange", function () {
+    if (document.hidden) { return; }
+    var sec = document.getElementById("tab-home");
+    if (sec && sec.classList.contains("active")) {
+        hmUplinkTick();
+        hmRefreshLive();
+    }
+});

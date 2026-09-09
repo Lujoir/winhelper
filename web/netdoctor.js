@@ -25,11 +25,24 @@ var ndState = {
 /* ===================== 传输与工具 ===================== */
 
 function ndApiFetch(path) {
+    /* 2026-09-09 冻结缺陷修复：自带超时保护（默认 15s，__apiFetchTimeout 供 E2E 注入）。
+       主应用宿主 apiFetch（app.js）已有同款保护则复用；独立页/桩直调路径由此兜底，
+       IPC 挂死时 reject 而非永挂起，上层 catch 可达、UI 可自愈。 */
     if (typeof apiFetch === "function") { return apiFetch(path); }
+    var tmo = window.__apiFetchTimeout || 15000;
+    var call;
     if (window.pywebview && window.pywebview.api) {
-        return window.pywebview.api.call(path);
+        call = window.pywebview.api.call(path);
+        call.catch(function () {});   /* 超时后原 promise 拒绝防 unhandledrejection */
+    } else {
+        call = fetch(path).then(function (r) { return r.json(); });
     }
-    return fetch(path).then(function (r) { return r.json(); });
+    return Promise.race([
+        call,
+        new Promise(function (_, rej) {
+            setTimeout(function () { rej(new Error("api_timeout_" + tmo + "ms")); }, tmo);
+        })
+    ]);
 }
 
 function ndEscapeHtml(str) {
@@ -111,10 +124,27 @@ function ndLoadUplink() {
         ndState.uplink = d && d.uplink ? d.uplink : null;
         ndRenderUplink();
     }).catch(function () {
-        ndState.uplink = null;
-        ndRenderUplink();
+        /* 2026-09-09 冻结缺陷修复：失败如实显示（apiFetch 层 15s 超时保证此处可达） */
+        ndRenderUplinkFail();
     });
 }
+
+function ndRenderUplinkFail() {
+    var el = document.getElementById("ndUplinkBody");
+    if (el) {
+        el.innerHTML = ndBadge("状态刷新失败", "nd-warn")
+            + '<span class="nd-hint">　切换页面或下次操作时自动重试</span>';
+    }
+}
+
+/* 恢复可见时立即主动刷一次中心状态（tab 激活时） */
+document.addEventListener("visibilitychange", function () {
+    if (document.hidden) { return; }
+    var sec = document.getElementById("tab-netdoctor");
+    if (sec && sec.classList.contains("active") && ndState.inited) {
+        ndLoadUplink();
+    }
+});
 
 function ndRenderUplink() {
     var el = document.getElementById("ndUplinkBody");
