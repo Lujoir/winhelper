@@ -239,6 +239,7 @@ function ndAdapterCard(a) {
     head += '</div>';
     var meta = '<div class="nd-kv"><span class="k">描述</span><span>' + ndEscapeHtml(a.desc || "--") + '</span></div>';
     if (a.mac) { meta += '<div class="nd-kv"><span class="k">MAC</span><span>' + ndEscapeHtml(a.mac) + '</span></div>'; }
+    meta += '<div class="nd-kv"><span class="k">链路速率</span><span>' + ndEscapeHtml(a.speed || "--") + '</span></div>';
     meta += '<div class="nd-kv"><span class="k">IPv4</span><span>' +
         ndEscapeHtml((a.ipv4 && a.ipv4.length) ? a.ipv4.join("，") : "--") + '</span></div>';
     meta += '<div class="nd-kv"><span class="k">子网掩码</span><span>' +

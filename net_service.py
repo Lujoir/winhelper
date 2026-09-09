@@ -517,6 +517,32 @@ def _collect_adapters():
     return adapters, None
 
 
+def _fetch_link_speeds():
+    """链路速率映射 {网卡名小写: "1 Gbps" 格式化字符串}。
+    优先复用 home_service 现成采集（同进程 + 60s 缓存，不重复起 PowerShell，
+    团队指令 2026-09-09）；独立运行环境（net-doctor 冒烟等无 home_service 场景）
+    回退轻量 Get-NetAdapter 查询（CREATE_NO_WINDOW + UTF8 铁律）。"""
+    try:
+        from home_service import handle_home_network
+        r = handle_home_network()
+        if r.get("success") and r.get("adapters"):
+            return {str(a.get("name") or "").strip().lower(): (a.get("speed") or "")
+                    for a in r["adapters"]}
+    except Exception:
+        pass
+    speeds = {}
+    rc, out = _run_ps("Get-NetAdapter | ForEach-Object { $_.Name + '|' + [string]$_.LinkSpeed }",
+                      timeout=15)
+    if rc == 0:
+        for ln in out.splitlines():
+            if "|" not in ln:
+                continue
+            nm, _, sp = ln.partition("|")
+            if nm.strip() and sp.strip() and sp.strip() != "--":
+                speeds[nm.strip().lower()] = sp.strip()
+    return speeds
+
+
 def _dns_verdict(dns_list, expected):
     """DNS 基线比对。expected 为空 → 仅提示未配置基线（unknown）。"""
     if not expected:
@@ -541,6 +567,9 @@ def run_config_check_result():
     adapters, err = _collect_adapters()
     if adapters is None:
         return {"success": False, "error": err or "ipconfig 解析失败"}
+    speeds = _fetch_link_speeds()   # 按网卡名合并链路速率（无数据 → None）
+    for a in adapters:
+        a["speed"] = speeds.get((a["name"] or "").strip().lower()) or None
     out_adapters = []
     for a in adapters:
         is_tunnel = (a.get("kind") or "").lower() in ("tunnel", "隧道")
@@ -571,6 +600,7 @@ def run_config_check_result():
                 checks.append({"item": "网关", "status": "muted", "reason": "未配置 IPv4"})
         out_adapters.append({
             "name": a["name"], "desc": a["desc"], "mac": a["mac"], "kind": a["kind"],
+            "speed": a.get("speed"),
             "ipv4": a["ipv4"], "subnet": a["subnet"], "ipv6": a["ipv6"],
             "gateway": a["gateway"], "dns": a["dns"],
             "dhcp": a["dhcp"], "dhcp_server": a["dhcp_server"],
