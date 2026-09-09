@@ -1141,7 +1141,7 @@
 - **用途**：活动网卡 IP+MAC → 平台 ipconflict 端点交叉校验；未连中心拒绝（error=not_connected）；疑似时自动调 `/api/v1/ai/analyze`
 - **代码出处**：bridge.py `ROUTES` → net_service.py `handle_net_ipconflict` → `run_ipconflict_result`（合入 commit 628c210，main 下发）
 - **状态**：在用
-- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：bridge.py ROUTES 已挂载，转「在用」（代码实证 bridge.py:96）> 更新 2026-09-09：admission_log 数据源将接入画方 NAD 准入 API（EXT-006，cross 校验源 admission_log+交换机端口证据）——sources.admission_log 由 not_connected 转 connected，server-platform-dev 实施中，落地后本条与 EXT-006 补代码实证
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：bridge.py ROUTES 已挂载，转「在用」（代码实证 bridge.py:96）> 更新 2026-09-09：admission_log 数据源将接入画方 NAD 准入 API（EXT-006，cross 校验源 admission_log+交换机端口证据）——sources.admission_log 由 not_connected 转 connected，server-platform-dev 实施中，落地后本条与 EXT-006 补代码实证 > 更新 2026-09-09：**sources.admission_log=connected 已上线**（commit a5156cc，api.py:383 `_enrich_ipconflict_admission` 注入）：①同 IP 异 MAC 升级判定含 `admission_registered_macs`（准入登记 MAC 与上报 MAC 不一致 → conflict_suspect=true，evidence 追加 nad 证据块 {source:'nad',name,ou,ttype,manfct/model,online,block,reginfo,macs}，api.py:1196-1200）；②core_switch_state 三态近似：上报 MAC 在准入库且有 macports 交换机记录 → `nas_connected`、有登记无端口 → `registered_no_port`、不在准入库 → `not_connected`（api.py:1187-1195）；③增强逻辑异常防御不阻断主流程（error:xx，api.py:1176-1177）。响应新增字段：admission_hit/admission/conflict_suspect/evidence/admission_registered_macs
 
 #### BRG-043 连通性检测启动 `GET /api/netdoctor/ping-start`
 - **用途**：8 节点逐节点 ping / nslookup / w32tm(stripchart) 探测，JSONL 落盘
@@ -1355,9 +1355,9 @@
 - **响应**（term/get）：`{"total":N,"list":[{oid,name,ou,ttype,warn,block,online,reginfo,listinfo,macs:[{ips:[…],macports:[{nasname,nasif}]}]}]}`（macports 即接入交换机 nasname/nasif 证据链）
 - **实测**：total=1588 台（main 生产实测）
 - **消费方**：net-doctor `run_ipconflict_result`（BRG-042）admission_log 数据源接入——server-platform-dev 实施中
-- **代码出处**：暂无（外部厂商系统）；接入代码落地后补录
-- **状态**：在用（API 已实测联通）；admission_log 数据源接入实施中
-- **登记记录**：2026-09-09，main 下发（画方《新版本NAD对外接口说明》20251231 版 37 页解析 + 生产实测，待代码实证）
+- **代码出处**：server-platform/server/nad_client.py（接入客户端，commit a5156cc）；消费方 api.py `_enrich_ipconflict_admission`（api.py:1163-1200）→ BRG-042 ipconflict 端点（api.py:383 注入）
+- **状态**：在用（API 已实测联通；admission_log 数据源接入已落地）
+- **登记记录**：2026-09-09，main 下发（画方《新版本NAD对外接口说明》20251231 版 37 页解析 + 生产实测）> 更新 2026-09-09：admission_log 接入落地，补代码实证 nad_client.py（commit a5156cc）。**文档-实际差异适配 3 处（实测知识，逐条登记）**：①`list` 字段实际为 dict 形态（键为序号字符串）而非文档所述数组——`_norm_macs` 归一为列表（nad_client.py:94-95）；②macs 条目实际为对象（`{"0": {"mac":.., "ips": {"0":{..}}, "macports": null|[..]}}`）且 macports 可为 null（nad_client.py:88-92）；③单页上限实际 1000 而非文档 limit≤10000——实测 1588 台需翻页 2 页，`NAD_PAGE_LIMIT=1000` + `NAD_MAX_PAGES=50` 翻页防御（nad_client.py:28-29）；配置经 `NAD_CONFIG_ID=2` 读第三方接口登记（appkey/app_secret），全量缓存 `_cache`，签名 hmac_sha256_hex(appsecret,"appkey=..&nonce=..&time=..")
 
 ---
 
@@ -1411,6 +1411,6 @@
 
 ## 附：对账约定
 
-- 本台账对账基线 commit：工作区当前版本（bridge.py / uplink.py 有未提交修改，以台账登记时点代码为准）> 更新 2026-09-09：net-doctor 合入基线 commit 628c210（bridge.py ROUTES 含 /api/netdoctor/* 10 条）> 更新 2026-09-09：系统管理模块基线 commit 4d2924b（sysadmin 13 路由 + 多 token 模型 UPL-010 + session-info，代码实证 api.py:88-104/243-248/764-773/829+）> 更新 2026-09-09：知识库模块语义修正基线 commit 31f8e1d（KB 9 端点 ADR-022 语义 + route-nodes source 字段，代码实证 api.py:1396-1461/1369-1377/383-397、kb_store.py:43/59/157）> 更新 2026-09-09：终端 AI 智能诊断基线 commit 8aaa64e（SRV-070 diagnose + SRV-071 单条详情 + trigger=terminal_diagnose，代码实证 api.py:419-445/784-790/1160+，ADR-023）
+- 本台账对账基线 commit：工作区当前版本（bridge.py / uplink.py 有未提交修改，以台账登记时点代码为准）> 更新 2026-09-09：net-doctor 合入基线 commit 628c210（bridge.py ROUTES 含 /api/netdoctor/* 10 条）> 更新 2026-09-09：系统管理模块基线 commit 4d2924b（sysadmin 13 路由 + 多 token 模型 UPL-010 + session-info，代码实证 api.py:88-104/243-248/764-773/829+）> 更新 2026-09-09：知识库模块语义修正基线 commit 31f8e1d（KB 9 端点 ADR-022 语义 + route-nodes source 字段，代码实证 api.py:1396-1461/1369-1377/383-397、kb_store.py:43/59/157）> 更新 2026-09-09：终端 AI 智能诊断基线 commit 8aaa64e（SRV-070 diagnose + SRV-071 单条详情 + trigger=terminal_diagnose，代码实证 api.py:419-445/784-790/1160+，ADR-023）> 更新 2026-09-09：画方 admission_log 接入基线 commit a5156cc（nad_client.py + _enrich_ipconflict_admission，EXT-006 补代码实证与 3 处文档-实际差异，ADR-024）
 - 对账方法：grep api.py `_terminal_api`/`_console_api`/`_console_kb_api`/`_console_nettest` 分支 + bridge.py `ROUTES`，与台账逐条比对，输出差异清单（新增未登记/已废弃仍登记/字段不符）
 - 维护规则：接口变更（改参数/改路径/废弃）必须同步更新台账，条目内追加 `> 更新 YYYY-MM-DD：变更点（出处）`，保留历史痕迹
