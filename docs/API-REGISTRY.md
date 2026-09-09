@@ -8,9 +8,9 @@
   - 一、服务端 REST API（SRV）：71 条
   - 二、终端本地桥接 API（BRG）：49 条（netdoctor 10 条已于 2026-09-09 合入主应用转「在用」，commit 628c210）
   - 三、终端↔平台协议（UPL）：10 条
-  - 四、外部依赖接口（EXT）：5 条
+  - 四、外部依赖接口（EXT）：6 条
   - 五、废弃/规划接口（DEP）：5 条
-  - **合计 140 条**
+  - **合计 141 条**
 - **通用约定**：
   - 服务端监听：ThreadingHTTPServer，`0.0.0.0:{port}`，默认 18090（app.py `_load_config` / `main`）；配置经 `$ETP_CONFIG` → `server/config.local.json` → dev 默认三级加载
   - 终端上行鉴权：请求头 `X-ETP-Token`（对照 config.json `terminal_token`）> 更新 2026-09-09：收敛为**多 token 模型**——config token 或 SQLite `terminal_tokens` 表 status='active' 命中均放行（详见 UPL-010，commit 4d2924b）
@@ -1141,7 +1141,7 @@
 - **用途**：活动网卡 IP+MAC → 平台 ipconflict 端点交叉校验；未连中心拒绝（error=not_connected）；疑似时自动调 `/api/v1/ai/analyze`
 - **代码出处**：bridge.py `ROUTES` → net_service.py `handle_net_ipconflict` → `run_ipconflict_result`（合入 commit 628c210，main 下发）
 - **状态**：在用
-- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：bridge.py ROUTES 已挂载，转「在用」（代码实证 bridge.py:96）
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：bridge.py ROUTES 已挂载，转「在用」（代码实证 bridge.py:96）> 更新 2026-09-09：admission_log 数据源将接入画方 NAD 准入 API（EXT-006，cross 校验源 admission_log+交换机端口证据）——sources.admission_log 由 not_connected 转 connected，server-platform-dev 实施中，落地后本条与 EXT-006 补代码实证
 
 #### BRG-043 连通性检测启动 `GET /api/netdoctor/ping-start`
 - **用途**：8 节点逐节点 ping / nslookup / w32tm(stripchart) 探测，JSONL 落盘
@@ -1343,6 +1343,21 @@
 - **代码出处**：net-doctor/net_service.py `_ntp_probe`（节点表常量；已随子系统合入主应用，commit 628c210）
 - **状态**：在用
 - **登记记录**：2026-09-09，代码实证（net_service.py 定义）> 更新 2026-09-09：net-doctor 合入主应用，转「在用」
+
+#### EXT-006 画方 NAD 准入 HTTP API（网络准入控制）
+- **用途**：终端准入台账查询（IP↔MAC↔接入交换机端口定位证据）——net-doctor IP 冲突检测的 admission_log 数据源 + 端口级证据来源
+- **端点**：base `https://<nad-host>:9002`（**自签证书，调用方忽略证书校验**；真实 base_url 与凭据已登记于系统管理第三方接口 id=2，见 SRV-064 体系，运维经 GET /api/v1/console/sysadmin/third-party 查阅）
+  - `POST /httpapi/term/get` — 终端准入台账查询
+  - `POST /httpapi/term/dict` — 字典接口（已实测 errno=0）
+  - `POST /httpapi/spanbanip/get|db|delete` — 镜像封禁查询/库/解封
+- **鉴权**：HMAC-SHA256 签名五字段请求体（`appkey`/`sign`/`time`/`nonce`/`enctype`/`version`；`sign = hash_hmac(appsecret, "appkey=..&nonce=..&time=..")`）
+- **请求参数**（term/get）：`data: {"where":…, "curpage":N, "limit":≤10000}`
+- **响应**（term/get）：`{"total":N,"list":[{oid,name,ou,ttype,warn,block,online,reginfo,listinfo,macs:[{ips:[…],macports:[{nasname,nasif}]}]}]}`（macports 即接入交换机 nasname/nasif 证据链）
+- **实测**：total=1588 台（main 生产实测）
+- **消费方**：net-doctor `run_ipconflict_result`（BRG-042）admission_log 数据源接入——server-platform-dev 实施中
+- **代码出处**：暂无（外部厂商系统）；接入代码落地后补录
+- **状态**：在用（API 已实测联通）；admission_log 数据源接入实施中
+- **登记记录**：2026-09-09，main 下发（画方《新版本NAD对外接口说明》20251231 版 37 页解析 + 生产实测，待代码实证）
 
 ---
 
