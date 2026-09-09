@@ -34,6 +34,10 @@
                 <svg viewBox="0 0 24 24" width="16" height="16"><path d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 7.08l1.5 1.41z" fill="currentColor"/></svg>
                 性能分析
             </button>
+            <button class="nav-tab" data-tab="netdoctor" onclick="switchTab('netdoctor')">
+                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" fill="currentColor"/></svg>
+                网络排障
+            </button>
         </div>
         <div class="nav-actions">
             <span class="mode-badge" id="modeBadge" title="终端类型：Windows（点击查看本机基础信息）" onclick="liShowSystemPanel()">Windows</span>
@@ -722,6 +726,150 @@
                 <div id="perfReportBox" style="display:none"></div>
             </div>
         </div>
+
+        <!-- ==================== 网络排障 ==================== -->
+        <div id="tab-netdoctor" class="tab-content">
+            <style>
+                /* netdoctor 模块特有样式（同步契约 ADR-001：仅作用于本 section，不改 style.css） */
+                .nd-btn { background: var(--bg-hover, #1d212e); color: var(--accent-cyan, #4fc3f7); border: 1px solid var(--border-color, #262b3a); border-radius: 8px; padding: 6px 14px; cursor: pointer; font-size: 12.5px; }
+                .nd-btn:hover { border-color: var(--accent-cyan, #4fc3f7); }
+                .nd-btn:disabled { opacity: .45; cursor: default; }
+                .nd-btn.primary { background: rgba(79,195,247,.14); }
+                .nd-input, .nd-select { background: var(--bg-hover, #1d212e); color: var(--text-primary, #e8ebf2); border: 1px solid var(--border-color, #262b3a); border-radius: 8px; padding: 6px 10px; font-size: 12.5px; }
+                .nd-badge { display: inline-block; border: 1px solid; border-radius: 20px; padding: 1px 10px; font-size: 11.5px; vertical-align: 1px; white-space: nowrap; }
+                .nd-ok { color: #66bb6a; border-color: rgba(102,187,106,.5); background: rgba(102,187,106,.1); }
+                .nd-warn { color: #ffb74d; border-color: rgba(255,183,77,.5); background: rgba(255,183,77,.1); }
+                .nd-err { color: #ef5350; border-color: rgba(239,83,80,.5); background: rgba(239,83,80,.1); }
+                .nd-info { color: var(--accent-cyan, #4fc3f7); border-color: rgba(79,195,247,.5); background: rgba(79,195,247,.1); }
+                .nd-muted { color: var(--text-secondary, #8a93a5); border-color: var(--border-color, #262b3a); background: var(--bg-hover, #1d212e); }
+                .nd-hint { color: var(--text-secondary, #8a93a5); font-size: 11.5px; }
+                .nd-empty { color: var(--text-muted, #5a6274); font-size: 12.5px; padding: 8px 0; }
+                .nd-summary { font-size: 12px; color: var(--text-secondary, #8a93a5); margin-top: 8px; min-height: 16px; word-break: break-all; }
+                .nd-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 6px 0; }
+                .nd-table th, .nd-table td { border: 1px solid var(--border-color, #262b3a); padding: 5px 9px; text-align: left; }
+                .nd-table th { background: var(--bg-hover, #1d212e); color: var(--text-secondary, #8a93a5); font-weight: 600; white-space: nowrap; }
+                .nd-num { font-variant-numeric: tabular-nums; }
+                .nd-statusbar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--bg-card, #171a23); border: 1px solid var(--border-color, #262b3a); border-radius: var(--radius, 10px); margin-bottom: 14px; flex-wrap: wrap; }
+                .nd-adapter { border: 1px solid var(--border-color, #262b3a); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; background: rgba(255,255,255,.02); }
+                .nd-adapter.nd-dim { opacity: .6; }
+                .nd-adapter-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+                .nd-kv { display: grid; grid-template-columns: 84px 1fr; gap: 2px 10px; font-size: 12.5px; margin: 2px 0; }
+                .nd-kv .k { color: var(--text-secondary, #8a93a5); }
+                .nd-check-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 12.5px; flex-wrap: wrap; }
+                .nd-gate { border: 1px dashed rgba(239,83,80,.45); color: #ef9a9a; background: rgba(239,83,80,.06); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; margin-bottom: 10px; }
+                .nd-evlist { margin: 4px 0 8px; padding-left: 20px; font-size: 12.5px; color: var(--text-secondary, #8a93a5); }
+                .nd-ai { border: 1px solid var(--border-color, #262b3a); border-left: 3px solid var(--accent-cyan, #4fc3f7); border-radius: 8px; padding: 8px 12px; margin-top: 10px; font-size: 12.5px; }
+                .nd-pre { margin: 6px 0 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; color: var(--text-primary, #e8ebf2); font-family: inherit; }
+                .nd-params { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+                .nd-params label { font-size: 12px; color: var(--text-secondary, #8a93a5); }
+            </style>
+            <div class="page-header">
+                <h2>网络排障</h2>
+                <p class="page-subtitle">配置核查 · IP 冲突 · 连通性测试 · 路由追踪 · 网络压测</p>
+                <button class="btn btn-ghost" onclick="toggleAllCards(this)">📁 收纳全部</button>
+            </div>
+
+            <!-- 中心连接状态条 -->
+            <div class="nd-statusbar">
+                <b style="font-size:13px">中心平台</b>
+                <span id="ndUplinkBody"><span class="nd-hint">读取中…</span></span>
+            </div>
+
+            <!-- ① 配置核查 -->
+            <div class="section-card" data-collapse>
+                <div class="card-header">
+                    <h3>① 配置核查</h3>
+                    <span id="ndConfBadge"></span>
+                    <div class="disk-toolbar">
+                        <button class="nd-btn primary" id="ndConfBtn" onclick="ndStartConfigCheck()">开始核查</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="nd-summary" id="ndConfSummary">核查每张活动网卡的 DHCP / DNS（基线比对）/ 网关配置</div>
+                    <div class="nd-hint" id="ndDnsBaselineTip"></div>
+                    <div id="ndConfBody"><div class="nd-empty">尚未核查</div></div>
+                </div>
+            </div>
+
+            <!-- ② IP 冲突检测 -->
+            <div class="section-card" data-collapse>
+                <div class="card-header">
+                    <h3>② IP 冲突检测</h3>
+                    <div class="disk-toolbar">
+                        <button class="nd-btn primary" id="ndConflictBtn" onclick="ndStartConflict()">开始检测</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="nd-gate" id="ndConflictGate" style="display:none">未连接中心平台，此功能不可用（可在「设置 · 中心平台配置」开启接入）</div>
+                    <div class="nd-summary" id="ndConflictSummary">取本机活动网卡 IP+MAC，由中心比对终端上报 / 准入日志等数据源</div>
+                    <div id="ndConflictBody"><div class="nd-empty">尚未检测</div></div>
+                </div>
+            </div>
+
+            <!-- ③ 连通性测试 -->
+            <div class="section-card" data-collapse>
+                <div class="card-header">
+                    <h3>③ 连通性测试</h3>
+                    <div class="disk-toolbar">
+                        <button class="nd-btn primary" id="ndPingBtn" onclick="ndStartPing()">开始检测</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="nd-summary" id="ndPingSummary">按配置节点表逐区段探测（ping / DNS 解析 / NTP 校时），结果自动留档</div>
+                    <table class="nd-table">
+                        <tr><th>节点</th><th>目标</th><th>方式</th><th>状态</th><th>延迟</th><th>丢包</th><th>说明</th></tr>
+                        <tbody id="ndNodesBody"></tbody>
+                    </table>
+                    <div class="nd-hint" style="margin-top:10px">最近历史摘要（近 7 天）</div>
+                    <div id="ndHistoryBody"><div class="nd-empty">加载中…</div></div>
+                </div>
+            </div>
+
+            <!-- ④ 路由追踪 -->
+            <div class="section-card" data-collapse>
+                <div class="card-header">
+                    <h3>④ 路由追踪</h3>
+                    <div class="disk-toolbar">
+                        <input class="nd-input" id="ndTracertTarget" placeholder="目的 IP 或域名，如 172.17.254.2" style="width:230px">
+                        <button class="nd-btn primary" id="ndTracertBtn" onclick="ndStartTracert()">开始追踪</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="nd-summary" id="ndTracertSummary">逐跳显示延迟 / IP / 主机名，并按中心知识库标注所属网络区域</div>
+                    <div id="ndTracertBody"><div class="nd-empty">尚未追踪</div></div>
+                </div>
+            </div>
+
+            <!-- ⑤ 网络压测 -->
+            <div class="section-card" data-collapse>
+                <div class="card-header">
+                    <h3>⑤ 网络压测</h3>
+                    <div class="disk-toolbar">
+                        <button class="nd-btn ghost" id="ndStressOpenBtn" style="display:none" onclick="ndOpenStressLocation()">打开位置</button>
+                        <button class="nd-btn" id="ndStressExportBtn" style="display:none" onclick="ndExportStress()">导出 HTML 报告</button>
+                        <button class="nd-btn" id="ndStressCancelBtn" style="display:none" onclick="ndCancelStress()">取消</button>
+                        <button class="nd-btn primary" id="ndStressBtn" onclick="ndStartStress()">开始压测</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="nd-gate" id="ndStressGate" style="display:none">未连接中心平台，功能不可用</div>
+                    <div class="nd-params" style="margin-bottom:8px">
+                        <label>iperf3 每轮时长（秒）</label>
+                        <select class="nd-select" id="ndStressDur">
+                            <option value="10" selected>10</option>
+                            <option value="15">15</option>
+                            <option value="30">30</option>
+                        </select>
+                        <label>包长档位（逗号分隔）</label>
+                        <input class="nd-input" id="ndStressSizes" value="64,256,1024,4096" style="width:170px">
+                        <label>UDP 码率（Mbps）</label>
+                        <input class="nd-input" id="ndStressUdp" value="100" style="width:80px">
+                    </div>
+                    <div class="nd-summary" id="ndStressSummary">多档包长持续 ping 中心服务器 + iperf3 TCP/UDP 带宽压测，输出综合结论（需已连接中心）</div>
+                    <div id="ndStressBody"><div class="nd-empty">尚未压测</div></div>
+                </div>
+            </div>
+        </div>
     </main>
 
     <!-- 设置（中心平台配置） -->
@@ -771,5 +919,6 @@
     <script src="disk.js"></script>
     <script src="appdata.js"></script>
     <script src="perf.js"></script>
+    <script src="netdoctor.js"></script>
 </body>
 </html>

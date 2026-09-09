@@ -342,3 +342,15 @@ function hmRenderNetwork(d) {
     if (!html) { html = '<div class="hm-empty">未发现网络适配器</div>'; }
     el.innerHTML = html;
 }
+
+/* uplink status 30s refresh (fix: stuck at connecting) */
+setInterval(function () {
+    if (document.hidden) { return; }
+    var sec = document.getElementById("tab-home");
+    if (!sec) { return; }
+    if (!sec.classList.contains("active")) { return; }
+    hmApiFetch("/api/perf/uplink/status").then(function (d) {
+        var u = d ? d.uplink : null;
+        hmRenderUplink(u);
+    }).catch(function () {});
+}, 30000);

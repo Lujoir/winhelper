@@ -36,6 +36,12 @@ from uplink import (
     autostart as uplink_autostart,
 )
 from home_service import handle_home_network
+from net_service import (
+    handle_net_config, handle_net_config_check, handle_net_ipconflict,
+    handle_net_ping_start, handle_net_ping_history, handle_net_tracert_start,
+    handle_net_stress_start, handle_net_stress_export,
+    handle_net_task_status, handle_net_task_cancel,
+)
 
 # 路由表：前端请求路径 -> 业务处理器
 ROUTES = {
@@ -84,6 +90,17 @@ ROUTES = {
     "/api/perf/uplink/register": handle_uplink_register,
     # 主页（终端概览）
     "/api/home/network": handle_home_network,
+    # 网络排障（net-doctor）
+    "/api/netdoctor/config": handle_net_config,
+    "/api/netdoctor/config-check": handle_net_config_check,
+    "/api/netdoctor/ipconflict": handle_net_ipconflict,
+    "/api/netdoctor/ping-start": handle_net_ping_start,
+    "/api/netdoctor/ping-history": handle_net_ping_history,
+    "/api/netdoctor/tracert-start": handle_net_tracert_start,
+    "/api/netdoctor/stress-start": handle_net_stress_start,
+    "/api/netdoctor/stress-export": handle_net_stress_export,
+    "/api/netdoctor/task-status": handle_net_task_status,
+    "/api/netdoctor/task-cancel": handle_net_task_cancel,
 }
 
 
