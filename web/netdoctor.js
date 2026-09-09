@@ -485,8 +485,11 @@ function ndRenderHistory(d) {
     var html = '<table class="nd-table"><tr><th>节点</th><th>样本</th><th>成功率</th><th>平均延迟</th><th>最大延迟</th></tr>';
     for (var i = 0; i < agg.length; i++) {
         var a = agg[i];
+        /* 2026-09-09 语义修复：ok=探测通道成功（可达/可用率），warn（偏差过大）单独标注 */
+        var note = (a.warn_n > 0)
+            ? ' <span class="nd-hint">（' + a.warn_n + ' 次可达 · 偏差过大）</span>' : "";
         html += '<tr><td>' + ndEscapeHtml(a.key) + '</td><td class="nd-num">' + a.n
-            + '</td><td class="nd-num">' + ndFmtPct(a.ok_rate)
+            + '</td><td class="nd-num">' + ndFmtPct(a.ok_rate) + note
             + '</td><td class="nd-num">' + ndFmtMs(a.avg_ms)
             + '</td><td class="nd-num">' + ndFmtMs(a.max_ms) + '</td></tr>';
     }

@@ -742,14 +742,19 @@ def run_ping_suite(task, params):
             entry["ok"] = r["ok"]
             entry["status"] = "ok" if r["ok"] else "err"
             jsonl = {"ts": int(time.time()), "key": key, "target": target, "ok": r["ok"],
+                     "warn": False,
                      "loss_pct": 0.0 if r["ok"] else 100.0,
                      "avg_ms": None, "max_ms": None}
         elif method == "ntp":
             r = _ntp_probe(target)
             entry["detail"] = r.get("detail") or (r.get("error") or "NTP 探测失败")
+            # ok 语义 = 探测通道成功（拿到 ≥1 有效样本）；偏差超阈值为 warn 质量告警，
+            # 不改 ok（2026-09-09 用户实测语义缺陷修复：需关注 ≠ 失败）
             entry["ok"] = r["ok"]
             entry["status"] = r["status"]          # ok | warn(偏差过大·需校时) | err
+            entry["warn"] = r["status"] == "warn"
             jsonl = {"ts": int(time.time()), "key": key, "target": target, "ok": r["ok"],
+                     "warn": (r["status"] == "warn"),
                      "loss_pct": 0.0 if r["ok"] else 100.0,
                      "avg_ms": (abs(r["offset_ms"]) if r["offset_ms"] is not None else None),
                      "max_ms": r["max_abs_ms"]}
@@ -766,6 +771,7 @@ def run_ping_suite(task, params):
                 entry["status"] = "err"
                 entry["detail"] = "超时或不可达"
             jsonl = {"ts": int(time.time()), "key": key, "target": target, "ok": r["ok"],
+                     "warn": False,
                      "loss_pct": r["loss_pct"], "avg_ms": r["avg_ms"], "max_ms": r["max_ms"]}
         _record_jsonl(jsonl)
         results.append(entry)
@@ -804,11 +810,13 @@ def ping_history(limit=200):
     agg = {}
     for r in recs[-limit:]:
         k = r.get("key") or "?"
-        a = agg.setdefault(k, {"key": k, "n": 0, "ok_n": 0, "avg_ms_sum": 0.0, "avg_ms_n": 0,
-                               "max_ms": None})
+        a = agg.setdefault(k, {"key": k, "n": 0, "ok_n": 0, "warn_n": 0,
+                               "avg_ms_sum": 0.0, "avg_ms_n": 0, "max_ms": None})
         a["n"] += 1
         if r.get("ok"):
             a["ok_n"] += 1
+        if r.get("warn"):
+            a["warn_n"] += 1
         if isinstance(r.get("avg_ms"), (int, float)):
             a["avg_ms_sum"] += r["avg_ms"]
             a["avg_ms_n"] += 1
