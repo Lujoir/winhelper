@@ -19,6 +19,11 @@ var ndState = {
     tracertTaskId: null,
     stressTaskId: null,
     lastStressResult: null,
+    lastPing: null,        /* 最近连通性结果（AI 诊断 network 类用） */
+    lastTracert: null,
+    historyAgg: null,
+    aiCollect: null,       /* AI 诊断数据源缓存 {key: {ok,data,note,ts}} */
+    aiHistory: [],
     pollers: {}
 };
 
@@ -85,6 +90,10 @@ function initNetDoctorTab() {
     ndLoadConfig();
     ndLoadUplink();
     ndLoadHistory();
+    ndAiInitHistory();
+    ndAiRenderSources();
+    /* 数据源预采集（静默后台，提交时 5 分钟内直接复用缓存） */
+    setTimeout(function () { if (!document.hidden) { ndAiRefreshSources(); } }, 2000);
     /* 设置弹窗：打开时渲染网络排障节点维护区块（与既有 onclick 共存） */
     var sb = document.getElementById("appSettingsBtn");
     if (sb && !sb.dataset.ndHook) {
@@ -153,7 +162,7 @@ function ndRenderUplink() {
     var on = ndConnected();
     el.innerHTML = ndBadge(on ? "已连接" : "未连接", on ? "nd-ok" : "nd-muted");
     /* 依赖中心的功能置灰/解灰（如实标注，不虚构可用） */
-    var ids = ["ndConflictBtn", "ndStressBtn"];
+    var ids = ["ndConflictBtn", "ndStressBtn", "ndAiBtn"];
     for (var i = 0; i < ids.length; i++) {
         var b = document.getElementById(ids[i]);
         if (b) { b.disabled = !on; }
@@ -162,6 +171,8 @@ function ndRenderUplink() {
     if (wrap1) { wrap1.style.display = on ? "none" : "block"; }
     var wrap2 = document.getElementById("ndStressGate");
     if (wrap2) { wrap2.style.display = on ? "none" : "block"; }
+    var wrap3 = document.getElementById("ndAiGate");
+    if (wrap3) { wrap3.style.display = on ? "none" : "block"; }
 }
 
 /* ===================== 配置加载 ===================== */
@@ -461,6 +472,7 @@ function ndRenderPing(r) {
         ndSetTip("ndPingSummary", "检测失败：" + ((r && r.error) || "未知"));
         return;
     }
+    ndState.lastPing = r;
     ndRenderPingRows(r.results || []);
     var s = r.summary || {};
     ndSetTip("ndPingSummary", "完成：" + s.ok + " 正常 / " + s.err + " 异常" +
@@ -477,6 +489,7 @@ function ndLoadHistory() {
 function ndRenderHistory(d) {
     var el = document.getElementById("ndHistoryBody");
     if (!el) { return; }
+    if (d && d.agg) { ndState.historyAgg = d.agg; }
     var agg = (d && d.agg) || [];
     if (!agg.length) {
         el.innerHTML = '<div class="nd-empty">暂无历史记录（每次检测自动留档）</div>';
@@ -538,6 +551,7 @@ function ndRenderTracert(r) {
         if (el) { el.innerHTML = '<div class="nd-empty">无结果</div>'; }
         return;
     }
+    ndState.lastTracert = r;
     ndSetTip("ndTracertSummary", "完成：共 " + (r.hops || []).length + " 跳 ｜ 知识库节点 "
         + r.kb_count + " 条" + (r.kb_error ? "（知识库不可用：" + r.kb_error + "）" : ""));
     var html = '<table class="nd-table"><tr><th>跳数</th><th>延迟</th><th>IP</th><th>主机名</th><th>所属区域</th></tr>';
@@ -788,4 +802,237 @@ function ndResetNetSettings() {
             tip.textContent = "恢复失败：" + ((d && d.error) || "未知");
         }
     }).catch(function (e) { if (tip) { tip.textContent = "恢复失败：" + String(e); } });
+}
+
+/* ===================== ⑥ AI 智能诊断 ===================== */
+
+var ND_AI_SOURCES = [
+    { key: "hwinfo",       name: "硬件信息（hwinfo）" },
+    { key: "os_info",      name: "系统信息（os_info）" },
+    { key: "perf_analysis", name: "性能分析记录（perf_analysis）" },
+    { key: "perf_stress",   name: "性能压测记录（perf_stress）" },
+    { key: "system_log",    name: "系统日志（system_log · 最近事件）" },
+    { key: "network",       name: "网络排障数据（network · 连通性/追踪/压测）" }
+];
+
+/* 提交走 net_service 转发代理（token 仅后端注入）；pywebview 双参透传 JSON body，
+   独立页/浏览器回退 fetch POST。诊断为长请求（服务端 ≤120s），独立 130s 客户端超时
+   （不经 ndApiFetch 的 15s 通用保护）。 */
+function ndAiPostDiagnose(issue, logs) {
+    var body = JSON.stringify({ issue: issue, logs: logs });
+    var call;
+    if (window.pywebview && window.pywebview.api) {
+        call = window.pywebview.api.call("/api/netdoctor/ai-diagnose", body);
+        call.catch(function () {});
+    } else {
+        call = fetch("/api/netdoctor/ai-diagnose", { method: "POST",
+            headers: { "Content-Type": "application/json" }, body: body })
+            .then(function (r) { return r.json(); });
+    }
+    return Promise.race([
+        call,
+        new Promise(function (_, rej) {
+            setTimeout(function () { rej(new Error("客户端超时（120s），模型链可能仍在处理，可重试")); }, 130000);
+        })
+    ]).then(function (d) {
+        if (!d || d.success === false) {
+            var err = new Error((d && d.error) || "未知错误");
+            if (d && d.analysis_id) { err.analysis_id = d.analysis_id; }   /* 失败诊断平台已留档 */
+            throw err;
+        }
+        return d;
+    });
+}
+
+function ndAiSize(d) {
+    try { var n = JSON.stringify(d).length; return (n / 1024).toFixed(1) + " KB"; }
+    catch (e) { return "?"; }
+}
+
+/* 单类采集：前端聚合（零跨模块 import，全部走现成 bridge 路由）；失败降级「不可用」不阻断 */
+function ndAiCollectOne(key) {
+    var fail = function () { return Promise.resolve({ ok: false, data: null, note: "不可用" }); };
+    if (key === "os_info") {
+        return ndApiFetch("/api/perf/hwinfo").then(function (d) {
+            var h = d && d.hwinfo ? d.hwinfo : null;
+            if (!h || !h.os) { return fail(); }
+            return { ok: true, data: { hostname: h.hostname, os: h.os }, note: "实时" };
+        }).catch(fail);
+    }
+    if (key === "network") {
+        var parts = {}, n = 0;
+        if (ndState.lastPing) { parts.connectivity = ndState.lastPing; n++; }
+        if (ndState.lastTracert) { parts.tracert = ndState.lastTracert; n++; }
+        if (ndState.lastStressResult) { parts.stress = ndState.lastStressResult; n++; }
+        var aggP = ndState.historyAgg ? Promise.resolve(ndState.historyAgg)
+            : ndApiFetch("/api/netdoctor/ping-history?limit=50");
+        return aggP.then(function (agg) {
+            if (agg && agg.length) { parts.history = agg; n++; }
+            return n ? { ok: true, data: parts, note: n + " 组数据" }
+                     : { ok: false, data: null, note: "不可用（尚未检测）" };
+        }).catch(fail);
+    }
+    var route = key === "hwinfo" ? "/api/perf/hwinfo"
+        : key === "perf_analysis" ? "/api/perf/record-report"
+        : key === "perf_stress" ? "/api/perf/stress-status"
+        : "/api/loginspector/search?per_page=200";
+    return ndApiFetch(route).then(function (d) {
+        var data = null, note = "";
+        if (key === "hwinfo") {
+            data = d && d.hwinfo ? d.hwinfo : null;
+            note = "实时";
+        } else if (key === "system_log") {
+            var evs = (d && d.events) || [];
+            data = evs.length ? { events: evs, summary: d.summary || null } : null;
+            note = evs.length ? ("最近 " + evs.length + " 条 · " + (evs[0].time_text || "")) : "";
+        } else {
+            data = (d && d.success !== false) ? (d.report || d.task || (d.result || null)) : null;
+            note = "已采集";
+        }
+        if (!data || (typeof data === "object" && !Object.keys(data).length)) { return fail(); }
+        return { ok: true, data: data, note: note };
+    }).catch(fail);
+}
+
+function ndAiRenderSources() {
+    var body = document.getElementById("ndAiSourcesBody");
+    if (!body) { return; }
+    var rows = "";
+    for (var i = 0; i < ND_AI_SOURCES.length; i++) {
+        var s = ND_AI_SOURCES[i];
+        rows += '<tr><td><input type="checkbox" id="ndAiChk-' + s.key + '" checked></td>'
+            + '<td>' + ndEscapeHtml(s.name) + '</td>'
+            + '<td class="nd-hint" id="ndAiSt-' + s.key + '">待探测</td></tr>';
+    }
+    body.innerHTML = rows;
+}
+
+function ndAiRefreshSources() {
+    ndState.aiCollect = {};
+    for (var i = 0; i < ND_AI_SOURCES.length; i++) {
+        (function (s) {
+            var st = document.getElementById("ndAiSt-" + s.key);
+            if (st) { st.textContent = "采集中…"; }
+            ndAiCollectOne(s.key).then(function (r) {
+                r.ts = Date.now();
+                ndState.aiCollect[s.key] = r;
+                if (st) { st.textContent = r.ok ? (r.note + " · 约 " + ndAiSize(r.data)) : r.note; }
+            });
+        })(ND_AI_SOURCES[i]);
+    }
+}
+
+function ndAiCountIssue() {
+    var t = document.getElementById("ndAiIssue");
+    var c = document.getElementById("ndAiIssueCount");
+    if (t && c) { c.textContent = String((t.value || "").length); }
+}
+
+function ndAiInitHistory() {
+    try {
+        var raw = localStorage.getItem("nd_ai_history");
+        ndState.aiHistory = raw ? JSON.parse(raw) : [];
+        if (!ndState.aiHistory.length) { ndState.aiHistory = []; }
+    } catch (e) { ndState.aiHistory = []; }
+    ndAiRenderHistory();
+}
+
+function ndAiSaveHistory(d, issue) {
+    try {
+        var h = ndState.aiHistory || [];
+        h.unshift({ ts: Date.now(), issue: String(issue || "").slice(0, 60),
+                    analysis_id: d.analysis_id, model: d.model,
+                    duration_ms: d.duration_ms,
+                    text: String(d.response_text || "").slice(0, 20000) });
+        ndState.aiHistory = h.slice(0, 20);
+        try { localStorage.setItem("nd_ai_history", JSON.stringify(ndState.aiHistory)); }
+        catch (e) { /* file:// 或存储禁用：内存态即可 */ }
+    } catch (e) { /* 存储失败不影响诊断结果展示 */ }
+    ndAiRenderHistory();
+}
+
+function ndAiRenderHistory() {
+    var el = document.getElementById("ndAiHistoryBody");
+    if (!el) { return; }
+    var h = ndState.aiHistory || [];
+    if (!h.length) { el.innerHTML = '<div class="nd-empty">暂无历史</div>'; return; }
+    var rows = "";
+    for (var i = 0; i < h.length; i++) {
+        rows += '<tr style="cursor:pointer" onclick="ndAiShowHistory(' + i + ')">'
+            + '<td>' + ndEscapeHtml(h[i].issue || "--") + '</td>'
+            + '<td class="nd-num">' + ndEscapeHtml(new Date(h[i].ts).toLocaleString()) + '</td>'
+            + '<td>' + ndEscapeHtml(h[i].analysis_id || "--") + '</td></tr>';
+    }
+    el.innerHTML = '<table class="nd-table"><tr><th>问题摘要</th><th>时间</th><th>analysis_id</th></tr>' + rows + '</table>';
+}
+
+function ndAiShowHistory(i) {
+    var h = (ndState.aiHistory || [])[i];
+    if (!h) { return; }
+    ndAiRenderResult({ analysis_id: h.analysis_id, model: h.model,
+                       duration_ms: h.duration_ms, response_text: h.text });
+}
+
+function ndAiRenderResult(d) {
+    var el = document.getElementById("ndAiBody");
+    if (!el) { return; }
+    var meta = '<div class="nd-hint">analysis_id ' + ndEscapeHtml(d.analysis_id || "--")
+        + ' ｜ 模型 ' + ndEscapeHtml(d.model || "--")
+        + ' ｜ 耗时 ' + ndEscapeHtml(d.duration_ms !== null && d.duration_ms !== undefined
+            ? d.duration_ms + " ms" : "--") + '</div>';
+    el.innerHTML = meta + '<pre class="nd-pre" style="max-height:340px;overflow:auto">'
+        + ndEscapeHtml(d.response_text || "（无内容）") + '</pre>';
+}
+
+function ndAiWaitCollect(maxTicks) {
+    return new Promise(function (resolve) {
+        var n = 0;
+        var t = setInterval(function () {
+            n++;
+            var done = ndState.aiCollect && ND_AI_SOURCES.every(function (s) {
+                return ndState.aiCollect[s.key];
+            });
+            if (done || n >= maxTicks) { clearInterval(t); resolve(); }
+        }, 300);
+    });
+}
+
+function ndAiSubmit() {
+    if (!ndConnected()) { ndSetTip("ndAiSummary", "未连接中心，功能不可用"); return; }
+    var issue = ((document.getElementById("ndAiIssue") || {}).value || "").trim();
+    if (!issue) { ndSetTip("ndAiSummary", "请先填写问题概述"); return; }
+    var btn = document.getElementById("ndAiSubmitBtn");
+    if (btn) { btn.disabled = true; }
+    ndSetTip("ndAiSummary", "采集日志并提交分析中（模型链处理约 10-30 秒）…");
+    var c0 = ndState.aiCollect && ndState.aiCollect.hwinfo;
+    var needFresh = !c0 || (Date.now() - (c0.ts || 0) > 300000);
+    var ready = needFresh ? (ndAiRefreshSources(), ndAiWaitCollect(20)) : Promise.resolve();
+    ready.then(function () {
+        var logs = {};
+        var total = 0;
+        for (var i = 0; i < ND_AI_SOURCES.length; i++) {
+            var s = ND_AI_SOURCES[i];
+            var cb = document.getElementById("ndAiChk-" + s.key);
+            if (!cb || !cb.checked) { continue; }
+            var r = ndState.aiCollect ? ndState.aiCollect[s.key] : null;
+            if (!r || !r.ok) { continue; }          /* 不可用类不提交，不阻断 */
+            var text = JSON.stringify(r.data);
+            if (text.length > 32768) { text = text.slice(0, 32768); }   /* 单类 ≤32KB（契约对齐） */
+            logs[s.key] = text;
+            total += text.length;
+        }
+        if (total > 4 * 1024 * 1024) { throw new Error("日志总体量超限（>4MB）"); }
+        return ndAiPostDiagnose(issue, logs).then(function (d) {
+            ndAiRenderResult(d);
+            ndAiSaveHistory(d, issue);
+            ndSetTip("ndAiSummary", "诊断完成");
+        });
+    }).catch(function (e) {
+        var msg = (e && e.message ? e.message : String(e));
+        var ref = (e && e.analysis_id)
+            ? "（已在平台留档，analysis_id " + e.analysis_id + "，可在控制台 AI 分析页追溯）" : "";
+        ndSetTip("ndAiSummary", "诊断失败：" + msg + ref + "，可重试");
+    }).then(function () {
+        if (btn) { btn.disabled = false; }
+    });
 }

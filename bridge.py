@@ -9,6 +9,8 @@ pywebview 的 js_api 通道：前端 JS 直接调用本地 Python 处理器，
 
 from urllib.parse import urlparse, parse_qs
 
+import json
+
 from service import (
     handle_disk_overview, handle_disk_scan, handle_disk_scan_status,
     handle_disk_scan_cancel, handle_disk_cleanup, handle_disk_open_location,
@@ -40,7 +42,7 @@ from net_service import (
     handle_net_config, handle_net_config_check, handle_net_ipconflict,
     handle_net_ping_start, handle_net_ping_history, handle_net_tracert_start,
     handle_net_stress_start, handle_net_stress_export,
-    handle_net_task_status, handle_net_task_cancel,
+    handle_net_task_status, handle_net_task_cancel, handle_net_ai_diagnose,
 )
 
 # 路由表：前端请求路径 -> 业务处理器
@@ -101,16 +103,19 @@ ROUTES = {
     "/api/netdoctor/stress-export": handle_net_stress_export,
     "/api/netdoctor/task-status": handle_net_task_status,
     "/api/netdoctor/task-cancel": handle_net_task_cancel,
+    "/api/netdoctor/ai-diagnose": handle_net_ai_diagnose,
 }
 
 
 class ApiBridge:
     """暴露给前端 window.pywebview.api 的桥接对象"""
 
-    def call(self, path: str) -> dict:
+    def call(self, path: str, body: str = None) -> dict:
         """
         统一入口：前端传入 '/api/loginspector/search?page=1' 形式的路径，
         分发到对应业务处理器并返回 dict（pywebview 自动转为 JS Promise）。
+        body（可选，2026-09-09 AI 诊断增量）：JSON 字符串，仅
+        /api/netdoctor/ai-diagnose 使用（大 payload 双参透传，向后兼容旧单参调用）。
         """
         try:
             parsed = urlparse(path or "")
@@ -118,6 +123,12 @@ class ApiBridge:
             handler = ROUTES.get(parsed.path)
             if handler is None:
                 return {"success": False, "error": f"未知接口: {parsed.path}"}
+            if parsed.path == "/api/netdoctor/ai-diagnose":
+                try:
+                    data = json.loads(body) if body else None
+                except Exception:
+                    data = None
+                return handle_net_ai_diagnose(params, data)
             return handler(params)
         except Exception as e:
             return {"success": False, "error": str(e)}

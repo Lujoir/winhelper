@@ -1504,6 +1504,42 @@ def handle_net_stress_export(params):
     return {"success": True, "path": path}
 
 
+def handle_net_ai_diagnose(params=None, body=None):
+    """AI 智能诊断转发代理（第六模块，2026-09-09）：
+    前端聚合六类日志 → 本代理 → 平台 POST /api/v1/terminals/{tid}/ai/diagnose。
+    - token 仅在服务端注入（前端永不接触 token/平台地址，复用 _platform_post 语义）
+    - body 为 dict（bridge.call 双参透传 JSON）；issue 截 2000 字，logs 六类透传
+      （每类 ≤32KB 由前端截断，服务端契约侧再截——双保险）
+    - 同步等待 ≤120s（服务端模型链），本端 urllib 超时 125s 保护
+    """
+    if not uplink_configured():
+        return {"success": False, "error": "not_connected"}
+    if not isinstance(body, dict):
+        return {"success": False, "error": "body_invalid"}
+    issue = str(body.get("issue") or "").strip()[:2000]
+    if not issue:
+        return {"success": False, "error": "issue_empty"}
+    logs = body.get("logs") if isinstance(body.get("logs"), dict) else {}
+    clean = {}
+    for k, v in logs.items():
+        if isinstance(k, str) and re.match(r"^[a-z_]{1,32}$", k):
+            clean[k] = v
+    payload = {"issue": issue, "logs": clean}
+    tid = _terminal_id()
+    code, resp = _platform_post("/api/v1/terminals/%s/ai/diagnose" % tid, payload, timeout=125)
+    if not (200 <= code < 300) or not (resp or {}).get("ok"):
+        # 非 200/ok=false 的失败诊断服务端同样落库——透传 analysis_id 供 UI 引导追溯
+        # （server-platform 对接要点 2026-09-09：失败诊断可在控制台 AI 分析页查看）
+        return {"success": False,
+                "error": "ai_diagnose_http_%s: %s" % (code, (resp or {}).get("error", "")),
+                "analysis_id": (resp or {}).get("analysis_id")}
+    return {"success": True,
+            "analysis_id": resp.get("analysis_id"),
+            "response_text": resp.get("response_text"),
+            "model": resp.get("model"),
+            "duration_ms": resp.get("duration_ms")}
+
+
 NET_ROUTES = {
     "/api/netdoctor/config": handle_net_config,
     "/api/netdoctor/config-check": handle_net_config_check,
@@ -1515,6 +1551,7 @@ NET_ROUTES = {
     "/api/netdoctor/stress-export": handle_net_stress_export,
     "/api/netdoctor/task-status": handle_net_task_status,
     "/api/netdoctor/task-cancel": handle_net_task_cancel,
+    "/api/netdoctor/ai-diagnose": handle_net_ai_diagnose,
 }
 
 
