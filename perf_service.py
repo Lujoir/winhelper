@@ -2178,15 +2178,37 @@ def _load_app_config():
     return cfg
 
 
+# perf 命名空间键：写回时仅允许覆写这些键，app_config.json 中其它模块的键（如 netdoctor.*）
+# 一律原样保留（2026-09-09 修复：此前整文件覆盖写回会剥离 net-doctor 等模块的用户自定义配置）
+_PERF_CONFIG_KEYS = ("temperature_interval_sec",)
+
+
 def _save_app_config(cfg):
+    """merge 写回（原子）：读现有 app_config.json（缺失/损坏容错为 {}）→
+    仅更新 perf 命名空间键 → 保留其它模块键原样 → 先写 .tmp 再 os.replace。"""
     path = _app_config_path()
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=1)
+    existing = {}
     try:
+        with open(path, "r", encoding="utf-8") as f:
+            saved = json.load(f)
+        if isinstance(saved, dict):
+            existing = saved
+    except Exception:
+        existing = {}  # 缺失/损坏均从空配置起（损坏内容无从保留）
+    merged = dict(existing)
+    for k in _PERF_CONFIG_KEYS:
+        if k in cfg:
+            merged[k] = cfg[k]
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(merged, f, ensure_ascii=False, indent=1)
         os.replace(tmp, path)
     except Exception:
-        pass
+        try:
+            os.remove(tmp)  # 写失败清理半成品，原文件保持不动
+        except Exception:
+            pass
 
 
 def _clamp_temps_interval(v):
