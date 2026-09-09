@@ -5,15 +5,15 @@
 - **维护人**：api-registrar-dev（接口登记官）
 - **事实来源**：代码实证（server-platform/server/api.py、bridge.py、uplink.py、net-doctor/net_service.py 等），每条注明文件+函数
 - **登记统计**：
-  - 一、服务端 REST API（SRV）：55 条
+  - 一、服务端 REST API（SRV）：69 条
   - 二、终端本地桥接 API（BRG）：49 条（netdoctor 10 条已于 2026-09-09 合入主应用转「在用」，commit 628c210）
-  - 三、终端↔平台协议（UPL）：9 条
+  - 三、终端↔平台协议（UPL）：10 条
   - 四、外部依赖接口（EXT）：5 条
   - 五、废弃/规划接口（DEP）：5 条
-  - **合计 123 条**
+  - **合计 138 条**
 - **通用约定**：
   - 服务端监听：ThreadingHTTPServer，`0.0.0.0:{port}`，默认 18090（app.py `_load_config` / `main`）；配置经 `$ETP_CONFIG` → `server/config.local.json` → dev 默认三级加载
-  - 终端上行鉴权：请求头 `X-ETP-Token`（对照 config.json `terminal_token`）
+  - 终端上行鉴权：请求头 `X-ETP-Token`（对照 config.json `terminal_token`）> 更新 2026-09-09：收敛为**多 token 模型**——config token 或 SQLite `terminal_tokens` 表 status='active' 命中均放行（详见 UPL-010，commit 4d2924b）
   - 控制台鉴权：请求头 `X-ETP-Console-Token`（登录换取；auth_upgrade SQLite 持久会话）
   - 白名单准入：终端 API 经 `_admission` 校验（register 强制白名单，空名单 fail-closed；已注册终端豁免）
   - 示例一律脱敏：`<server>`/`<token>`/`127.0.0.1`；禁止出现生产 IP 与真实 token
@@ -48,7 +48,7 @@
 - **调用方式**：`curl -X POST http://<server>/api/v1/console/login -H "Content-Type: application/json" -d '{"username":"admin","password":"<口令>"}'`
 - **代码出处**：api.py `dispatch`（分支 `/api/v1/console/login`）→ auth_upgrade.py `authenticate`
 - **状态**：在用
-- **登记记录**：2026-09-09，代码实证
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：响应新增 `role` 字段（api.py:214 `role=(r.user or {}).get("role")`，commit 4d2924b，代码实证）
 
 #### SRV-003 控制台自助改密 `POST /api/v1/console/password`
 - **用途**：修改当前用户口令（等保三级 8.1.4.1），成功后吊销其它会话、保留当前会话
@@ -619,7 +619,153 @@
 - **状态**：在用
 - **登记记录**：2026-09-09，代码实证
 
-> 注：SRV-001~055 中编号按登记顺序连续分配；「1.x」小节标题与编号的对应关系以条目内「方法与路径」为准。
+> 注：SRV-001~069 中编号按登记顺序连续分配；「1.x」小节标题与编号的对应关系以条目内「方法与路径」为准。
+
+### 1.11 控制台-系统管理（sysadmin，ADR-021，2026-09-09 新增）
+
+> 组级约定（代码出处：api.py `_console_sysadmin`，dispatch 分支 api.py:764-773）：全部接口要求 **X-ETP-Console-Token + admin 角色**，非 admin 返回 403 `"需要管理员权限"`（并记 ACCESS_DENIED 审计）；错误约定：参数缺失/非法 400、不存在 404、冲突 409。四功能：账户管理（console_auth.db）/ 算力网关（settings llm.*）/ 第三方接口登记（third_party_apis 表）/ 终端 token 维护（terminal_tokens 表）。敏感操作（建户/改户/删户/重置/token 创建/轮换/停用）均落 auth 审计。
+
+#### SRV-056 账户列表 `GET /api/v1/console/sysadmin/users`
+- **用途**：控制台账户清单（口令字段恒为 `'****'`，不出明文/哈希）
+- **鉴权**：X-ETP-Console-Token + admin
+- **请求参数**：无
+- **响应**：`{"ok":true,"users":[{id,username,role,status,password:'****',password_algo,password_must_change,last_login_at,last_login_ip,locked_until}]}`
+- **调用方式**：`curl http://<server>/api/v1/console/sysadmin/users -H "X-ETP-Console-Token: <admin-token>"`
+- **代码出处**：api.py `_console_sysadmin` → auth_upgrade.py `list_users`
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit 4d2924b）
+
+#### SRV-057 创建账户 `POST /api/v1/console/sysadmin/users`
+- **用途**：新建控制台账户（口令走复杂度策略，默认 must_change=1 首登强制改密）
+- **鉴权**：X-ETP-Console-Token + admin
+- **请求参数**：`{"username":"operator1","password":"<符合复杂度策略>","role":"admin|operator"}`（username/password 必填，role 默认 operator）
+- **响应**：`{"ok":true,"id":3,"msg":"..."}`；重名 409；口令不合规 400
+- **调用方式**：`curl -X POST http://<server>/api/v1/console/sysadmin/users -H "X-ETP-Console-Token: <admin-token>" -d '{"username":"operator1","password":"...","role":"operator"}'`
+- **代码出处**：api.py `_console_sysadmin` → auth_upgrade.py `create_user`
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit 4d2924b）
+
+#### SRV-058 修改账户角色/状态 `PUT /api/v1/console/sysadmin/users/{id}`
+- **用途**：改角色或状态；`status=disabled` 即时吊销该账户全部会话
+- **鉴权**：X-ETP-Console-Token + admin
+- **请求参数**：`{"role":"operator"}` 和/或 `{"status":"active|disabled"}`（均可选，至少一项）
+- **响应**：`{"ok":true,"msg":"..."}`；自降级/自禁用/停用最后一个 admin 均 409；账户不存在 404
+- **调用方式**：`curl -X PUT http://<server>/api/v1/console/sysadmin/users/3 -H "X-ETP-Console-Token: <admin-token>" -d '{"status":"disabled"}'`
+- **代码出处**：api.py `_console_sysadmin` → auth_upgrade.py `update_user`
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit 4d2924b）
+
+#### SRV-059 删除账户 `DELETE /api/v1/console/sysadmin/users/{id}`
+- **用途**：删户（先吊销会话，关联数据 FK CASCADE 清理）
+- **鉴权**：X-ETP-Console-Token + admin
+- **请求参数**：路径 `{id}`
+- **响应**：`{"ok":true,"msg":"..."}`；自删/删除最后一个 admin 409；不存在 404
+- **调用方式**：`curl -X DELETE http://<server>/api/v1/console/sysadmin/users/3 -H "X-ETP-Console-Token: <admin-token>"`
+- **代码出处**：api.py `_console_sysadmin` → auth_upgrade.py `delete_user`
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit 4d2924b）
+
+#### SRV-060 管理员重置口令 `POST /api/v1/console/sysadmin/users/{id}/reset-password`
+- **用途**：重置指定账户口令（force_change=true，目标用户下次登录强制改密）
+- **鉴权**：X-ETP-Console-Token + admin
+- **请求参数**：`{"new_password":"<符合复杂度策略>"}`（必填）
+- **响应**：`{"ok":true,"msg":"..."}`；口令不合规 400；账户不存在 404
+- **调用方式**：`curl -X POST http://<server>/api/v1/console/sysadmin/users/3/reset-password -H "X-ETP-Console-Token: <admin-token>" -d '{"new_password":"..."}'`
+- **代码出处**：api.py `_console_sysadmin` → auth_upgrade.py `admin_reset_password`
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit 4d2924b）
+
+#### SRV-061 算力网关配置读取 `GET /api/v1/console/sysadmin/llm`
+- **用途**：读 LLM 网关配置（api_key 仅脱敏回显）
+- **鉴权**：X-ETP-Console-Token + admin
+- **请求参数**：无
+- **响应**：`{"ok":true,"llm":{"url":"...","model":"...","model_fallback":"...","api_key_masked":"sk-****xxxx","configured":true}}`（configured = url 与 key 均非空）
+- **调用方式**：`curl http://<server>/api/v1/console/sysadmin/llm -H "X-ETP-Console-Token: <admin-token>"`
+- **代码出处**：api.py `_console_sysadmin`（settings llm.* 读取 + `mask_secret`）
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit 4d2924b）
+
+#### SRV-062 算力网关配置写入 `POST /api/v1/console/sysadmin/llm`
+- **用途**：写 settings 键 `llm.url`/`llm.model`/`llm.model_fallback`/`llm.api_key`（key 加密存储）
+- **鉴权**：X-ETP-Console-Token + admin
+- **请求参数**：`{"url":"...","model":"...","model_fallback":"...","api_key":"..."}`——各字段可选；**api_key 留空 = 保持不变**
+- **响应**：`{"ok":true,"changed":["llm.url","llm.api_key"]}`（实际变更键列表）
+- **调用方式**：`curl -X POST http://<server>/api/v1/console/sysadmin/llm -H "X-ETP-Console-Token: <admin-token>" -d '{"model":"Qwen3.6"}'`
+- **代码出处**：api.py `_console_sysadmin` → settings.py `SettingsStore.set`
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit 4d2924b）
+
+#### SRV-063 算力网关连通性测试 `POST /api/v1/console/sysadmin/llm/test`
+- **用途**：`GET {llm.url}/v1/models`（Bearer api_key，8s 超时）验证连通；不消耗对话额度
+- **鉴权**：X-ETP-Console-Token + admin
+- **请求参数**：无（读当前配置）
+- **响应**：`{"ok":true,"test":{"ok":true,"status_code":200,"latency_ms":380,"error":""}}`；未配置 `test.error="not_configured"`
+- **调用方式**：`curl -X POST http://<server>/api/v1/console/sysadmin/llm/test -H "X-ETP-Console-Token: <admin-token>"`
+- **代码出处**：api.py `_console_sysadmin` → `_llm_test`；外部端点见 EXT-001（更新记录）
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit 4d2924b）
+
+#### SRV-064 第三方接口登记 `GET|POST /api/v1/console/sysadmin/third-party`
+- **用途**：外部第三方接口台账的登记/列表（GET 列表 / POST 新增）
+- **鉴权**：X-ETP-Console-Token + admin
+- **请求参数**（POST）：`{"name":"<必填>","base_url":"<必填>","method":"GET|POST|PUT|DELETE|HEAD","params_json":{},"headers_json":{},"note":""}`（params_json/headers_json 须为 JSON 对象，非法 400）
+- **响应**：GET `{"ok":true,"apis":[...]}`；POST `{"ok":true,"id":2}`
+- **调用方式**：`curl -X POST http://<server>/api/v1/console/sysadmin/third-party -H "X-ETP-Console-Token: <admin-token>" -d '{"name":"短信网关","base_url":"https://<gateway>/send","method":"POST"}'`
+- **代码出处**：api.py `_console_sysadmin` → store.py `third_party_create` / `third_party_list`（表 third_party_apis）
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit 4d2924b）
+
+#### SRV-065 第三方接口编辑/删除 `PUT|DELETE /api/v1/console/sysadmin/third-party/{id}`
+- **用途**：编辑登记项（部分更新，空载荷 400）/ 删除
+- **鉴权**：X-ETP-Console-Token + admin
+- **请求参数**：路径 `{id}`；PUT body 各字段可选（name/base_url 非空校验、method 白名单、params_json/headers_json 对象校验）
+- **响应**：`{"ok":true}`；无更新字段 400 `"nothing to update"`；不存在 404
+- **调用方式**：`curl -X PUT http://<server>/api/v1/console/sysadmin/third-party/2 -H "X-ETP-Console-Token: <admin-token>" -d '{"note":"v2"}'`
+- **代码出处**：api.py `_console_sysadmin` → store.py `third_party_update` / `third_party_delete`
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit 4d2924b）
+
+#### SRV-066 第三方接口启停 `POST /api/v1/console/sysadmin/third-party/{id}/toggle`
+- **用途**：启用/停用登记项
+- **鉴权**：X-ETP-Console-Token + admin
+- **请求参数**：`{"enabled": true|false}`
+- **响应**：`{"ok":true}`；不存在 404
+- **调用方式**：`curl -X POST http://<server>/api/v1/console/sysadmin/third-party/2/toggle -H "X-ETP-Console-Token: <admin-token>" -d '{"enabled":false}'`
+- **代码出处**：api.py `_console_sysadmin` → store.py `third_party_toggle`
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit 4d2924b）
+
+#### SRV-067 终端 token 列表/生成 `GET|POST /api/v1/console/sysadmin/tokens`
+- **用途**：终端接入 token 多实例维护（GET 列表，**token 值完整返回**，按需求可查看；POST 生成，`secrets.token_hex(24)`）
+- **鉴权**：X-ETP-Console-Token + admin
+- **请求参数**：POST `{"label":"办公区终端"}`（可空）
+- **响应**：GET `{"ok":true,"tokens":[{id,label,token,status,created_ts,last_used_ts,...}]}`；POST `{"ok":true,"token":{...新行...}}`
+- **调用方式**：`curl -X POST http://<server>/api/v1/console/sysadmin/tokens -H "X-ETP-Console-Token: <admin-token>" -d '{"label":"办公区终端"}'`
+- **代码出处**：api.py `_console_sysadmin` → store.py `token_list` / `token_create`（表 terminal_tokens，token 唯一索引）；审计 TOKEN_STATUS
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit 4d2924b）
+
+#### SRV-068 终端 token 轮换/停用/启用 `POST /api/v1/console/sysadmin/tokens/{id}/rotate|disable|enable`
+- **用途**：rotate 返回新 token 且旧值立即失效；disable 立即 401 拒绝；enable 恢复
+- **鉴权**：X-ETP-Console-Token + admin
+- **请求参数**：路径 `{id}` + 动作段（rotate/disable/enable），body 无
+- **响应**：rotate `{"ok":true,"token":"<新token>"}`；disable/enable `{"ok":true}`；不存在 404
+- **调用方式**：`curl -X POST http://<server>/api/v1/console/sysadmin/tokens/2/rotate -H "X-ETP-Console-Token: <admin-token>"`
+- **代码出处**：api.py `_console_sysadmin` → store.py `token_rotate` / `token_set_status`；审计 TOKEN_ROTATED/TOKEN_STATUS
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit 4d2924b）
+
+### 1.12 会话信息
+
+#### SRV-069 当前会话信息 `GET /api/v1/console/session-info`
+- **用途**：控制台前端获取当前登录者身份（username/role/must_change_password）
+- **鉴权**：X-ETP-Console-Token
+- **请求参数**：无
+- **响应**：`{"ok":true,"username":"admin","role":"admin","must_change_password":false}`
+- **调用方式**：`curl http://<server>/api/v1/console/session-info -H "X-ETP-Console-Token: <token>"`
+- **代码出处**：api.py `dispatch`（分支 api.py:243-248）→ auth_upgrade.py `get_user`
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit 4d2924b）
 
 ---
 
@@ -1108,6 +1254,18 @@
 - **状态**：在用
 - **登记记录**：2026-09-09，代码实证
 
+#### UPL-010 终端 Token 鉴权模型 v2（多 token，2026-09-09 新增）
+- **用途**：终端上行（`/api/v1/terminals/*` 与 `/api/v1/ai/analyze`）的 X-ETP-Token 校验由单 config token 收敛为**多 token 模型**
+- **语义**（代码出处：api.py:88-104 `ApiContext.check_terminal_token`，切换点 api.py:218）：
+  1. config.json `terminal_token` 命中 → 放行（**不落表**，保持向后兼容零开销）
+  2. SQLite `terminal_tokens` 表 `status='active'` 条目命中 → 放行，节流更新 `last_used_ts`（60s 内不重复写，防高频心跳刷库；非关键写失败不影响鉴权结论）
+  3. 均未命中 → 401（invalid terminal token）
+- **兼容性**：对现有终端完全兼容（config token 优先路径不变）；server-platform-dev 实测 WIN-Jun-office-PC 心跳 200 不打断
+- **管理面**：token 生命周期经 SRV-067/068 维护（生成/轮换/停用/启用 + 审计）
+- **表**：`terminal_tokens`（store.py:164，token 唯一索引 idx_terminal_tokens_token；config token 幂等迁移 label='default'）
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit 4d2924b）
+
 ---
 
 ## 四、外部依赖接口
@@ -1123,7 +1281,7 @@
 - **调用方**：api.py `run_ai_analysis`（SRV-023/055）
 - **代码出处**：server-platform/server/ai.py `llm_chat` / `llm_chat_chain`；api.py `run_ai_analysis`
 - **状态**：在用
-- **登记记录**：2026-09-09，代码实证
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：新增消费方 SRV-063 连通性测试（`GET {llm.url}/v1/models`，Bearer，8s 超时，不消耗对话额度；api.py `_llm_test`，commit 4d2924b）
 
 #### EXT-002 vsftpd FTP 文件上传
 - **用途**：终端日志/文件上传通道（deploy.py 安装配置 vsftpd 并持久放行端口）
@@ -1215,6 +1373,6 @@
 
 ## 附：对账约定
 
-- 本台账对账基线 commit：工作区当前版本（bridge.py / uplink.py 有未提交修改，以台账登记时点代码为准）> 更新 2026-09-09：net-doctor 合入基线 commit 628c210（bridge.py ROUTES 含 /api/netdoctor/* 10 条）
+- 本台账对账基线 commit：工作区当前版本（bridge.py / uplink.py 有未提交修改，以台账登记时点代码为准）> 更新 2026-09-09：net-doctor 合入基线 commit 628c210（bridge.py ROUTES 含 /api/netdoctor/* 10 条）> 更新 2026-09-09：系统管理模块基线 commit 4d2924b（sysadmin 13 路由 + 多 token 模型 UPL-010 + session-info，代码实证 api.py:88-104/243-248/764-773/829+）
 - 对账方法：grep api.py `_terminal_api`/`_console_api`/`_console_kb_api`/`_console_nettest` 分支 + bridge.py `ROUTES`，与台账逐条比对，输出差异清单（新增未登记/已废弃仍登记/字段不符）
 - 维护规则：接口变更（改参数/改路径/废弃）必须同步更新台账，条目内追加 `> 更新 YYYY-MM-DD：变更点（出处）`，保留历史痕迹
