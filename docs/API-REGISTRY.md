@@ -5,12 +5,12 @@
 - **维护人**：api-registrar-dev（接口登记官）
 - **事实来源**：代码实证（server-platform/server/api.py、bridge.py、uplink.py、net-doctor/net_service.py 等），每条注明文件+函数
 - **登记统计**：
-  - 一、服务端 REST API（SRV）：69 条
+  - 一、服务端 REST API（SRV）：71 条
   - 二、终端本地桥接 API（BRG）：49 条（netdoctor 10 条已于 2026-09-09 合入主应用转「在用」，commit 628c210）
   - 三、终端↔平台协议（UPL）：10 条
   - 四、外部依赖接口（EXT）：5 条
   - 五、废弃/规划接口（DEP）：5 条
-  - **合计 138 条**
+  - **合计 140 条**
 - **通用约定**：
   - 服务端监听：ThreadingHTTPServer，`0.0.0.0:{port}`，默认 18090（app.py `_load_config` / `main`）；配置经 `$ETP_CONFIG` → `server/config.local.json` → dev 默认三级加载
   - 终端上行鉴权：请求头 `X-ETP-Token`（对照 config.json `terminal_token`）> 更新 2026-09-09：收敛为**多 token 模型**——config token 或 SQLite `terminal_tokens` 表 status='active' 命中均放行（详见 UPL-010，commit 4d2924b）
@@ -280,7 +280,7 @@
 - **调用方式**：`curl "http://<server>/api/v1/console/ai/analyses" -H "X-ETP-Console-Token: <token>"`
 - **代码出处**：api.py `_console_api` → store.py `ai_list`
 - **状态**：在用
-- **登记记录**：2026-09-09，代码实证
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：ai_analyses.trigger 枚举新增 `terminal_diagnose`（现有 console/terminal 不变）；控制台显示文案：console→控制台、terminal→终端上报、terminal_diagnose→终端诊断；**本列表接口不含 context_json**，单条详情走 SRV-071（commit 8aaa64e，ADR-023）
 
 #### SRV-025 AI 分析报告导出 `GET /api/v1/console/ai/report/{id}`
 - **用途**：单条 AI 分析生成 HTML 报告（下载）
@@ -621,7 +621,28 @@
 - **状态**：在用
 - **登记记录**：2026-09-09，代码实证
 
-> 注：SRV-001~069 中编号按登记顺序连续分配；「1.x」小节标题与编号的对应关系以条目内「方法与路径」为准。
+#### SRV-070 终端 AI 智能诊断 `POST /api/v1/terminals/{tid}/ai/diagnose`
+- **用途**：终端推送六类日志包 + 问题概述 → LLM 主备降级链出结论（同步接口，等待 ≤120s，实测约 11s；与 SRV-055 差异：上下文来自终端上报而非服务端聚合）
+- **鉴权**：X-ETP-Token（+ 准入，白名单中间件）
+- **请求参数**：`{"issue":"问题概述 ≤2000 字（必填）","logs":{"hwinfo":…,"os_info":…,"perf_analysis":…,"perf_stress":…,"system_log":…,"network":…}}`——六类键均可选（采集容错缺省），值可为对象或字符串
+- **响应**：成功 200 `{"ok":true,"analysis_id":9,"response_text":"…","model":"Qwen3.6","duration_ms":11340}`；LLM 全链失败 **502** `{"ok":false,"error":"…","analysis_id":N,"duration_ms":N}`（失败记录仍落库）；400 issue 空/超 2000 字、logs 非对象；404 终端未注册；413 body 超限（8MB）
+- **截断与存证**：单类日志 32KB 头部截断（`…[truncated]`）；prompt 注入每类 ≤4KB 合计 ≤24KB；context_json 存证每类 ≤4KB
+- **调用方式**：`curl -X POST http://<server>/api/v1/terminals/WIN-HOST/ai/diagnose -H "X-ETP-Token: <token>" -d '{"issue":"开机后风扇狂转","logs":{"perf_analysis":"..."}}'`
+- **代码出处**：api.py `_terminal_api`（分支 api.py:419-445）→ `run_terminal_diagnose`（api.py:1160+，DIAG_SYSTEM_PROMPT + `build_diagnose_context` + llm_chat_chain，timeout=45×max_retries=0 双模型最坏约 90s）
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit 8aaa64e，ADR-023；冒烟：真实终端 200 analysis_id=9 model=Qwen3.6 duration=11340ms）
+
+#### SRV-071 AI 分析单条详情 `GET /api/v1/console/ai/analyses/{id}`（属 1.6 控制台-AI 组）
+- **用途**：单条分析详情（**含 context_json**——终端诊断时为 `{issue, logs 各类截断存证}`；列表接口 SRV-024 不含 context_json，行为不变）
+- **鉴权**：X-ETP-Console-Token
+- **请求参数**：路径 `{id}` 分析记录 ID（纯数字）
+- **响应**：`{"ok":true,"analysis":{id,terminal_id,ts,trigger,issue,context,response_text,status,model,duration_ms,...}}`（store.ai_get 全行）；不存在 404
+- **调用方式**：`curl http://<server>/api/v1/console/ai/analyses/9 -H "X-ETP-Console-Token: <token>"`
+- **代码出处**：api.py `_console_api`（api.py:784-790）→ store.py `ai_get`
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit 8aaa64e，ADR-023）
+
+> 注：SRV-001~071 中编号按登记顺序连续分配；「1.x」小节标题与编号的对应关系以条目内「方法与路径」为准（SRV-070 属 1.10 终端上行，SRV-071 属 1.6 控制台-AI）。
 
 ### 1.11 控制台-系统管理（sysadmin，ADR-021，2026-09-09 新增）
 
@@ -1375,6 +1396,6 @@
 
 ## 附：对账约定
 
-- 本台账对账基线 commit：工作区当前版本（bridge.py / uplink.py 有未提交修改，以台账登记时点代码为准）> 更新 2026-09-09：net-doctor 合入基线 commit 628c210（bridge.py ROUTES 含 /api/netdoctor/* 10 条）> 更新 2026-09-09：系统管理模块基线 commit 4d2924b（sysadmin 13 路由 + 多 token 模型 UPL-010 + session-info，代码实证 api.py:88-104/243-248/764-773/829+）> 更新 2026-09-09：知识库模块语义修正基线 commit 31f8e1d（KB 9 端点 ADR-022 语义 + route-nodes source 字段，代码实证 api.py:1396-1461/1369-1377/383-397、kb_store.py:43/59/157）
+- 本台账对账基线 commit：工作区当前版本（bridge.py / uplink.py 有未提交修改，以台账登记时点代码为准）> 更新 2026-09-09：net-doctor 合入基线 commit 628c210（bridge.py ROUTES 含 /api/netdoctor/* 10 条）> 更新 2026-09-09：系统管理模块基线 commit 4d2924b（sysadmin 13 路由 + 多 token 模型 UPL-010 + session-info，代码实证 api.py:88-104/243-248/764-773/829+）> 更新 2026-09-09：知识库模块语义修正基线 commit 31f8e1d（KB 9 端点 ADR-022 语义 + route-nodes source 字段，代码实证 api.py:1396-1461/1369-1377/383-397、kb_store.py:43/59/157）> 更新 2026-09-09：终端 AI 智能诊断基线 commit 8aaa64e（SRV-070 diagnose + SRV-071 单条详情 + trigger=terminal_diagnose，代码实证 api.py:419-445/784-790/1160+，ADR-023）
 - 对账方法：grep api.py `_terminal_api`/`_console_api`/`_console_kb_api`/`_console_nettest` 分支 + bridge.py `ROUTES`，与台账逐条比对，输出差异清单（新增未登记/已废弃仍登记/字段不符）
 - 维护规则：接口变更（改参数/改路径/废弃）必须同步更新台账，条目内追加 `> 更新 YYYY-MM-DD：变更点（出处）`，保留历史痕迹
