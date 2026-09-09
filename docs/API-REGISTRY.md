@@ -5,12 +5,12 @@
 - **维护人**：api-registrar-dev（接口登记官）
 - **事实来源**：代码实证（server-platform/server/api.py、bridge.py、uplink.py、net-doctor/net_service.py 等），每条注明文件+函数
 - **登记统计**：
-  - 一、服务端 REST API（SRV）：71 条
+  - 一、服务端 REST API（SRV）：77 条
   - 二、终端本地桥接 API（BRG）：49 条（netdoctor 10 条已于 2026-09-09 合入主应用转「在用」，commit 628c210）
   - 三、终端↔平台协议（UPL）：10 条
   - 四、外部依赖接口（EXT）：6 条
   - 五、废弃/规划接口（DEP）：5 条
-  - **合计 141 条**
+  - **合计 147 条**
 - **通用约定**：
   - 服务端监听：ThreadingHTTPServer，`0.0.0.0:{port}`，默认 18090（app.py `_load_config` / `main`）；配置经 `$ETP_CONFIG` → `server/config.local.json` → dev 默认三级加载
   - 终端上行鉴权：请求头 `X-ETP-Token`（对照 config.json `terminal_token`）> 更新 2026-09-09：收敛为**多 token 模型**——config token 或 SQLite `terminal_tokens` 表 status='active' 命中均放行（详见 UPL-010，commit 4d2924b）
@@ -646,7 +646,7 @@
 
 ### 1.11 控制台-系统管理（sysadmin，ADR-021，2026-09-09 新增）
 
-> 组级约定（代码出处：api.py `_console_sysadmin`，dispatch 分支 api.py:764-773）：全部接口要求 **X-ETP-Console-Token + admin 角色**，非 admin 返回 403 `"需要管理员权限"`（并记 ACCESS_DENIED 审计）——权限门 `auth.require_admin`（auth_upgrade.py:1053）**回库补查账号当前角色与状态**，不信任会话缓存角色，管理员调整角色后即时生效（2026-09-09 回库复核，team-lead 要求）；错误约定：参数缺失/非法 400、不存在 404、冲突 409。四功能：账户管理（console_auth.db）/ 算力网关（settings llm.*）/ 第三方接口登记（third_party_apis 表）/ 终端 token 维护（terminal_tokens 表）。敏感操作（建户/改户/删户/重置/token 创建/轮换/停用）均落 auth 审计。
+> 组级约定（代码出处：api.py `_console_sysadmin`，dispatch 分支 api.py:764-773）：全部接口要求 **X-ETP-Console-Token + admin 角色**，非 admin 返回 403 `"需要管理员权限"`（并记 ACCESS_DENIED 审计）——权限门 `auth.require_admin`（auth_upgrade.py:1053）**回库补查账号当前角色与状态**，不信任会话缓存角色，管理员调整角色后即时生效（2026-09-09 回库复核，team-lead 要求）；错误约定：参数缺失/非法 400、不存在 404、冲突 409。四功能：账户管理（console_auth.db）/ 算力网关（settings llm.*）/ 第三方接口登记（third_party_apis 表）/ 终端 token 维护（terminal_tokens 表）。敏感操作（建户/改户/删户/重置/token 创建/轮换/停用）均落 auth 审计。> 更新 2026-09-09：新增第五功能**交换机管理**（ADR-026，SRV-072~077，settings switch.default_* + switches 表，commit f031152）。
 
 #### SRV-056 账户列表 `GET /api/v1/console/sysadmin/users`
 - **用途**：控制台账户清单（口令字段恒为 `'****'`，不出明文/哈希）
@@ -777,6 +777,64 @@
 - **代码出处**：api.py `_console_sysadmin` → store.py `token_rotate` / `token_set_status`；审计 TOKEN_ROTATED/TOKEN_STATUS
 - **状态**：在用
 - **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit 4d2924b）
+
+#### SRV-072 交换机默认凭据读取 `GET /api/v1/console/sysadmin/switch-default`
+- **用途**：交换机默认登录凭据读取（deploy.py 预置，供新增交换机继承）
+- **鉴权**：X-ETP-Console-Token + admin
+- **请求参数**：无
+- **响应**：`{"ok":true,"switch_default":{"username":"...","password_masked":"3@W****u9xn","password_set":true}}`（未配置时 password_masked="(未配置)"）
+- **代码出处**：api.py `_console_sysadmin`（api.py:1059-1067）→ settings switch.default_username（明文）/ switch.default_password（SENSITIVE_KEYS 加密，脱敏出库）
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit f031152，ADR-026）
+
+#### SRV-073 交换机默认凭据写入 `PUT /api/v1/console/sysadmin/switch-default`
+- **用途**：更新默认用户名/密码（password 留空=保持不变，对齐 llm api_key 语义）
+- **鉴权**：X-ETP-Console-Token + admin
+- **请求参数**：`{"username":"...","password":"..."}`（均可选）
+- **响应**：`{"ok":true,"changed":["username","password"]}`（实际变更项）
+- **调用方式**：`curl -X PUT http://<server>/api/v1/console/sysadmin/switch-default -H "X-ETP-Console-Token: <admin-token>" -d '{"username":"admin"}'`
+- **代码出处**：api.py:1068-1083；审计 SWITCH_DEFAULT_UPDATED（detail 不记明文密码）
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit f031152，ADR-026）
+
+#### SRV-074 交换机台账列表 `GET /api/v1/console/sysadmin/switches`
+- **用途**：交换机台账清单（password 恒 `'****'` 脱敏，无明文出库）
+- **鉴权**：X-ETP-Console-Token + admin
+- **请求参数**：无
+- **响应**：`{"ok":true,"switches":[{id,name,ip,ssh_port,username,brand,created_ts,updated_ts,password:'****'}]}`
+- **代码出处**：api.py:1085-1094 → store.py `switch_list`（password_set 判定，表 switches password_enc 密文列）
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit f031152，ADR-026）
+
+#### SRV-075 交换机新增 `POST /api/v1/console/sysadmin/switches`
+- **用途**：登记交换机（password 必填，SecretsBox 加密落库）
+- **鉴权**：X-ETP-Console-Token + admin
+- **请求参数**：`{"name":"…","ip":"…","ssh_port":22,"username":"…","password":"…","brand":"…"}`——name/ip/username/password 必填（缺 400），ip 经 `ipaddress.ip_address` 格式校验（400），ssh_port 默认 22
+- **响应**：`{"ok":true,"id":3}`
+- **调用方式**：`curl -X POST http://<server>/api/v1/console/sysadmin/switches -H "X-ETP-Console-Token: <admin-token>" -d '{"name":"汇聚A","ip":"192.168.1.2","username":"admin","password":"..."}'`
+- **代码出处**：api.py:1095-1114 → store.py `switch_create`；审计 SWITCH_CREATED（detail 不记明文）
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit f031152，ADR-026）
+
+#### SRV-076 交换机编辑 `PUT /api/v1/console/sysadmin/switches/{id}`
+- **用途**：更新台账字段（password 留空=保持原值；password_enc 键存在才更新密码，store 白名单控制）
+- **鉴权**：X-ETP-Console-Token + admin
+- **请求参数**：`{"name?","ip?","ssh_port?","username?","password?","brand?"}`（name/ip/username 传空 400；ip 传时格式校验 400）
+- **响应**：`{"ok":true}`；不存在 404
+- **代码出处**：api.py:1115-1133+ → store.py `switch_update`；审计 SWITCH_UPDATED
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit f031152，ADR-026）
+
+#### SRV-077 交换机删除 `DELETE /api/v1/console/sysadmin/switches/{id}`
+- **用途**：删除台账条目
+- **鉴权**：X-ETP-Console-Token + admin
+- **请求参数**：路径 `{id}`
+- **响应**：`{"ok":true}`；不存在/重复删除 404
+- **代码出处**：api.py `_console_sysadmin` → store.py `switch_delete`；审计 SWITCH_DELETED
+- **状态**：在用
+- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit f031152，ADR-026）
+
+> 注（SRV-072~077）：本模块仅凭据/台账维护，**无 SSH 连通测试端点**（ADR-026 边界）；敏感语义：settings `switch.default_password` 为 SENSITIVE_KEYS 成员（list 接口自动脱敏，settings.py:15），switches.password_enc 经 SettingsStore.encrypt 复用同一 SecretsBox（settings.py:73-75，store.py:170-177 表结构）；deploy.py 幂等预置默认凭据（以 password --mask 判断 unset，stdin 注入）。
 
 ### 1.12 会话信息
 
@@ -1411,6 +1469,6 @@
 
 ## 附：对账约定
 
-- 本台账对账基线 commit：工作区当前版本（bridge.py / uplink.py 有未提交修改，以台账登记时点代码为准）> 更新 2026-09-09：net-doctor 合入基线 commit 628c210（bridge.py ROUTES 含 /api/netdoctor/* 10 条）> 更新 2026-09-09：系统管理模块基线 commit 4d2924b（sysadmin 13 路由 + 多 token 模型 UPL-010 + session-info，代码实证 api.py:88-104/243-248/764-773/829+）> 更新 2026-09-09：知识库模块语义修正基线 commit 31f8e1d（KB 9 端点 ADR-022 语义 + route-nodes source 字段，代码实证 api.py:1396-1461/1369-1377/383-397、kb_store.py:43/59/157）> 更新 2026-09-09：终端 AI 智能诊断基线 commit 8aaa64e（SRV-070 diagnose + SRV-071 单条详情 + trigger=terminal_diagnose，代码实证 api.py:419-445/784-790/1160+，ADR-023）> 更新 2026-09-09：画方 admission_log 接入基线 commit a5156cc（nad_client.py + _enrich_ipconflict_admission，EXT-006 补代码实证与 3 处文档-实际差异，ADR-024）
+- 本台账对账基线 commit：工作区当前版本（bridge.py / uplink.py 有未提交修改，以台账登记时点代码为准）> 更新 2026-09-09：net-doctor 合入基线 commit 628c210（bridge.py ROUTES 含 /api/netdoctor/* 10 条）> 更新 2026-09-09：系统管理模块基线 commit 4d2924b（sysadmin 13 路由 + 多 token 模型 UPL-010 + session-info，代码实证 api.py:88-104/243-248/764-773/829+）> 更新 2026-09-09：知识库模块语义修正基线 commit 31f8e1d（KB 9 端点 ADR-022 语义 + route-nodes source 字段，代码实证 api.py:1396-1461/1369-1377/383-397、kb_store.py:43/59/157）> 更新 2026-09-09：终端 AI 智能诊断基线 commit 8aaa64e（SRV-070 diagnose + SRV-071 单条详情 + trigger=terminal_diagnose，代码实证 api.py:419-445/784-790/1160+，ADR-023）> 更新 2026-09-09：画方 admission_log 接入基线 commit a5156cc（nad_client.py + _enrich_ipconflict_admission，EXT-006 补代码实证与 3 处文档-实际差异，ADR-024）> 更新 2026-09-09：交换机管理基线 commit f031152（SRV-072~077 sysadmin 组，ADR-026，代码实证 api.py:1059-1133、settings.py:15/31、store.py:170-177）
 - 对账方法：grep api.py `_terminal_api`/`_console_api`/`_console_kb_api`/`_console_nettest` 分支 + bridge.py `ROUTES`，与台账逐条比对，输出差异清单（新增未登记/已废弃仍登记/字段不符）
 - 维护规则：接口变更（改参数/改路径/废弃）必须同步更新台账，条目内追加 `> 更新 YYYY-MM-DD：变更点（出处）`，保留历史痕迹
