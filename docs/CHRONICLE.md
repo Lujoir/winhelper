@@ -41,6 +41,7 @@
 | 21 | 2026-09-09 | 终端侧架构档案 v1.0 建档 | docs/ARCHITECTURE-CLIENT.md 八章建立（archivist-dev） |
 | 22 | 2026-09-09 | Windows 一键安装包交付 | Inno Setup 安装包（WebView2 离线静默装/自启/卸载） |
 | 23 | 2026-09-09 | 服务端控制台登录改造上线 | PBKDF2+持久会话+锁定限速+审计+剩余信息保护（等保三级） |
+| 24 | 2026-09-09 | 服务端资产管理改造上线 | 资产组树形维护（多级嵌套/删除保护）+ 终端绑定资产组 |
 
 ---
 
@@ -165,13 +166,18 @@
 - 意义：EyeTerm Server 首次达到等保三级身份鉴别/安全审计/剩余信息保护要求；「含 $ 哈希串严禁经 bash 双引号命令行传递（须 sftp+stdin）」「config.json 变更前必须备份」两条运维教训入档。
 - 考证：交付报告 server-platform/docs/login_upgrade_delivery.md（交付日期 2026-09-09）；涉及文件 server/auth_upgrade.py、server/api.py、server/app.py、server/migrate_login_upgrade.py、console/index.html、data/console_auth.db；**代码尚未提交至 server-platform 仓库（待考证，见存疑 #3）**。
 
+#### 2026-09-09 · 服务端控制台资产管理改造：资产组树形维护与终端绑定上线
+- 事件：「资产清单」菜单升级为「资产管理」，左侧新增资产维护入口（资产组树），支持根目录下创建/重命名/删除多级嵌套子目录（层级自由扩展），删除保护：含子组拒绝并返回 409，删除组时直属终端自动解绑保证关联一致；终端资产绑定资产组（单终端单组，支持绑定/改绑/解绑），组视图展示直属终端并支持批量绑定（已属其它组自动改绑），未分组终端以虚拟节点呈现。实现于 store.py（新增 asset_groups 表 + terminals.group_id 列，幂等迁移、索引后置于 ALTER，共 6 个存储方法）与 api.py（/console/asset-groups CRUD、/console/terminals/{tid}/group 绑定端点，均在控制台会话鉴权内）；console/index.html 改双栏布局（参照钉钉组织架构树交互）。验证：存储层本地测试 18/18（含存量库迁移场景）、远程 API 冒烟 16/16（多级创建/绑定双向一致/409 保护/自动解绑/测试数据自清理）、esprima JS 语法检查通过；已部署 172.17.5.215:18090 并重启验证。
+- 意义：终端资产管理从「平铺清单」升级为「组织化资产组」治理模型，是服务端资产维度的首个结构性功能扩展；资产组数据模型为后续按组策略下发与分组统计奠基。
+- 考证：**待考证**——server-platform 代码未提交（与登录改造同根因，见存疑 #3，待 git 提交后回填哈希）；部署备份 store.py / api.py / index.html.bak.20260909_090701（服务器侧）；来源：team-lead 会话记忆（2026-09-09）。
+
 ---
 
 ## 三、存疑与考证
 
 1. **主应用功能演进静默期（2026-05-23 ~ 2026-09-04）**：主仓库首提交 `84ea539`（2026-05-22）与 `ea5fada`（2026-09-05）之间无任何 git 提交。此期间日志诊断/磁盘清理等功能的迭代时间、首个 exe 构建时间均无法从 git 考证；B/S 形态存续的证据仅来自 `ea5fada` 提交说明与 log-inspector ADR-001（旧引擎自主应用迁入）。待补充考证。
 2. **首个 winhelper.exe 构建时间待考证**：git 中首次提及 exe 重建为 2026-09-05（`5f4eaad`「exe已重建」）；「dist_new 构建 → 停进程 → 替换 dist → 重启」流程在 `5f4eaad` 与 log-inspector ADR-009 中固化。首个 exe 诞生的准确日期无据。
-3. **2026-09-09 控制台登录改造代码未入 git**：server-platform 仓库最后提交为 `e8f3aaf`（2026-09-08），登录改造五件套（auth_upgrade/migrate/api_patch/schema/文档）尚未提交；条目时间依据交付报告（2026-09-09）与会话记忆。待补提交后回填哈希。
+3. **2026-09-09 控制台登录改造与资产管理改造代码均未入 git**：server-platform 仓库最后提交为 `e8f3aaf`（2026-09-08），登录改造五件套（auth_upgrade/migrate/api_patch/schema/文档）与资产管理改造（store.py/api.py/console/index.html/kb_store.py）尚未提交；条目时间依据交付报告、部署备份时间戳（index.html.bak.20260909_090701）与会话记忆。待补提交后回填哈希并消项（含总览 #23/#24 与存疑 #4 同根因）。
 4. **运维知识库 kb_store 待考证**：会话记忆称 2026-09-08 完成「kb_store 三表 + 5 版本迭代（8/8 冒烟）」，但 server-platform 仓库无对应提交，主仓库根目录仅有未跟踪的 kb_smoke.py。时间与仓库归属待考证。
 5. **终端资产明细（asset schema1）部署确认待考证**：功能本体源自 `eba91c5`（2026-09-06，ADR-015）；会话记忆称 2026-09-08 已部署至生产并提供控制台资产明细弹窗，但 api.py register 传参 asset 曾因断言失败未写回（部署后 asset 走 hwinfo 回退），补丁是否已重新应用并部署待确认。
 6. **disk-cleaner ADR 范围勘误**：任务简报记为「ADR-001~011」，实际仓库 DECISIONS.md 已演进至 ADR-015（`a29b0fb`/`4b8d4b1`/`97794d3`/`fd87cda`）。本编年以仓库为准。
