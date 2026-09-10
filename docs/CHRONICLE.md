@@ -1,6 +1,6 @@
 # 观枢终端平台｜EyeTerm · 建设史编年
 
-> 维护者：chronicler-dev ｜ v1.7 ｜ 2026-09-10 ｜ 批量补记 2026-09-10 晚间批次（#38~#40：AI 诊断收尾 / 模块更名 ADR-012 / route_nodes v2 与 v5 发布）
+> 维护者：chronicler-dev ｜ v1.8 ｜ 2026-09-10 ｜ 补记 IP 冲突深度检测引擎 Phase A/B 闭环上线（#41，ADR-028/029）
 
 ## 卷首语
 
@@ -58,6 +58,7 @@
 | 38 | 2026-09-10 | AI 诊断收尾批次 | 个人版 Key 测试三态语义 + 终端侧预算裁剪 + 防重入 + 文本可选复制 |
 | 39 | 2026-09-10 | 模块更名「网络监测配置」 | 6 处用户可见文案更名、内部标识零改动 + 默认表保障（ADR-012） |
 | 40 | 2026-09-10 | route_nodes v2 基线与 v5 安装包发布 | 9 节点 /32 精确基线双链路 PASS；v5 安装包 + GitLab 推送 95f23b9 |
+| 41 | 2026-09-10 | IP 冲突深度检测引擎 Phase A/B 闭环上线 | 网段→网关→ARP→准入→MAC 表→四态结论网工级证据链产品化（ADR-028/029） |
 
 ---
 
@@ -267,6 +268,11 @@
 - 意义：路由标注从粗粒度网段升级为 /32 精确基线，tracert 区域判定可靠性提升；「锁文件轮询清理」取代「Stop-Process 即替换」成为 exe 替换标准流程。
 - 考证：主仓库提交 `95f23b9`（2026-09-10 18:29，origin/main 实证）；route_nodes v2 为服务端数据维护（会话记忆，无 git 提交待考证）；9 节点基线、双链路 PASS、v5 时间戳来源：会话记忆（2026-09-10）；ADR-027 终验待用户下次提交诊断（会话记忆）。
 
+#### 2026-09-10 · IP 冲突深度检测引擎 Phase A/B 全程闭环上线（ADR-028/ADR-029）
+- 事件：应用户提供的网工级业务规格完成两阶段闭环。**Phase A 盘点**（纯盘点未改码）：paramiko 5.0 与 Comware V7 老算法不兼容，锁定 3.5.1 实测通过；NAD term/get macports 字段实测（1348/1594 有值）直出「接入交换机 + 管理 IP + 端口」——「顺藤摸瓜」路径成立；switches 台账空 + reader 认证失败列为用户侧前置。**Phase B 交付并部署生产**（server-platform `9e604a7` + `cc34bae`，部署备份 pre_20260910_201100/202130）：deep_engine.py 五步编排——resolve（kb route_nodes 最长前缀 + gw_ip）→ arp（display arp|include，≥2 不同 MAC=冲突实锤）→ nad（macports.manip 接入交换机）→ macaddr（display mac-address 多端口=漂移信号）→ conclude（四态结论 + 证据链）；命令只读白名单 + 逐命令审计 + SSH 凭据零回显；异步端点 POST/GET ipconflict-deep（Semaphore(2) 满 429）；管理端点 NAD 设备清单导出辅助台账补录；单测 40/40。生产实测三连：真实终端三任务全链（降级链路实证——ARP 认证失败如实标注不阻断）；知识库 route_nodes v4 补录 172.17.90.0/24→gw_ip 映射，实证「网段→网关」维护能力；NAD 步骤命中真实准入证据（办公终端双 IP 登记）。配套：ipconflict 污染清洗 + 判定精化（`257ed21`，ADR-028）；接口 SRV-078/079 已登记（台账 151 条）。
+- 意义：IP 冲突检测从「终端上报交叉校验」升级为「主动纵深探测」，网工级证据链（网段→网关→ARP→准入→MAC 地址表→四态结论）首次产品化；ADR-002 修订为例外清单制（paramiko==3.5.1 仅限服务端 engine 模块，终端侧维持纯标准库）；安全红线（只读白名单/逐命令审计/凭据零回显）随引擎同步落地。
+- 考证：server-platform 提交 `257ed21`（2026-09-10 19:31，ADR-028）、`9e604a7`（20:09，ADR-029）、`cc34bae`（20:15）；ADR-028/029 与 ADR-002 修订已入 server-platform/docs/DECISIONS.md；生产实测三连、部署备份目录、1348/1594 实测数字来源：会话记忆（2026-09-10）；外部前置待用户——交换机 reader 开户（开户后 ARP/MAC 步骤代码零改动自动激活）与接入交换机管理网 192.168.254.0/24 可达性确认。
+
 ---
 
 ## 三、存疑与考证
@@ -289,7 +295,7 @@
 | disk-cleaner | disk-cleaner\（.git） | `3cdeb9b` 2026-09-05 | `35a31a1` 2026-09-06 | 10 | ADR-001~015（docs/DECISIONS.md） |
 | log-inspector | log-inspector\（.git） | `dde1c4b` 2026-09-06 | `5ca2c1f` 2026-09-08 | 7 | ADR-001~009（docs/DECISIONS.md） |
 | perf-analyzer | perf-analyzer\（.git） | `4192b95` 2026-09-05 | `11c4ddc` 2026-09-09 | 15 | ADR-001~018（docs/DECISIONS.md） |
-| server-platform | server-platform\（.git） | `5a21967` 2026-09-06 | `91b2fe6` 2026-09-10 | 23 | ADR-001~027（24 空缺，docs/DECISIONS.md）+ docs/login_upgrade_delivery.md、docs/iperf_e2e_report.md |
+| server-platform | server-platform\（.git） | `5a21967` 2026-09-06 | `cc34bae` 2026-09-10 | 26 | ADR-001~029（24 空缺，docs/DECISIONS.md）+ docs/login_upgrade_delivery.md、docs/iperf_e2e_report.md |
 | net-doctor | net-doctor\（.git） | `539b993` 2026-09-09 | `e5b55c8` 2026-09-10 | 15 | ADR-001~012（docs/DECISIONS.md） |
 
 > 检索方式：`git log --date=short --format="%h %ad %s"`（各仓库根目录执行）。子项目仓库均位于主仓库 workspace 之下，主仓库以 gitlink 方式引用三者（server-platform 当前未以 gitlink 跟踪）。
