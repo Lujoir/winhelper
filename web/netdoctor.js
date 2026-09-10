@@ -27,6 +27,7 @@ var ndState = {
     aiHistory: [],
     aiMode: "enterprise",  /* AI 诊断模式：enterprise（中心模型链）/ personal（本地第三方 API） */
     aiPersonal: {},        /* 个人版配置回显 {api_url, model, has_key}（key 永不回显） */
+    aiSubmitting: false,   /* 诊断提交防重入标志（id=21/22 双击双提交缺陷修复） */
     uplinkPollTimer: null, /* 中心状态常驻轮询句柄 */
     pollers: {}
 };
@@ -1027,6 +1028,79 @@ function ndAiSize(d) {
     catch (e) { return "?"; }
 }
 
+/* 结构感知预算裁剪（2026-09-10 尾巴1：id=22 存证 JSON 完整性 FAIL）。
+   旧实现 JSON.stringify 后裸 slice(0,32768) 会撕裂转义序列/多字节字符，
+   服务端 json.loads(存证) 失败——与服务端修复前同病。新策略：
+   1) 整包 ≤budget 原样；2) 找对象内最大数组按完整元素粒度二分裁剪（事件/历史不撕裂）；
+   3) 退化：非数组键按序列化长度升序贪心装入；输出恒为合法 JSON。
+   预算 32768 与服务端 evidence 契约对齐，服务端原样存证即可通过验收。 */
+function ndAiPackLogs(data, budget) {
+    var text;
+    try { text = JSON.stringify(data); } catch (e) { return "{\"truncated\":true}"; }
+    if (text.length <= budget) { return text; }
+    if (!data || typeof data !== "object") { return "{\"truncated\":true}"; }
+
+    var arrKey = null, arrLen = 0, f;
+    for (f in data) {
+        if (Object.prototype.hasOwnProperty.call(data, f)
+                && Object.prototype.toString.call(data[f]) === "[object Array]"
+                && data[f].length > arrLen) {
+            arrLen = data[f].length;
+            arrKey = f;
+        }
+    }
+
+    var copyWithout = function (skip) {
+        var o = {};
+        for (var k in data) {
+            if (Object.prototype.hasOwnProperty.call(data, k) && k !== skip) { o[k] = data[k]; }
+        }
+        return o;
+    };
+
+    if (arrKey) {
+        var arr = data[arrKey];
+        var lo = 0, hi = arrLen, best = 0;
+        while (lo <= hi) {
+            var mid = (lo + hi) >> 1;
+            var probe = copyWithout(arrKey);
+            probe[arrKey] = arr.slice(0, mid);
+            if (JSON.stringify(probe).length <= budget) { best = mid; lo = mid + 1; }
+            else { hi = mid - 1; }
+        }
+        var out = copyWithout(arrKey);
+        out[arrKey] = arr.slice(0, best);
+        var t2 = JSON.stringify(out);
+        if (t2.length <= budget) { return t2; }
+        var t3 = JSON.stringify(copyWithout(arrKey));   /* 数组清空仍超 → 丢弃其它大字段重试 */
+        if (t3.length <= budget) { return t3; }
+        var only = {};
+        only[arrKey] = arr.slice(0, Math.max(best, 1));
+        var t4 = JSON.stringify(only);
+        return t4.length <= budget ? t4 : "{\"truncated\":true}";
+    }
+
+    /* 无数组结构：键粒度贪心（短字段优先装入） */
+    var entries = [];
+    for (f in data) {
+        if (Object.prototype.hasOwnProperty.call(data, f)) {
+            var len = 0;
+            try { len = JSON.stringify(data[f]).length; } catch (e2) { len = 0; }
+            entries.push([f, len, data[f]]);
+        }
+    }
+    entries.sort(function (a, b) { return a[1] - b[1]; });
+    var acc = {};
+    var bestText = "{}";
+    for (var i = 0; i < entries.length; i++) {
+        acc[entries[i][0]] = entries[i][2];
+        var t5 = JSON.stringify(acc);
+        if (t5.length <= budget) { bestText = t5; }
+        else { delete acc[entries[i][0]]; }
+    }
+    return bestText;
+}
+
 /* 证据瘦身提质（2026-09-10 证据饥饿缺陷，analysis_id=16 实证）：
    占位符描述（"<The description..."）替换为「(描述缺失)」、单条描述超 200 字符截断
    （log_service DESC_TRUNC=2000，终端侧收紧）——32KB 预算内装入更多有效事件。
@@ -1394,18 +1468,32 @@ function ndAiRenderError(msg, analysisId) {
 }
 
 function ndAiSubmit() {
+    /* 防重入（2026-09-10 尾巴2：id=21/22 双击双提交白烧两次 LLM 调用）：
+       提交全程置位 aiSubmitting + 禁用按钮，重复点击仅提示；确认对话框链路一并覆盖 */
+    if (ndState.aiSubmitting) {
+        ndSetTip("ndAiSummary", "诊断提交中，请勿重复点击（模型链处理约 10-30 秒）");
+        return;
+    }
+    ndState.aiSubmitting = true;
+    var btn0 = document.getElementById("ndAiBtn");
+    if (btn0) { btn0.disabled = true; }
     /* 2026-09-10 Bug0 修复兜底：gate 状态可能为旧值（tab 常驻期间缓存），
        提交前强制重查一次中心状态，杜绝「心跳在线却判未连接」。
        个人版不依赖中心，跳过重查直接提交（第九项）。 */
     if (ndAiPersonal() || ndConnected()) { ndAiSubmitProceed(); return; }
     ndSetTip("ndAiSummary", "正在确认中心连接状态…");
+    var fail0 = function (msg) {
+        ndState.aiSubmitting = false;
+        if (btn0) { btn0.disabled = false; }
+        ndSetTip("ndAiSummary", msg);
+    };
     ndApiFetch("/api/perf/uplink/status").then(function (d) {
         ndState.uplink = d && d.uplink ? d.uplink : null;
         ndRenderUplink();
-        if (!ndConnected()) { ndSetTip("ndAiSummary", "未连接中心，功能不可用"); return; }
+        if (!ndConnected()) { fail0("未连接中心，功能不可用"); return; }
         ndAiSubmitProceed();
     }).catch(function () {
-        ndSetTip("ndAiSummary", "未连接中心，功能不可用（中心状态确认失败）");
+        fail0("未连接中心，功能不可用（中心状态确认失败）");
     });
 }
 
@@ -1429,7 +1517,13 @@ function ndAiFreshNetSubs() {
 
 function ndAiSubmitProceed() {
     var issue = ((document.getElementById("ndAiIssue") || {}).value || "").trim();
-    if (!issue) { ndSetTip("ndAiSummary", "请先填写问题概述"); return; }
+    if (!issue) {
+        ndSetTip("ndAiSummary", "请先填写问题概述");
+        ndState.aiSubmitting = false;
+        var b1 = document.getElementById("ndAiBtn");
+        if (b1) { b1.disabled = false; }
+        return;
+    }
     var btn = document.getElementById("ndAiBtn");
     if (btn) { btn.disabled = true; }
     ndSetTip("ndAiSummary", "采集日志并提交分析中（模型链处理约 10-30 秒）…");
@@ -1447,8 +1541,7 @@ function ndAiSubmitProceed() {
             if (!cb || !cb.checked || cb.disabled) { continue; }
             var r = ndState.aiCollect ? ndState.aiCollect[k] : null;
             if (!r || !r.ok) { missing.push(ndAiKeyName(k)); continue; }   /* 不可用类不提交，不阻断 */
-            var text = JSON.stringify(r.data);
-            if (text.length > 32768) { text = text.slice(0, 32768); }   /* 单类 ≤32KB（契约对齐） */
+            var text = ndAiPackLogs(r.data, 32768);   /* 单类 ≤32KB，结构感知裁剪保证合法 JSON */
             logs[k] = text;
             total += text.length;
         }
@@ -1457,8 +1550,6 @@ function ndAiSubmitProceed() {
         if (missing.length
                 && !window.confirm("以下勾选的日志源未采集成功：" + missing.join("、")
                     + "。提交后对应维度将证据不足，影响诊断质量。是否继续？")) {
-            var b0 = document.getElementById("ndAiBtn");
-            if (b0) { b0.disabled = false; }
             ndSetTip("ndAiSummary", "已取消提交（存在未采集成功的勾选源）");
             return;
         }
@@ -1477,6 +1568,7 @@ function ndAiSubmitProceed() {
         ndAiRenderError(msg, e && e.analysis_id);
         ndSetTip("ndAiSummary", "诊断失败：" + msg + "，可重试");
     }).then(function () {
+        ndState.aiSubmitting = false;   /* 成功/失败/取消三路径统一复位（issue_empty 分支已单独复位） */
         if (btn) { btn.disabled = false; }
     });
 }
