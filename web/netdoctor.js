@@ -27,6 +27,7 @@ var ndState = {
     aiHistory: [],
     aiMode: "enterprise",  /* AI 诊断模式：enterprise（中心模型链）/ personal（本地第三方 API） */
     aiPersonal: {},        /* 个人版配置回显 {api_url, model, has_key}（key 永不回显） */
+    uplinkPollTimer: null, /* 中心状态常驻轮询句柄 */
     pollers: {}
 };
 
@@ -192,6 +193,47 @@ document.addEventListener("visibilitychange", function () {
         ndLoadUplink();
     }
 });
+
+/* ===================== 中心状态常驻轻量重查（2026-09-10 主页 AI 卡门控陈旧缺陷修复） =====================
+   boot 时主页默认激活即查询，此刻 uplink 常处于 connecting/注册期；用户常驻主页不切页时，
+   门控将永久停留旧值（switchTab/visibilitychange 均不会触发）。本定时器自包含兜底：
+   - 周期 10s；仅当 document 可见且宿主页（tab-home/tab-netdoctor）处于 active 时发请求，
+     hidden 或都不 active 时跳过（不后台空转）；已连接后保持低频轮询，覆盖「停驻期间断连」反向陈旧；
+   - 失败沿用 ndRenderUplinkFail 既有「下次自动重试」语义（下个轮询周期即重试，内容幂等不刷屏）；
+   - 上一请求未决时跳过本拍（busy 防重叠）；零 home.js 改动，standalone 页同样生效。
+   E2E 可注入 window.__ndUplinkPollMs 后调用 ndStartUplinkPoll() 缩短周期。 */
+var ND_UPLINK_POLL_MS = 10000;
+
+var ndUplinkPollBusy = false;
+
+function ndUplinkPollTick() {
+    if (ndUplinkPollBusy) { return; }
+    var active = false;
+    try {
+        var sec = document.getElementById("tab-netdoctor");
+        var home = document.getElementById("tab-home");
+        active = (sec && sec.classList.contains("active"))
+            || (home && home.classList.contains("active"));
+    } catch (e) { return; }
+    if (document.hidden || !active || !ndState.inited) { return; }
+    ndUplinkPollBusy = true;
+    var settle = function () { ndUplinkPollBusy = false; };
+    ndApiFetch("/api/perf/uplink/status").then(function (d) {
+        settle();
+        ndState.uplink = d && d.uplink ? d.uplink : null;
+        ndRenderUplink();
+    }).catch(function () {
+        settle();
+        ndRenderUplinkFail();
+    });
+}
+
+function ndStartUplinkPoll() {
+    if (ndState.uplinkPollTimer) { clearInterval(ndState.uplinkPollTimer); }
+    ndState.uplinkPollTimer = setInterval(ndUplinkPollTick,
+        window.__ndUplinkPollMs || ND_UPLINK_POLL_MS);
+}
+ndStartUplinkPoll();
 
 function ndRenderUplink() {
     var el = document.getElementById("ndUplinkBody");
