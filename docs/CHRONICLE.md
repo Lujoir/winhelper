@@ -1,6 +1,6 @@
 # 观枢终端平台｜EyeTerm · 建设史编年
 
-> 维护者：chronicler-dev ｜ v1.4 ｜ 2026-09-10 ｜ 补记 AI 诊断卡宿主迁移主页上线（#35，含内网 GitLab 首批接入）
+> 维护者：chronicler-dev ｜ v1.5 ｜ 2026-09-10 ｜ 补记主页 AI 卡门控陈旧缺陷修复上线（#36，快照升级常驻自愈）
 
 ## 卷首语
 
@@ -53,6 +53,7 @@
 | 33 | 2026-09-10 | AI 诊断九项优化 + 企业/个人双模式 | 个人版本地直连第三方 LLM 不依赖中心；gate 语义根因修复（ADR-009） |
 | 34 | 2026-09-10 | 静态资源 ETag/Last-Modified 协商缓存上线 | If-None-Match 304 revalidate，根治控制台更新后浏览器缓存旧页面 |
 | 35 | 2026-09-10 | AI 诊断卡宿主迁移主页上线 | 主页成终端状态+AI 诊断一体化入口；主仓库首批接入内网 GitLab（ADR-010） |
+| 36 | 2026-09-10 | 主页 AI 诊断卡门控陈旧缺陷修复 | 快照升级常驻自愈轮询，终端 UI 可信性防线补全 |
 
 ---
 
@@ -237,6 +238,11 @@
 - 意义：主页成为「终端状态 + AI 诊断」一体化入口，网络排障聚焦探测职能；主仓库首次接入内网 GitLab 远程（git.wzeye.cn/zlj/eyeterm），EyeTerm 核心仓库自此具备中心化版本载体（此前仅本地与 GitHub 个人镜像）。
 - 考证：net-doctor 提交 `4e579a0`（2026-09-10 15:58，ADR-010）；主应用提交 `0289ca4`（2026-09-10 15:58，origin/main 同步实证）；GitLab 接入提交 `0b890c9`、`b69725d`（均 2026-09-10）；E2E 155/155、exe 重建与 PID 53108 来源：会话记忆（2026-09-10）。
 
+#### 2026-09-10 · 主页 AI 诊断卡门控陈旧缺陷修复：快照升级常驻自愈
+- 事件：用户实测反馈主页 AI 智能诊断卡显示「未连接中心平台」，而同屏平台接入徽章=已连接——根因：boot 期 home 默认激活即查中心状态，此时 uplink 尚在注册期，门控误判；ndState.uplink 为缓存值仅 switchTab/visibilitychange 才重查，常驻主页无补救路径。修复：netdoctor.js 自包含常驻轻量轮询（10s，ND_UPLINK_POLL_MS）——可见 + 宿主页（tab-home/tab-netdoctor）激活才请求、busy 防重叠、已连接后保持低频轮询覆盖停驻期断连的反向陈旧；零 home.js 改动，standalone 页天然生效；net_service 同步副本 MD5 一致。E2E 160/160 双场景 pageerror=0（新增 5 断言：connecting→connected 不切 tab 自动翻转、error 反向翻转）；exe 重建替换 dist_new 并重启（PID 51800）。
+- 意义：主页 AI 诊断卡从「激活时快照」升级为「常驻自愈」，与主页平台接入卡冻结修复（apiFetch 15s 超时自愈，#29 附带修复 `29ef6f3`）共同构成终端 UI 可信性防线——状态陈旧自动翻转，用户不再看到说谎的界面。
+- 考证：net-doctor 提交 `f603838`（2026-09-10 16:13）；主应用提交 `4330047`（2026-09-10 16:13，origin/main 同步实证，GitLab 推送区间 0289ca4..4330047）；E2E 160/160、PID 51800 来源：会话记忆（2026-09-10）。
+
 ---
 
 ## 三、存疑与考证
@@ -255,11 +261,11 @@
 
 | 仓库 | 位置 | 首提交 | 最新提交（建档时） | 提交数 | 决策记录 |
 |------|------|--------|-------------------|--------|---------|
-| winhelper 主应用 | workspace 根（.git）；远程 git.wzeye.cn/zlj/eyeterm（2026-09-10 接入） | `84ea539` 2026-05-22 | `0289ca4` 2026-09-10 | 60 | docs/ARCHITECTURE-CLIENT.md |
+| winhelper 主应用 | workspace 根（.git）；远程 git.wzeye.cn/zlj/eyeterm（2026-09-10 接入） | `84ea539` 2026-05-22 | `4330047` 2026-09-10 | 62 | docs/ARCHITECTURE-CLIENT.md |
 | disk-cleaner | disk-cleaner\（.git） | `3cdeb9b` 2026-09-05 | `35a31a1` 2026-09-06 | 10 | ADR-001~015（docs/DECISIONS.md） |
 | log-inspector | log-inspector\（.git） | `dde1c4b` 2026-09-06 | `5ca2c1f` 2026-09-08 | 7 | ADR-001~009（docs/DECISIONS.md） |
 | perf-analyzer | perf-analyzer\（.git） | `4192b95` 2026-09-05 | `11c4ddc` 2026-09-09 | 15 | ADR-001~018（docs/DECISIONS.md） |
 | server-platform | server-platform\（.git） | `5a21967` 2026-09-06 | `25d48e2` 2026-09-10 | 21 | ADR-001~026（24 空缺，docs/DECISIONS.md）+ docs/login_upgrade_delivery.md、docs/iperf_e2e_report.md |
-| net-doctor | net-doctor\（.git） | `539b993` 2026-09-09 | `4e579a0` 2026-09-10 | 9 | ADR-001~010（docs/DECISIONS.md） |
+| net-doctor | net-doctor\（.git） | `539b993` 2026-09-09 | `f603838` 2026-09-10 | 10 | ADR-001~010（docs/DECISIONS.md） |
 
 > 检索方式：`git log --date=short --format="%h %ad %s"`（各仓库根目录执行）。子项目仓库均位于主仓库 workspace 之下，主仓库以 gitlink 方式引用三者（server-platform 当前未以 gitlink 跟踪）。
