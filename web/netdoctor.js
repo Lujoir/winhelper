@@ -819,7 +819,7 @@ function ndRenderSettings() {
     var apCfg = ndState.aiPersonal || {};
     host.innerHTML =
         '<div class="nd-set-block" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-color,#262b3a)">'
-        + '<b style="font-size:13px">网络排障</b>'
+        + '<b style="font-size:13px">网络监测配置</b>'
         + '<div class="nd-params" style="margin:8px 0 6px"><label>DNS 基线（逗号分隔，空=仅提示未配置）</label>'
         + '<input class="nd-input" id="ndSetDns" value="' + ndEscapeHtml(dnsVal) + '" style="width:240px"></div>'
         + '<table class="nd-table"><tr><th>节点名称</th><th>方式</th><th>目标</th><th>探测参数</th><th>操作</th></tr>'
