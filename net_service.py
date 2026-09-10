@@ -1729,12 +1729,23 @@ def _ai_diagnose_personal(body):
 
 
 def handle_net_ai_personal_test(params=None):
-    """个人版连通性测试（轻量 GET /models，15s 超时；鉴权被拒/不可达如实标注）"""
+    """个人版连通性测试（轻量 GET /models，15s 超时；鉴权被拒/不可达如实标注）。
+    2026-09-10 语义修复（用户实锤误判 401）：api_key 留空 = 回退已保存配置的 Key
+    （对齐保存端「留空不修改」语义）；used_key: provided（表单现值）/ saved（已保存）/ none。
+    used_key=none 时不发请求，直接提示先配置。错误信息永不携带 api_key。"""
     p = params or {}
     api_url = (p.get("api_url") or "").strip()
-    api_key = (p.get("api_key") or "").strip()
+    key_in = (p.get("api_key") or "").strip()
     if not api_url:
         return {"success": False, "error": "api_url_required"}
+    saved_key = str((_load_app_config().get("ai_personal") or {}).get("api_key") or "").strip()
+    if key_in:
+        api_key, used_key = key_in, "provided"
+    elif saved_key:
+        api_key, used_key = saved_key, "saved"
+    else:
+        return {"success": True, "ok": False, "used_key": "none",
+                "hint": "未配置 API Key，请先填写并保存（设置 → AI 诊断（个人版））"}
     req = urllib.request.Request(_personal_models_url(api_url), method="GET")
     if api_key:
         req.add_header("Authorization", "Bearer " + api_key)
@@ -1742,13 +1753,17 @@ def handle_net_ai_personal_test(params=None):
         with urllib.request.urlopen(req, timeout=15) as r:
             code = r.getcode()
     except urllib.error.HTTPError as e:
-        return {"success": True, "ok": False, "http_code": e.code,
-                "hint": "服务可达但请求被拒（HTTP %s，请检查 Key / 地址）" % e.code}
+        hint = ("Key 被拒（HTTP 401）——请核对 Key 是否完整/有效" if e.code == 401
+                else "服务可达但请求被拒（HTTP %s，请检查 Key / 地址）" % e.code)
+        return {"success": True, "ok": False, "http_code": e.code, "used_key": used_key, "hint": hint}
     except Exception as e:
-        return {"success": True, "ok": False, "http_code": None, "hint": "连接失败：%s" % e}
+        return {"success": True, "ok": False, "http_code": None, "used_key": used_key,
+                "hint": "连接失败：%s" % e}
     if 200 <= code < 300:
-        return {"success": True, "ok": True, "http_code": code, "hint": "服务可达（HTTP %s）" % code}
-    return {"success": True, "ok": False, "http_code": code, "hint": "HTTP %s" % code}
+        return {"success": True, "ok": True, "http_code": code, "used_key": used_key,
+                "hint": "服务可达（HTTP %s）" % code}
+    return {"success": True, "ok": False, "http_code": code, "used_key": used_key,
+            "hint": "HTTP %s" % code}
 
 
 NET_ROUTES = {

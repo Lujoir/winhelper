@@ -837,7 +837,7 @@ function ndRenderSettings() {
         + ' placeholder="如 https://api.deepseek.com（自动补 /v1/chat/completions）" style="width:330px"></div>'
         + '<div class="nd-params" style="margin:4px 0"><label>API Key</label>'
         + '<input class="nd-input" type="password" id="ndSetAiKey" value="" autocomplete="new-password"'
-        + ' placeholder="' + (apCfg.has_key ? "已配置（留空不修改）" : "sk-...") + '" style="width:220px">'
+        + ' placeholder="' + (apCfg.has_key ? "已保存（留空=不修改）" : "未保存，填写 sk-...") + '" style="width:220px">'
         + '<label>模型名</label>'
         + '<input class="nd-input" id="ndSetAiModel" value="' + ndEscapeHtml(apCfg.model || "") + '"'
         + ' placeholder="如 deepseek-chat" style="width:150px">'
@@ -923,7 +923,10 @@ function ndTestPersonal() {
             if (tip) { tip.textContent = "测试失败：" + ((d && d.error) || "未知"); }
             return;
         }
-        if (tip) { tip.textContent = (d.ok ? "✓ " : "✗ ") + (d.hint || (d.ok ? "服务可达" : "不可达")); }
+        /* 测试对象透明化（2026-09-10 误判 401 缺陷）：明示本次用了哪个 Key */
+        var who = d.used_key === "saved" ? "（用已保存 Key 测试）"
+            : (d.used_key === "none" ? "（未配置 Key）" : "");
+        if (tip) { tip.textContent = (d.ok ? "✓ " : "✗ ") + (d.hint || (d.ok ? "服务可达" : "不可达")) + who; }
     }).catch(function (e) {
         if (tip) { tip.textContent = "测试失败：" + String(e); }
     });
@@ -1564,6 +1567,10 @@ function ndAiSubmitProceed() {
             /* 个人版未配置：引导去设置，不渲染错误卡 */
             ndSetTip("ndAiSummary", "个人版未配置：请到「系统设置 · AI 诊断（个人版）」填写 API 地址 / API Key / 模型名并保存");
             return;
+        }
+        if (msg.indexOf("personal_http_401") >= 0) {
+            /* Key 被拒：给出明确修复入口（2026-09-10 误判 401 缺陷） */
+            msg += " → 设置 → AI 诊断（个人版）检查 API Key 是否已保存且有效";
         }
         ndAiRenderError(msg, e && e.analysis_id);
         ndSetTip("ndAiSummary", "诊断失败：" + msg + "，可重试");
