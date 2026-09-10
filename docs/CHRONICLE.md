@@ -1,6 +1,6 @@
 # 观枢终端平台｜EyeTerm · 建设史编年
 
-> 维护者：chronicler-dev ｜ v1.8 ｜ 2026-09-10 ｜ 补记 IP 冲突深度检测引擎 Phase A/B 闭环上线（#41，ADR-028/029）
+> 维护者：chronicler-dev ｜ v1.9 ｜ 2026-09-10 ｜ 补记深度检测终端 UI 交付上线（#42，ADR-014，全链闭合）
 
 ## 卷首语
 
@@ -59,6 +59,7 @@
 | 39 | 2026-09-10 | 模块更名「网络监测配置」 | 6 处用户可见文案更名、内部标识零改动 + 默认表保障（ADR-012） |
 | 40 | 2026-09-10 | route_nodes v2 基线与 v5 安装包发布 | 9 节点 /32 精确基线双链路 PASS；v5 安装包 + GitLab 推送 95f23b9 |
 | 41 | 2026-09-10 | IP 冲突深度检测引擎 Phase A/B 闭环上线 | 网段→网关→ARP→准入→MAC 表→四态结论网工级证据链产品化（ADR-028/029） |
+| 42 | 2026-09-10 | 深度检测终端 UI 交付上线 | 五步时间线渐进渲染，深度检测全链闭合（ADR-014） |
 
 ---
 
@@ -273,6 +274,11 @@
 - 意义：IP 冲突检测从「终端上报交叉校验」升级为「主动纵深探测」，网工级证据链（网段→网关→ARP→准入→MAC 地址表→四态结论）首次产品化；ADR-002 修订为例外清单制（paramiko==3.5.1 仅限服务端 engine 模块，终端侧维持纯标准库）；安全红线（只读白名单/逐命令审计/凭据零回显）随引擎同步落地。
 - 考证：server-platform 提交 `257ed21`（2026-09-10 19:31，ADR-028）、`9e604a7`（20:09，ADR-029）、`cc34bae`（20:15）；ADR-028/029 与 ADR-002 修订已入 server-platform/docs/DECISIONS.md；生产实测三连、部署备份目录、1348/1594 实测数字来源：会话记忆（2026-09-10）；外部前置待用户——交换机 reader 开户（开户后 ARP/MAC 步骤代码零改动自动激活）与接入交换机管理网 192.168.254.0/24 可达性确认。
 
+#### 2026-09-10 · 深度检测终端 UI 交付上线（ADR-014，全链闭合）
+- 事件：深度检测终端侧交付（net-doctor `edbbbbe` / 主应用 `3a09a77`，ADR-014）：后端纯转发双路由 /api/netdoctor/conflict-deep-{start,poll}（错误映射 400/404/429，秒级返回不占本地任务引擎）；前端 IP 冲突结果卡新增「深度检测」入口 + 2.5s×60 轮询渐进渲染五步时间线（语义色徽章 / multi 漂移信号标注 / commands 折叠 / evidence 等宽）+ 防重入统一复位。门禁 E2E 210/210、冒烟 87/87；发布 v7 安装包（20:48），GitLab 推送至 `a83e246`；子代理遗留临时文件已清理。
+- 意义：深度检测全链闭合——终端 UI → 服务端五步编排 → 交换机/准入取证；唯余用户侧交换机 reader 开户后 ARP/MAC 步骤自动全通（代码零改动）。
+- 考证：net-doctor 提交 `edbbbbe`（2026-09-10 20:46，ADR-014 已入档）；主应用提交 `3a09a77`（20:46）；主仓库 `a83e246`（20:48，origin/main 实证）；E2E 210/210、冒烟 87/87、v7 安装包时间戳来源：会话记忆（2026-09-10）。
+
 ---
 
 ## 三、存疑与考证
@@ -291,11 +297,11 @@
 
 | 仓库 | 位置 | 首提交 | 最新提交（建档时） | 提交数 | 决策记录 |
 |------|------|--------|-------------------|--------|---------|
-| winhelper 主应用 | workspace 根（.git）；远程 git.wzeye.cn/zlj/eyeterm（2026-09-10 接入） | `84ea539` 2026-05-22 | `95f23b9` 2026-09-10 | 73 | docs/ARCHITECTURE-CLIENT.md |
+| winhelper 主应用 | workspace 根（.git）；远程 git.wzeye.cn/zlj/eyeterm（2026-09-10 接入） | `84ea539` 2026-05-22 | `a83e246` 2026-09-10 | 82 | docs/ARCHITECTURE-CLIENT.md |
 | disk-cleaner | disk-cleaner\（.git） | `3cdeb9b` 2026-09-05 | `35a31a1` 2026-09-06 | 10 | ADR-001~015（docs/DECISIONS.md） |
 | log-inspector | log-inspector\（.git） | `dde1c4b` 2026-09-06 | `5ca2c1f` 2026-09-08 | 7 | ADR-001~009（docs/DECISIONS.md） |
 | perf-analyzer | perf-analyzer\（.git） | `4192b95` 2026-09-05 | `11c4ddc` 2026-09-09 | 15 | ADR-001~018（docs/DECISIONS.md） |
 | server-platform | server-platform\（.git） | `5a21967` 2026-09-06 | `cc34bae` 2026-09-10 | 26 | ADR-001~029（24 空缺，docs/DECISIONS.md）+ docs/login_upgrade_delivery.md、docs/iperf_e2e_report.md |
-| net-doctor | net-doctor\（.git） | `539b993` 2026-09-09 | `e5b55c8` 2026-09-10 | 15 | ADR-001~012（docs/DECISIONS.md） |
+| net-doctor | net-doctor\（.git） | `539b993` 2026-09-09 | `edbbbbe` 2026-09-10 | 17 | ADR-001~014（docs/DECISIONS.md） |
 
 > 检索方式：`git log --date=short --format="%h %ad %s"`（各仓库根目录执行）。子项目仓库均位于主仓库 workspace 之下，主仓库以 gitlink 方式引用三者（server-platform 当前未以 gitlink 跟踪）。
