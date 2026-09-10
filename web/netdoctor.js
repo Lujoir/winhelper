@@ -966,6 +966,12 @@ function ndAiAllKeys() {
             "net_conn", "net_tracert", "net_stress"];
 }
 
+var ND_AI_KEY_NAMES = { hwinfo: "硬件信息", os_info: "系统信息", perf_analysis: "性能分析记录",
+    perf_stress: "性能压测记录", system_log: "系统日志", net_conn: "连通性历史",
+    net_tracert: "路由追踪记录", net_stress: "网络压测总结" };
+
+function ndAiKeyName(k) { return ND_AI_KEY_NAMES[k] || k; }
+
 /* 时间范围参数：{hours:n} 或 {start,end(YYYY-MM-DD HH:MM)}；custom 无效 → null */
 function ndAiTimeParams(key) {
     var t = (ndState.aiTime || {})[key] || { preset: "24h" };
@@ -1021,6 +1027,30 @@ function ndAiSize(d) {
     catch (e) { return "?"; }
 }
 
+/* 证据瘦身提质（2026-09-10 证据饥饿缺陷，analysis_id=16 实证）：
+   占位符描述（"<The description..."）替换为「(描述缺失)」、单条描述超 200 字符截断
+   （log_service DESC_TRUNC=2000，终端侧收紧）——32KB 预算内装入更多有效事件。
+   兼容真实字段 description 与旧字段 desc。 */
+function ndAiSlimEvents(evs) {
+    for (var i = 0; i < evs.length; i++) {
+        var ev = evs[i];
+        if (!ev || typeof ev !== "object") { continue; }
+        var fields = ["description", "desc"];
+        for (var j = 0; j < fields.length; j++) {
+            var d = ev[fields[j]];
+            if (typeof d !== "string") { continue; }
+            if (d.indexOf("<The description") === 0) { ev[fields[j]] = "(描述缺失)"; }
+            else if (d.length > 200) { ev[fields[j]] = d.slice(0, 200); }
+        }
+    }
+    return evs;
+}
+
+/* 剥离模型输出中的 Markdown 修饰符（** 加粗 / 反引号），保留纯文本 + 既有结构化样式 */
+function ndAiCleanMd(t) {
+    return String(t || "").replace(/\*\*/g, "").replace(/`/g, "");
+}
+
 /* 单类采集：前端聚合（零跨模块 import，全部走现成 bridge 路由）；失败降级「不可用」不阻断 */
 function ndAiCollectOne(key) {
     var fail = function () { return Promise.resolve({ ok: false, data: null, note: "不可用" }); };
@@ -1040,9 +1070,10 @@ function ndAiCollectOne(key) {
         else { q += "&start=" + encodeURIComponent(tp.start) + "&end=" + encodeURIComponent(tp.end); }
         return ndApiFetch(q).then(function (d) {
             var evs = (d && d.events) || [];
-            var data = evs.length ? { events: evs, summary: d.summary || null } : null;
+            var data = evs.length ? { events: ndAiSlimEvents(evs), summary: d.summary || null } : null;
             var note = evs.length
-                ? (ndAiTimeNote(tp) + " · " + evs.length + " 条 · " + (evs[0].time_text || ""))
+                ? (ndAiTimeNote(tp) + " · " + evs.length + " 条 · "
+                    + (evs[0].timestamp || evs[0].time_text || ""))
                 : (ndAiTimeNote(tp) + " · 0 条");
             if (!data) { return { ok: false, data: null, note: note }; }
             return { ok: true, data: data, note: note };
@@ -1185,6 +1216,23 @@ function ndAiTimeChange(key) {
     ndAiCollectNow(key);
 }
 
+/* 证据体量透明化（折叠态标题行汇总：已采集 N/8 源 · 共 X KB） */
+function ndAiUpdateAgg() {
+    var el = document.getElementById("ndAiLogsAgg");
+    if (!el) { return; }
+    var keys = ndAiAllKeys();
+    var okN = 0, totalB = 0;
+    for (var i = 0; i < keys.length; i++) {
+        var r = ndState.aiCollect ? ndState.aiCollect[keys[i]] : null;
+        if (r && r.ok) {
+            okN++;
+            try { totalB += JSON.stringify(r.data).length; } catch (e) { /* 忽略体量统计失败 */ }
+        }
+    }
+    el.textContent = "已采集 " + okN + "/" + keys.length + " 源 · 共 "
+        + (totalB / 1024).toFixed(1) + " KB";
+}
+
 function ndAiCollectNow(key) {
     var st = document.getElementById("ndAiSt-" + key);
     if (st) { st.textContent = "采集中…"; }
@@ -1193,6 +1241,7 @@ function ndAiCollectNow(key) {
         ndState.aiCollect = ndState.aiCollect || {};
         ndState.aiCollect[key] = r;
         if (st) { st.textContent = r.ok ? (r.note + " · 约 " + ndAiSize(r.data)) : r.note; }
+        ndAiUpdateAgg();
     });
 }
 
@@ -1206,6 +1255,7 @@ function ndAiRefreshSources() {
                 ndState.aiCollect[key] = skip;
                 var st0 = document.getElementById("ndAiSt-" + key);
                 if (st0) { st0.textContent = skip.note; }
+                ndAiUpdateAgg();
                 return;
             }
             ndAiCollectNow(key);
@@ -1316,7 +1366,7 @@ function ndAiRenderResult(d) {
         + '<span class="nd-badge nd-muted">耗时 '
         + ndEscapeHtml(d.duration_ms !== null && d.duration_ms !== undefined
             ? d.duration_ms + " ms" : "--") + '</span></div>';
-    var segs = ndAiSplitSections(d.response_text);
+    var segs = ndAiSplitSections(ndAiCleanMd(d.response_text));
     if (segs) {
         var html = meta;
         for (var i = 0; i < segs.length; i++) {
@@ -1327,7 +1377,7 @@ function ndAiRenderResult(d) {
         el.innerHTML = html;
     } else {
         el.innerHTML = meta + '<pre class="nd-pre" style="max-height:340px;overflow:auto">'
-            + ndEscapeHtml(d.response_text || "（无内容）") + '</pre>';
+            + ndEscapeHtml(ndAiCleanMd(d.response_text) || "（无内容）") + '</pre>';
     }
 }
 
@@ -1389,19 +1439,29 @@ function ndAiSubmitProceed() {
     ready.then(function () {
         var logs = {};
         var total = 0;
+        var missing = [];
         var keys = ndAiAllKeys();
         for (var i = 0; i < keys.length; i++) {
             var k = keys[i];
             var cb = document.getElementById("ndAiChk-" + k);
             if (!cb || !cb.checked || cb.disabled) { continue; }
             var r = ndState.aiCollect ? ndState.aiCollect[k] : null;
-            if (!r || !r.ok) { continue; }          /* 不可用类不提交，不阻断 */
+            if (!r || !r.ok) { missing.push(ndAiKeyName(k)); continue; }   /* 不可用类不提交，不阻断 */
             var text = JSON.stringify(r.data);
             if (text.length > 32768) { text = text.slice(0, 32768); }   /* 单类 ≤32KB（契约对齐） */
             logs[k] = text;
             total += text.length;
         }
         if (total > 4 * 1024 * 1024) { throw new Error("日志总体量超限（>4MB）"); }
+        /* 透明化（2026-09-10 证据饥饿缺陷）：存在勾选但未采集成功的源时，提交前明示影响 */
+        if (missing.length
+                && !window.confirm("以下勾选的日志源未采集成功：" + missing.join("、")
+                    + "。提交后对应维度将证据不足，影响诊断质量。是否继续？")) {
+            var b0 = document.getElementById("ndAiBtn");
+            if (b0) { b0.disabled = false; }
+            ndSetTip("ndAiSummary", "已取消提交（存在未采集成功的勾选源）");
+            return;
+        }
         return ndAiPostDiagnose(issue, logs).then(function (d) {
             ndAiRenderResult(d);
             ndAiSaveHistory(d, issue);
