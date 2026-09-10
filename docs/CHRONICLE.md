@@ -1,6 +1,6 @@
 # 观枢终端平台｜EyeTerm · 建设史编年
 
-> 维护者：chronicler-dev ｜ v1.9 ｜ 2026-09-10 ｜ 补记深度检测终端 UI 交付上线（#42，ADR-014，全链闭合）
+> 维护者：chronicler-dev ｜ v2.0 ｜ 2026-09-10 ｜ 补记设置弹窗卡片化重构（#43，ADR-013/019，按时间正序插于 #40/#41 之间；登记号 43 为追加序号非时间序）
 
 ## 卷首语
 
@@ -58,6 +58,7 @@
 | 38 | 2026-09-10 | AI 诊断收尾批次 | 个人版 Key 测试三态语义 + 终端侧预算裁剪 + 防重入 + 文本可选复制 |
 | 39 | 2026-09-10 | 模块更名「网络监测配置」 | 6 处用户可见文案更名、内部标识零改动 + 默认表保障（ADR-012） |
 | 40 | 2026-09-10 | route_nodes v2 基线与 v5 安装包发布 | 9 节点 /32 精确基线双链路 PASS；v5 安装包 + GitLab 推送 95f23b9 |
+| 43 | 2026-09-10 | 设置弹窗卡片化重构 | 四卡分区 + 各卡独立保存 + 锚点挂载协议；补采模态与防假阳性（ADR-013/019） |
 | 41 | 2026-09-10 | IP 冲突深度检测引擎 Phase A/B 闭环上线 | 网段→网关→ARP→准入→MAC 表→四态结论网工级证据链产品化（ADR-028/029） |
 | 42 | 2026-09-10 | 深度检测终端 UI 交付上线 | 五步时间线渐进渲染，深度检测全链闭合（ADR-014） |
 
@@ -269,6 +270,11 @@
 - 意义：路由标注从粗粒度网段升级为 /32 精确基线，tracert 区域判定可靠性提升；「锁文件轮询清理」取代「Stop-Process 即替换」成为 exe 替换标准流程。
 - 考证：主仓库提交 `95f23b9`（2026-09-10 18:29，origin/main 实证）；route_nodes v2 为服务端数据维护（会话记忆，无 git 提交待考证）；9 节点基线、双链路 PASS、v5 时间戳来源：会话记忆（2026-09-10）；ADR-027 终验待用户下次提交诊断（会话记忆）。
 
+#### 2026-09-10 · 设置弹窗卡片化重构（ADR-013/ADR-019）
+- 事件：应用户四点要求（文字清理/配置类型直观区分/每类保存按钮独立/排版不贴边），perf 半场（perf-analyzer `011f086`，ADR-019）——app-settings-body 内边距 ≥16px、settings-card 卡片规格（圆角 10px/1px 边框/卡片间距 12px）、「中心平台接入」「性能分析」两卡归位（savePerfUplink/saveTempsInterval 逻辑零改动）、#ndSettingsHost 挂载锚点；net-doctor 半场（`1f60f95`，ADR-013）——「网络监测配置」「AI 诊断·个人版」两卡经 ndSettingsMountPoint() 挂载（优先 #ndSettingsHost 回退动态创建）、ndSettingsSaveBtn id 沿用兼容 + AI 卡独立保存 ndSetAiSaveBtn（ndSaveAiPersonal 仅提交 ai_personal_json，零后端新增）、用户点名冗余说明整行删除（动态获取说明降级 title）。配套：补采模态（原生 confirm 废除→自绘「完善诊断数据源」，可补采三类——tracert 目标取 center 动态值/stress 需连中心禁勾/perf_stress 前端直调 /api/perf/stress-start 跨模块零后端新增 + 不可补采行内重采，三按钮含「采集并提交（失败不阻断降级）」，aiSubmitting 防重入覆盖补采全程）；AI 头部按钮组 ndAi 作用域限定 CSS（不波及共用样式）；URL 归一化防假阳性（_personal_norm_url 折叠连续斜杠 + 200 响应体校验，实证 //v1 落入 New API 站点兜底页返回 200+HTML 的假阳性）；IP 冲突路由解析（Find-NetRoute 锁定中心通信网卡 + 回退活动网卡如实标注 + suspect_reasons/nic_history 消费渲染）。
+- 意义：设置弹窗从「单页表单」升级为「卡片化分区 + 各卡独立保存」，跨模块卡片经锚点协议（#ndSettingsHost + ndSettingsMountPoint 回退）挂载互不侵入；「URL 归一化防假阳性」与「防重入覆盖补采」并入 AI 诊断可信性防线。
+- 考证：perf-analyzer 提交 `011f086`（2026-09-10 18:58，ADR-019；**main 口述 01b85c2 经核验不存在于 perf-analyzer 仓库，按代码事实登记 011f086**）；net-doctor 提交 `1f60f95`（19:57，ADR-013 已入档）；主仓库 `3069ea7`（20:00，GitLab 推送）、`d5fc4fa`（20:09，接口台账 SRV-070/078/079、BRG-050/051 更新，台账 151 条）；E2E 190/190、冒烟 72/72、v6 安装包 20:00 来源：会话记忆（2026-09-10）。
+
 #### 2026-09-10 · IP 冲突深度检测引擎 Phase A/B 全程闭环上线（ADR-028/ADR-029）
 - 事件：应用户提供的网工级业务规格完成两阶段闭环。**Phase A 盘点**（纯盘点未改码）：paramiko 5.0 与 Comware V7 老算法不兼容，锁定 3.5.1 实测通过；NAD term/get macports 字段实测（1348/1594 有值）直出「接入交换机 + 管理 IP + 端口」——「顺藤摸瓜」路径成立；switches 台账空 + reader 认证失败列为用户侧前置。**Phase B 交付并部署生产**（server-platform `9e604a7` + `cc34bae`，部署备份 pre_20260910_201100/202130）：deep_engine.py 五步编排——resolve（kb route_nodes 最长前缀 + gw_ip）→ arp（display arp|include，≥2 不同 MAC=冲突实锤）→ nad（macports.manip 接入交换机）→ macaddr（display mac-address 多端口=漂移信号）→ conclude（四态结论 + 证据链）；命令只读白名单 + 逐命令审计 + SSH 凭据零回显；异步端点 POST/GET ipconflict-deep（Semaphore(2) 满 429）；管理端点 NAD 设备清单导出辅助台账补录；单测 40/40。生产实测三连：真实终端三任务全链（降级链路实证——ARP 认证失败如实标注不阻断）；知识库 route_nodes v4 补录 172.17.90.0/24→gw_ip 映射，实证「网段→网关」维护能力；NAD 步骤命中真实准入证据（办公终端双 IP 登记）。配套：ipconflict 污染清洗 + 判定精化（`257ed21`，ADR-028）；接口 SRV-078/079 已登记（台账 151 条）。
 - 意义：IP 冲突检测从「终端上报交叉校验」升级为「主动纵深探测」，网工级证据链（网段→网关→ARP→准入→MAC 地址表→四态结论）首次产品化；ADR-002 修订为例外清单制（paramiko==3.5.1 仅限服务端 engine 模块，终端侧维持纯标准库）；安全红线（只读白名单/逐命令审计/凭据零回显）随引擎同步落地。
@@ -300,7 +306,7 @@
 | winhelper 主应用 | workspace 根（.git）；远程 git.wzeye.cn/zlj/eyeterm（2026-09-10 接入） | `84ea539` 2026-05-22 | `a83e246` 2026-09-10 | 82 | docs/ARCHITECTURE-CLIENT.md |
 | disk-cleaner | disk-cleaner\（.git） | `3cdeb9b` 2026-09-05 | `35a31a1` 2026-09-06 | 10 | ADR-001~015（docs/DECISIONS.md） |
 | log-inspector | log-inspector\（.git） | `dde1c4b` 2026-09-06 | `5ca2c1f` 2026-09-08 | 7 | ADR-001~009（docs/DECISIONS.md） |
-| perf-analyzer | perf-analyzer\（.git） | `4192b95` 2026-09-05 | `11c4ddc` 2026-09-09 | 15 | ADR-001~018（docs/DECISIONS.md） |
+| perf-analyzer | perf-analyzer\（.git） | `4192b95` 2026-09-05 | `011f086` 2026-09-10 | 16 | ADR-001~019（docs/DECISIONS.md） |
 | server-platform | server-platform\（.git） | `5a21967` 2026-09-06 | `cc34bae` 2026-09-10 | 26 | ADR-001~029（24 空缺，docs/DECISIONS.md）+ docs/login_upgrade_delivery.md、docs/iperf_e2e_report.md |
 | net-doctor | net-doctor\（.git） | `539b993` 2026-09-09 | `edbbbbe` 2026-09-10 | 17 | ADR-001~014（docs/DECISIONS.md） |
 
