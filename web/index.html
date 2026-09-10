@@ -936,11 +936,18 @@
                             <option value="15">15</option>
                             <option value="30">30</option>
                         </select>
-                        <label>包长档位（逗号分隔）</label>
-                        <input class="nd-input" id="ndStressSizes" value="64,256,1024,4096" style="width:170px">
+                        <label>包长 1（字节）</label>
+                        <input class="nd-input nd-stress-size" id="ndStressSize1" value="64" style="width:64px">
+                        <label>包长 2（字节）</label>
+                        <input class="nd-input nd-stress-size" id="ndStressSize2" value="256" style="width:64px">
+                        <label>包长 3（字节）</label>
+                        <input class="nd-input nd-stress-size" id="ndStressSize3" value="1024" style="width:64px">
+                        <label>包长 4（字节）</label>
+                        <input class="nd-input nd-stress-size" id="ndStressSize4" value="4096" style="width:64px">
                         <label>UDP 码率（Mbps）</label>
                         <input class="nd-input" id="ndStressUdp" value="100" style="width:80px">
                     </div>
+                    <div class="nd-hint" style="margin:-4px 0 8px">每档对中心服务器执行 20 次 ping，观测不同包长下的延迟与丢包<span id="ndStressSizesErr" style="color:#ef9a9a;margin-left:8px"></span></div>
                     <div class="nd-summary" id="ndStressSummary">多档包长持续 ping 中心服务器 + iperf3 TCP/UDP 带宽压测，输出综合结论（需已连接中心）</div>
                     <div id="ndStressBody"><div class="nd-empty">尚未压测</div></div>
                 </div>

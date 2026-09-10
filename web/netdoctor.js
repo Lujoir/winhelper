@@ -102,6 +102,7 @@ function initNetDoctorTab() {
         ndState.aiMode = localStorage.getItem("nd_ai_mode") === "personal" ? "personal" : "enterprise";
     } catch (e) { ndState.aiMode = "enterprise"; }
     ndAiRenderMode();
+    ndSizesEcho();   /* 压测包长档位回显（localStorage 逗号串，2026-09-10 分档重构） */
     ndLoadConfig();
     ndLoadHistory();
     ndAiInitHistory();
@@ -922,17 +923,53 @@ function ndRenderTracert(r) {
 
 /* ===================== ⑤ 网络压测 ===================== */
 
+function ndReadSizes() {
+    /* 包长档位 4 框读取与校验（2026-09-10 用户要求重构：单逗号串框 → 分档文本框）：
+       正整数、范围 1~65500、空框跳过（少于 4 档合法）、重复值去重保序。
+       返回 {sizes: 逗号串, err: 行内提示（空串=合法）}；全空按默认档兜底。存储格式仍逗号串，后端零改动。 */
+    var out = [];
+    for (var i = 1; i <= 4; i++) {
+        var el = document.getElementById("ndStressSize" + i);
+        var v = el ? String(el.value).trim() : "";
+        if (!v) { continue; }
+        if (!/^\d+$/.test(v)) { return { sizes: "", err: "包长 " + i + "（" + v + "）不是正整数" }; }
+        var n = parseInt(v, 10);
+        if (n < 1 || n > 65500) { return { sizes: "", err: "包长 " + i + "（" + v + "）超出范围 1~65500" }; }
+        if (out.indexOf(n) < 0) { out.push(n); }
+    }
+    return { sizes: out.join(","), err: "" };
+}
+
+function ndSizesEcho() {
+    /* 页面重开回显：localStorage.ndStressSizes（逗号串）按序回填 4 框，缺段保留默认值 */
+    var saved = "";
+    try { saved = localStorage.getItem("ndStressSizes") || ""; } catch (e) { saved = ""; }
+    if (!saved) { return; }
+    var parts = saved.split(",");
+    for (var i = 0; i < 4 && i < parts.length; i++) {
+        var el = document.getElementById("ndStressSize" + (i + 1));
+        if (el && parts[i]) { el.value = parts[i]; }
+    }
+}
+
 function ndStartStress() {
     var btn = document.getElementById("ndStressBtn");
     var cancelBtn = document.getElementById("ndStressCancelBtn");
+    var sr = ndReadSizes();
+    var errEl = document.getElementById("ndStressSizesErr");
+    if (errEl) { errEl.textContent = sr.err; }
+    if (sr.err) {
+        ndSetTip("ndStressSummary", "包长档位有误，请修正后重试");
+        return;   /* 其它参数不受影响，修正后可立即重试 */
+    }
     if (btn) { btn.disabled = true; }
     if (cancelBtn) { cancelBtn.style.display = "inline-block"; }
     var dur = document.getElementById("ndStressDur");
-    var sizes = document.getElementById("ndStressSizes");
     var udp = document.getElementById("ndStressUdp");
     var q = "?duration_sec=" + encodeURIComponent(dur ? dur.value : "10")
-        + "&sizes=" + encodeURIComponent(sizes ? sizes.value : "64,256,1024,4096")
+        + "&sizes=" + encodeURIComponent(sr.sizes || "64,256,1024,4096")
         + "&udp_mbps=" + encodeURIComponent(udp ? udp.value : "100");
+    try { localStorage.setItem("ndStressSizes", sr.sizes || "64,256,1024,4096"); } catch (e) {}
     ndApiFetch("/api/netdoctor/stress-start" + q).then(function (d) {
         if (!d || d.success === false) {
             ndSetTip("ndStressSummary", "启动失败：" + (d && d.error === "not_connected"
