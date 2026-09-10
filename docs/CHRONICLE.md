@@ -1,6 +1,6 @@
 # 观枢终端平台｜EyeTerm · 建设史编年
 
-> 维护者：chronicler-dev ｜ v1.1 ｜ 2026-09-10 ｜ 补记 2026-09-09 里程碑（新增 5 条 + #24 哈希回填 + 存疑 #3/#4 消项）
+> 维护者：chronicler-dev ｜ v1.2 ｜ 2026-09-10 ｜ 补记 2026-09-09~09-10 里程碑（新增 4 条：画方准入接入 / 交换机管理 / AI 诊断 GUI 上线确认 / AI 九项优化双模式）
 
 ## 卷首语
 
@@ -47,6 +47,10 @@
 | 27 | 2026-09-09 | 服务端「系统管理」模块上线 | 账户/算力网关/第三方接口/多 Token，admin-only + 审计（ADR-021） |
 | 28 | 2026-09-09 | SMB 日志存储挂载收尾 | NAS SMB 2.0 对接，fstab 统一挂载点 + _netdev,nofail |
 | 29 | 2026-09-09 | 终端 AI 智能诊断全链路上线 | 六类日志包 → llm_chat_chain → 终端第六模块（ADR-023/ADR-008） |
+| 30 | 2026-09-09 | 画方准入 HTTP API 接入 | IP 冲突检测接入真实准入数据源，admission_log=connected（ADR-025） |
+| 31 | 2026-09-09 | 服务端「交换机管理」上线 | 交换机台账 CRUD + 默认凭据加密 + 审计四类事件（ADR-026） |
+| 32 | 2026-09-10 | 终端 AI 诊断 GUI 上线确认 | 18:00 版 exe 运行实证，analysis_id=12 真实链路闭环 |
+| 33 | 2026-09-10 | AI 诊断九项优化 + 企业/个人双模式 | 个人版本地直连第三方 LLM 不依赖中心；gate 语义根因修复（ADR-009） |
 
 ---
 
@@ -201,6 +205,26 @@
 - 意义：EyeTerm AI 能力从服务端控制台延伸到终端一线场景，终端可自主发起智能诊断，「终端采集→服务端模型链→结论回显」全链路闭环；前端 IPC 超时兜底确认为防御规范并纳入回归门禁。
 - 考证：server-platform 提交 `8aaa64e`（2026-09-09，ADR-023）；net-doctor 提交 `b794381`（ADR-008）、`e00e1d7`、`1a1d235`、`f82f511`；主仓库提交 `98c0595`、`29ef6f3`、`94a681b`、`590e2e8`；均 2026-09-09。E2E 112/112、analysis_id=12 实测、exe 18:00 版来源：会话记忆（2026-09-09）。
 
+#### 2026-09-09 · 画方准入 HTTP API 接入：IP 冲突检测接入真实数据源（ADR-025）
+- 事件：main 解析厂商 PDF 确认画方 NAD 准入 HTTP API 契约（HMAC-SHA256 签名 + term/get 查询接口），实测拉取 1588 台资产（含 MAC→IP→接入交换机端口链路）；server-platform 新增 nad_client.py——凭据走「第三方接口」配置（id=2）+ HMAC 签名 + 自动翻页（实测单页上限 1000）+ 60s 缓存，ipconflict 端点注入 admission 证据（api.py `_enrich_ipconflict_admission`）：同 IP 异 MAC 升级 conflict_suspect、core_switch_state 三态判定（nas_connected / registered_no_port / not_connected）；适配 3 处厂商文档与实际差异（响应 list/dict 形态、macs 条目为对象、单页上限需翻页）；未配置/异常降级不阻断主流程。
+- 意义：IP 冲突检测（BRG-042）的 admission_log 数据源由 not_connected 转 connected，EyeTerm 首个外部网络准入系统数据源生产打通；「实测优先于厂商文档」的外部对接方法（3 处差异适配）入档。
+- 考证：server-platform 提交 `a5156cc`（2026-09-09 17:35，ADR-025）；接口台账登记主仓库 `38946f6`（EXT-006 补代码实证 + BRG-042 更新行）；1588 台实测来源：会话记忆（2026-09-09）。
+
+#### 2026-09-09 · 服务端「交换机管理」上线（ADR-026）
+- 事件：控制台系统管理模块新增交换机管理（第五卡片）：交换机台账 CRUD + 默认 SSH 只读凭据（settings 敏感键 SENSITIVE_KEYS 加密存储）+ 审计四类事件；deploy 幂等预置 reader 凭据（stdin 注入，不经命令行）。
+- 意义：网络设备侧数据进入服务端管控，与画方准入端口证据（BRG-042 三态判定）形成「准入 ↔ 交换机」设备数据闭环；SSH 凭据 stdin 注入延续「敏感串不经 bash 命令行」运维红线。
+- 考证：server-platform 提交 `f031152`（2026-09-09 18:28，ADR-026，代码实证 api.py:1059-1133、store.py:170-177）；接口台账 SRV-072~077 主仓库 `d6e96d1`（2026-09-09）。
+
+#### 2026-09-10 · 终端 AI 诊断 GUI 上线确认（18:00 版运行实证）
+- 事件：08:55 终端启动运行 2026-09-09 18:00 版 exe（含第六模块 AI 智能诊断），GUI 侧上线得到运行实证；服务端 analysis_id=12 真实链路此前已验证（Qwen3.6，30.3s 从系统日志定位 Schannel 根因）。
+- 意义：「终端 AI 智能诊断全链路上线」（#29）的交付闭环确认——服务端 API、终端 GUI、真实诊断链路三者齐备。
+- 考证：会话记忆（2026-09-10 08:55 终端启动确认，无 git 变更）；链路考证承接 #29（server-platform `8aaa64e`、net-doctor `b794381`、主仓库 `98c0595`）。
+
+#### 2026-09-10 · AI 智能诊断九项优化与企业版/个人版双模式（ADR-009）
+- 事件：AI 诊断迭代九项：①连接判定 Bug 根因修复（一次性守卫致首帧 connecting 误判，含 gate 语义修正）②AI 卡置顶 ③时间段引导 ④留白优化 ⑤日志默认收起 + 网络类子选项 ⑥结果三段结构化渲染与失败态 ⑦探测按钮移位 ⑧时间范围勾选与数据源新鲜度 ⑨**企业版/个人版双模式**——enterprise 走中心 llm_chat_chain 转发代理（原逻辑），personal 由终端本机 urllib 直连第三方 OpenAI 兼容 /v1/chat/completions（120s 超时，不依赖中心、未配置引导设置）；三段提示词 _ND_AI_PROMPT_SYSTEM 单份沉淀 net_service（与中心侧语义对齐防漂移）；个人版配置存 app_config netdoctor.ai_personal（url/api_key/model，key 留空=保持）；bridge 新增 /api/netdoctor/ai-personal-test 连通性测试（GET /models，15s）。E2E 153/153。
+- 意义：AI 诊断从「中心依赖」扩展为「企业/个人双轨」，无中心/离线场景可用；连接判定根因修复消除首帧误判；接口台账同批由接口登记官补登（BRG-050 追溯漏登 + BRG-051 新增）。
+- 考证：net-doctor 提交 `a892f62`（2026-09-10 09:49，ADR-009）；主应用提交 `bd965ae`（2026-09-10 09:49，bridge.py +ai-personal-test 路由）；接口台账主仓库 `75f7784`（2026-09-10 09:57，台账 149 条）。E2E 153/153、新 exe 09:51 构建就位**待用户重启终端生效（截至本条登记未确认运行）**来源：main 下发会话记忆（2026-09-10）。
+
 ---
 
 ## 三、存疑与考证
@@ -219,11 +243,11 @@
 
 | 仓库 | 位置 | 首提交 | 最新提交（建档时） | 提交数 | 决策记录 |
 |------|------|--------|-------------------|--------|---------|
-| winhelper 主应用 | workspace 根（.git） | `84ea539` 2026-05-22 | `611245e` 2026-09-10 | 51 | docs/ARCHITECTURE-CLIENT.md |
+| winhelper 主应用 | workspace 根（.git） | `84ea539` 2026-05-22 | `75f7784` 2026-09-10 | 54 | docs/ARCHITECTURE-CLIENT.md |
 | disk-cleaner | disk-cleaner\（.git） | `3cdeb9b` 2026-09-05 | `35a31a1` 2026-09-06 | 10 | ADR-001~015（docs/DECISIONS.md） |
 | log-inspector | log-inspector\（.git） | `dde1c4b` 2026-09-06 | `5ca2c1f` 2026-09-08 | 7 | ADR-001~009（docs/DECISIONS.md） |
 | perf-analyzer | perf-analyzer\（.git） | `4192b95` 2026-09-05 | `11c4ddc` 2026-09-09 | 15 | ADR-001~018（docs/DECISIONS.md） |
-| server-platform | server-platform\（.git） | `5a21967` 2026-09-06 | `721afb1` 2026-09-10 | 20 | ADR-001~026（24 空缺，docs/DECISIONS.md）+ docs/login_upgrade_delivery.md、docs/iperf_e2e_report.md |
-| net-doctor | net-doctor\（.git） | `539b993` 2026-09-09 | `b794381` 2026-09-09 | 7 | ADR-001~008（docs/DECISIONS.md） |
+| server-platform | server-platform\（.git） | `5a21967` 2026-09-06 | `25d48e2` 2026-09-10 | 21 | ADR-001~026（24 空缺，docs/DECISIONS.md）+ docs/login_upgrade_delivery.md、docs/iperf_e2e_report.md |
+| net-doctor | net-doctor\（.git） | `539b993` 2026-09-09 | `a892f62` 2026-09-10 | 8 | ADR-001~009（docs/DECISIONS.md） |
 
 > 检索方式：`git log --date=short --format="%h %ad %s"`（各仓库根目录执行）。子项目仓库均位于主仓库 workspace 之下，主仓库以 gitlink 方式引用三者（server-platform 当前未以 gitlink 跟踪）。
