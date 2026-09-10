@@ -117,7 +117,9 @@ function switchTab(tab) {
     if (tab === "loginspector" && typeof initLogInspectorTab === "function") initLogInspectorTab();
     if (tab === "disk" && typeof initDiskTab === "function") initDiskTab();
     if (tab === "perf" && typeof initPerfTab === "function") initPerfTab();
-    if (tab === "netdoctor" && typeof initNetDoctorTab === "function") initNetDoctorTab();
+    /* AI 诊断卡宿主在主页（2026-09-10 自网络排障移入）：home 激活同样触发
+       netdoctor 初始化（幂等）与中心连接状态刷新 */
+    if ((tab === "netdoctor" || tab === "home") && typeof initNetDoctorTab === "function") initNetDoctorTab();
 }
 
 /* 旧 仪表盘/日志查看/故障分析/知识库 四标签的专属逻辑已随菜单合并移除

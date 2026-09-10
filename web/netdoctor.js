@@ -112,11 +112,14 @@ function initNetDoctorTab() {
     }
 }
 
-/* DOM 就绪：独立页默认激活时自动初始化（主应用由 switchTab 守卫调用） */
+/* DOM 就绪：独立页/主应用默认激活页（网络排障或主页——AI 诊断卡宿主）时自动初始化；
+   主应用后续切换由 switchTab 守卫调用（home 分支同样触发） */
 (function () {
     var boot = function () {
         var sec = document.getElementById("tab-netdoctor");
-        if (sec && sec.classList.contains("active")) { initNetDoctorTab(); }
+        var home = document.getElementById("tab-home");
+        if ((sec && sec.classList.contains("active"))
+            || (home && home.classList.contains("active"))) { initNetDoctorTab(); }
     };
     if (document.readyState === "loading") {
         document.addEventListener("DOMContentLoaded", boot);
@@ -178,11 +181,14 @@ function ndRenderUplinkFail() {
     }
 }
 
-/* 恢复可见时立即主动刷一次中心状态（tab 激活时） */
+/* 恢复可见时立即主动刷一次中心状态（网络排障页或主页——AI 诊断卡宿主） */
 document.addEventListener("visibilitychange", function () {
     if (document.hidden) { return; }
     var sec = document.getElementById("tab-netdoctor");
-    if (sec && sec.classList.contains("active") && ndState.inited) {
+    var home = document.getElementById("tab-home");
+    var active = (sec && sec.classList.contains("active"))
+        || (home && home.classList.contains("active"));
+    if (active && ndState.inited) {
         ndLoadUplink();
     }
 });

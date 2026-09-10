@@ -95,6 +95,42 @@
                 .hm-net-grid .hm-row { border-bottom: none; padding: 2px 0; }
             </style>
             <div class="home-wrap">
+                <!-- AI 智能诊断（2026-09-10 自网络排障页移入主页：置于终端概览之上；
+                     渲染逻辑全在 web/netdoctor.js，主页激活时由 initNetDoctorTab 刷新） -->
+                <div class="section-card" data-collapse>
+                    <div class="card-header">
+                        <h3>AI 智能诊断</h3>
+                        <div class="disk-toolbar">
+                            <span class="nd-segwrap" id="ndAiModeSeg">
+                                <button type="button" class="nd-seg on" id="ndAiModeEnt" onclick="ndAiSetMode('enterprise')">企业版</button>
+                                <button type="button" class="nd-seg" id="ndAiModePers" onclick="ndAiSetMode('personal')">个人版</button>
+                            </span>
+                            <button class="nd-btn primary" id="ndAiBtn" onclick="ndAiSubmit()">提交诊断</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="nd-gate" id="ndAiGate" style="display:none">未连接中心平台，功能不可用</div>
+                        <div class="nd-summary" id="ndAiSummary">填写问题概述并勾选日志类型，由平台模型链出具诊断建议（需已连接中心）</div>
+                        <label class="nd-hint">问题概述（≤2000 字，当前 <span id="ndAiIssueCount">0</span>/2000）</label>
+                        <textarea id="ndAiIssue" class="nd-input nd-ai-issue" maxlength="2000" rows="4" style="width:100%"
+                            placeholder="请输入本机在哪个时间段出现的问题概况（如：今天上午 9-11 点频繁卡顿）"
+                            oninput="ndAiCountIssue()"></textarea>
+                        <div class="nd-ai-logs-head" id="ndAiLogsHead" onclick="ndAiToggleLogs()">
+                            <span id="ndAiLogsArrow">▸</span>
+                            <span>诊断日志（默认全选；单类超 32KB 自动截断，采集失败标「不可用」不阻断）</span>
+                            <span style="margin-left:auto"></span>
+                            <button class="nd-btn" id="ndAiRefreshBtn" style="display:none"
+                                onclick="event.stopPropagation(); ndAiRefreshSources()">重新探测数据源</button>
+                        </div>
+                        <div id="ndAiLogsBody" style="display:none">
+                            <table class="nd-table"><tr><th>选用</th><th>数据源</th><th>时间范围</th><th>状态</th></tr><tbody id="ndAiSourcesBody"></tbody></table>
+                        </div>
+                        <div class="nd-hint" style="margin-top:10px">本地诊断历史（最近 20 次，点击行回看）</div>
+                        <div id="ndAiHistoryBody"><div class="nd-empty">暂无历史</div></div>
+                        <div id="ndAiBody" style="margin-top:8px"><div class="nd-empty">尚未诊断</div></div>
+                    </div>
+                </div>
+
                 <div class="home-header">
                     <div class="home-title">终端概览</div>
                     <button class="home-refresh" id="homeRefreshBtn" onclick="hmRefreshAll()">刷新</button>
@@ -790,41 +826,6 @@
             <div class="nd-statusbar">
                 <b style="font-size:13px">中心平台</b>
                 <span id="ndUplinkBody"><span class="nd-hint">读取中…</span></span>
-            </div>
-
-            <!-- AI 智能诊断（2026-09-10 优化：移至模块最上 + 企业版/个人版双模式切换） -->
-            <div class="section-card" data-collapse>
-                <div class="card-header">
-                    <h3>AI 智能诊断</h3>
-                    <div class="disk-toolbar">
-                        <span class="nd-segwrap" id="ndAiModeSeg">
-                            <button type="button" class="nd-seg on" id="ndAiModeEnt" onclick="ndAiSetMode('enterprise')">企业版</button>
-                            <button type="button" class="nd-seg" id="ndAiModePers" onclick="ndAiSetMode('personal')">个人版</button>
-                        </span>
-                        <button class="nd-btn primary" id="ndAiBtn" onclick="ndAiSubmit()">提交诊断</button>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <div class="nd-gate" id="ndAiGate" style="display:none">未连接中心平台，功能不可用</div>
-                    <div class="nd-summary" id="ndAiSummary">填写问题概述并勾选日志类型，由平台模型链出具诊断建议（需已连接中心）</div>
-                    <label class="nd-hint">问题概述（≤2000 字，当前 <span id="ndAiIssueCount">0</span>/2000）</label>
-                    <textarea id="ndAiIssue" class="nd-input nd-ai-issue" maxlength="2000" rows="4" style="width:100%"
-                        placeholder="请输入本机在哪个时间段出现的问题概况（如：今天上午 9-11 点频繁卡顿）"
-                        oninput="ndAiCountIssue()"></textarea>
-                    <div class="nd-ai-logs-head" id="ndAiLogsHead" onclick="ndAiToggleLogs()">
-                        <span id="ndAiLogsArrow">▸</span>
-                        <span>诊断日志（默认全选；单类超 32KB 自动截断，采集失败标「不可用」不阻断）</span>
-                        <span style="margin-left:auto"></span>
-                        <button class="nd-btn" id="ndAiRefreshBtn" style="display:none"
-                            onclick="event.stopPropagation(); ndAiRefreshSources()">重新探测数据源</button>
-                    </div>
-                    <div id="ndAiLogsBody" style="display:none">
-                        <table class="nd-table"><tr><th>选用</th><th>数据源</th><th>时间范围</th><th>状态</th></tr><tbody id="ndAiSourcesBody"></tbody></table>
-                    </div>
-                    <div class="nd-hint" style="margin-top:10px">本地诊断历史（最近 20 次，点击行回看）</div>
-                    <div id="ndAiHistoryBody"><div class="nd-empty">暂无历史</div></div>
-                    <div id="ndAiBody" style="margin-top:8px"><div class="nd-empty">尚未诊断</div></div>
-                </div>
             </div>
 
             <!-- ① 配置核查 -->
