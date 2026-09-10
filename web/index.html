@@ -816,6 +816,8 @@
                 .nd-segwrap { display: inline-flex; border: 1px solid var(--border-color, #262b3a); border-radius: 8px; overflow: hidden; }
                 .nd-seg { background: transparent; color: var(--text-secondary, #8a93a5); border: none; padding: 5px 12px; cursor: pointer; font-size: 12px; }
                 .nd-seg.on { background: rgba(79,195,247,.14); color: var(--accent-cyan, #4fc3f7); }
+                /* AI 诊断结果区文本可选复制（2026-09-10 用户反馈）：仅限结果容器与历史列表，不改全局选择行为 */
+                #ndAiBody, #ndAiBody *, #ndAiHistoryBody, #ndAiHistoryBody * { user-select: text; -webkit-user-select: text; cursor: text; }
             </style>
             <div class="page-header">
                 <h2>网络排障</h2>
