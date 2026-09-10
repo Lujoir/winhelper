@@ -1,6 +1,6 @@
 # 观枢终端平台｜EyeTerm · 建设史编年
 
-> 维护者：chronicler-dev ｜ v1.5 ｜ 2026-09-10 ｜ 补记主页 AI 卡门控陈旧缺陷修复上线（#36，快照升级常驻自愈）
+> 维护者：chronicler-dev ｜ v1.6 ｜ 2026-09-10 ｜ 补记 AI 诊断「证据饥饿+虚构引用」缺陷全链路修复上线（#37，ADR-011/027）
 
 ## 卷首语
 
@@ -54,6 +54,7 @@
 | 34 | 2026-09-10 | 静态资源 ETag/Last-Modified 协商缓存上线 | If-None-Match 304 revalidate，根治控制台更新后浏览器缓存旧页面 |
 | 35 | 2026-09-10 | AI 诊断卡宿主迁移主页上线 | 主页成终端状态+AI 诊断一体化入口；主仓库首批接入内网 GitLab（ADR-010） |
 | 36 | 2026-09-10 | 主页 AI 诊断卡门控陈旧缺陷修复 | 快照升级常驻自愈轮询，终端 UI 可信性防线补全 |
+| 37 | 2026-09-10 | AI 诊断「证据饥饿+虚构引用」全链路修复 | 证据不足显式声明禁虚构，双侧提示词硬约束（ADR-011/027） |
 
 ---
 
@@ -243,6 +244,11 @@
 - 意义：主页 AI 诊断卡从「激活时快照」升级为「常驻自愈」，与主页平台接入卡冻结修复（apiFetch 15s 超时自愈，#29 附带修复 `29ef6f3`）共同构成终端 UI 可信性防线——状态陈旧自动翻转，用户不再看到说谎的界面。
 - 考证：net-doctor 提交 `f603838`（2026-09-10 16:13）；主应用提交 `4330047`（2026-09-10 16:13，origin/main 同步实证，GitLab 推送区间 0289ca4..4330047）；E2E 160/160、PID 51800 来源：会话记忆（2026-09-10）。
 
+#### 2026-09-10 · AI 诊断「证据饥饿+虚构引用」缺陷全链路修复（ADR-011/ADR-027）
+- 事件：用户实测报告 AI 诊断结论引用不存在的日志依据（虚构 WHEA-Logger 17 等）。main SSH 直查生产 ai_analyses id=16 取证：system_log 存证恰 4000 字符截断且内层 JSON 损坏、24h 窗口最新优先仅约 6 条进 prompt、事件描述为占位符、os_info 乱码——「证据饥饿」致模型虚构引用。全链路整改：**终端侧**（net-doctor `672e3ff` / 主应用 `34a8794`，ADR-011）提示词三条硬约束、事件瘦身（占位符→(描述缺失)、描述 200 字截断）、渲染剥离 Markdown、折叠态体量汇总 + 未采集源提交确认、E2E 桩对齐真实事件结构；**服务端**（server-platform `47de462` + `91b2fe6`，ADR-027，已部署生产）prompt 每类 16KB/存证 32KB/总预算 32KB、system_log 恒优先 + 关键词优先分配、truncate_text 结构感知（恒可 json.loads）、logs_stats 如实存证 + 控制台徽章、企业版提示词同款硬约束、双向乱码探测。验证：终端 E2E 166/166 + 冒烟 65/65；服务端单测 62/62 + 生产冒烟 10/10；analysis_id=19 实证「未提供类显式声明证据不足」不再虚构。乱码根因交叉结论：服务端三环节自证清白，指向终端采集子进程代码页错位（待真实链路复测 logs_stats.suspect_mojibake 逐类定位）。部署：终端新 exe 全量重建上线（踩坑：PyInstaller 增量检查未纳入变更需 --clean；dist_new 文件锁竞争后以 dist_v3 收敛单实例）；v2 安装包 16:55 重生成。
+- 意义：AI 诊断可信性基线确立——「证据不足必须显式声明，禁止虚构引用」成为终端/服务端双侧提示词硬约束；生产库直查取证方法与「全量重建」部署教训（PyInstaller --clean、dist 目录单实例收敛）入档。
+- 考证：net-doctor 提交 `672e3ff`（2026-09-10 16:49，ADR-011）；主应用提交 `34a8794`（2026-09-10 16:50）、`d6e05e0`（2026-09-10 17:10，子仓库指针前进，origin/main 同步实证）；server-platform 提交 `47de462`（2026-09-10 16:51）、`91b2fe6`（2026-09-10 17:02，ADR-027）；analysis_id=16 取证与 19 实证、各项验证数字来源：会话记忆（2026-09-10）；真实链路复测由用户发起（截至本条登记待复测确认）。
+
 ---
 
 ## 三、存疑与考证
@@ -261,11 +267,11 @@
 
 | 仓库 | 位置 | 首提交 | 最新提交（建档时） | 提交数 | 决策记录 |
 |------|------|--------|-------------------|--------|---------|
-| winhelper 主应用 | workspace 根（.git）；远程 git.wzeye.cn/zlj/eyeterm（2026-09-10 接入） | `84ea539` 2026-05-22 | `4330047` 2026-09-10 | 62 | docs/ARCHITECTURE-CLIENT.md |
+| winhelper 主应用 | workspace 根（.git）；远程 git.wzeye.cn/zlj/eyeterm（2026-09-10 接入） | `84ea539` 2026-05-22 | `d6e05e0` 2026-09-10 | 65 | docs/ARCHITECTURE-CLIENT.md |
 | disk-cleaner | disk-cleaner\（.git） | `3cdeb9b` 2026-09-05 | `35a31a1` 2026-09-06 | 10 | ADR-001~015（docs/DECISIONS.md） |
 | log-inspector | log-inspector\（.git） | `dde1c4b` 2026-09-06 | `5ca2c1f` 2026-09-08 | 7 | ADR-001~009（docs/DECISIONS.md） |
 | perf-analyzer | perf-analyzer\（.git） | `4192b95` 2026-09-05 | `11c4ddc` 2026-09-09 | 15 | ADR-001~018（docs/DECISIONS.md） |
-| server-platform | server-platform\（.git） | `5a21967` 2026-09-06 | `25d48e2` 2026-09-10 | 21 | ADR-001~026（24 空缺，docs/DECISIONS.md）+ docs/login_upgrade_delivery.md、docs/iperf_e2e_report.md |
-| net-doctor | net-doctor\（.git） | `539b993` 2026-09-09 | `f603838` 2026-09-10 | 10 | ADR-001~010（docs/DECISIONS.md） |
+| server-platform | server-platform\（.git） | `5a21967` 2026-09-06 | `91b2fe6` 2026-09-10 | 23 | ADR-001~027（24 空缺，docs/DECISIONS.md）+ docs/login_upgrade_delivery.md、docs/iperf_e2e_report.md |
+| net-doctor | net-doctor\（.git） | `539b993` 2026-09-09 | `672e3ff` 2026-09-10 | 11 | ADR-001~011（docs/DECISIONS.md） |
 
 > 检索方式：`git log --date=short --format="%h %ad %s"`（各仓库根目录执行）。子项目仓库均位于主仓库 workspace 之下，主仓库以 gitlink 方式引用三者（server-platform 当前未以 gitlink 跟踪）。
