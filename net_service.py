@@ -23,6 +23,7 @@ net_service.py — 网络排障服务层（框架无关）
 """
 
 import json
+import ipaddress
 import os
 import re
 import shutil
@@ -36,7 +37,7 @@ import urllib.error
 import urllib.request
 import uuid
 from datetime import datetime
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
@@ -1536,6 +1537,68 @@ def handle_net_ipconflict(params=None):
     return {"success": True, "task_id": task_id, "reused": reused}
 
 
+def handle_net_conflict_deep_start(params=None):
+    """发起 IP 冲突深度检测（平台侧后台编排，本地仅秒级转发创建，不占本地任务引擎）。
+    契约（server-platform 9e604a7+cc34bae）：POST /api/v1/terminals/{tid}/netdoctor/ipconflict-deep
+    body {ip, mac}；ip 过 ipaddress 校验（平台 400 非法），mac 非空即可（服务端归一）。
+    429=并发满、404=终端未注册。params: {ip, mac} 可选——缺省时本地采集（锁定中心
+    路由出口网卡，与常规检测 _pick_conflict_adapter 同源）。"""
+    if not uplink_configured():
+        return {"success": False, "error": "not_connected"}
+    p = params or {}
+    ip = str(p.get("ip") or "").strip()
+    mac = str(p.get("mac") or "").strip()
+    if not ip:
+        adapters, _err = _collect_adapters()
+        candidates = []
+        for a in (adapters or []):
+            if a.get("active") and a.get("ipv4") and a.get("mac"):
+                candidates.append(a)
+        if not candidates:
+            return {"success": False, "error": "no_active_adapter"}
+        try:
+            host = (urlsplit(_uplink_config().get("server_url") or "").hostname or "")
+        except Exception:
+            host = ""
+        route_adapter = _resolve_uplink_route_adapter(host)
+        a, _note = _pick_conflict_adapter(candidates, route_adapter)
+        ip, mac = a["ipv4"][0], a["mac"]
+    if mac:
+        mac = str(mac).replace("-", ":").upper()
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError:
+        return {"success": False, "error": "invalid_ip"}
+    code, resp = _platform_post(
+        "/api/v1/terminals/%s/netdoctor/ipconflict-deep" % _terminal_id(),
+        {"ip": ip, "mac": mac})
+    if not (200 <= code < 300):
+        emap = {400: "invalid_ip", 404: "not_registered", 429: "busy"}
+        return {"success": False,
+                "error": emap.get(code, "platform_http_%s" % code),
+                "detail": str((resp or {}).get("error", ""))}
+    return {"success": True, "task_id": str(resp.get("task_id") or ""),
+            "status": str(resp.get("status") or "running"),
+            "ip": ip, "mac": mac}
+
+
+def handle_net_conflict_deep_poll(params=None):
+    """轮询深度检测任务（执行在平台侧，本地纯转发 task 视图）。
+    契约：GET /api/v1/terminals/{tid}/netdoctor/ipconflict-deep/{task_id}
+    → {ok, task:{status: running|done|failed, steps[], verdict{...}}}；未知任务 404。"""
+    if not uplink_configured():
+        return {"success": False, "error": "not_connected"}
+    task_id = str((params or {}).get("task_id") or "").strip()
+    if not task_id:
+        return {"success": False, "error": "missing_task_id"}
+    code, resp = _platform_get(
+        "/api/v1/terminals/%s/netdoctor/ipconflict-deep/%s"
+        % (_terminal_id(), quote(task_id, safe="")))
+    if not (200 <= code < 300):
+        return {"success": False, "error": "platform_http_%s" % code}
+    return {"success": True, "task": resp.get("task") or None}
+
+
 def handle_net_ping_start(params=None):
     """启动连通性全量检测任务。"""
     task_id, reused = _start_task("ping", run_ping_suite, {})
@@ -1852,6 +1915,8 @@ NET_ROUTES = {
     "/api/netdoctor/config": handle_net_config,
     "/api/netdoctor/config-check": handle_net_config_check,
     "/api/netdoctor/ipconflict": handle_net_ipconflict,
+    "/api/netdoctor/conflict-deep-start": handle_net_conflict_deep_start,
+    "/api/netdoctor/conflict-deep-poll": handle_net_conflict_deep_poll,
     "/api/netdoctor/ping-start": handle_net_ping_start,
     "/api/netdoctor/ping-history": handle_net_ping_history,
     "/api/netdoctor/tracert-start": handle_net_tracert_start,

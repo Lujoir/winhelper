@@ -16,6 +16,8 @@ var ndState = {
     expectedDns: [],
     confTaskId: null,
     conflictTaskId: null,
+    deepTaskId: null,      /* 深度检测平台任务 id（DC-xxx） */
+    deepRound: 0,          /* 深度检测轮询轮次（2.5s/轮，60 轮上限） */
     pingTaskId: null,
     tracertTaskId: null,
     stressTaskId: null,
@@ -532,6 +534,15 @@ function ndRenderConflict(r) {
         html += '</div></div>';
     }
     ndSetTip("ndConflictSummary", "");
+    /* 深度检测入口（2026-09-10 对接服务端 ipconflict-deep，契约 9e604a7+cc34bae：
+       平台侧编排 resolve/arp/nad/macaddr/conclude 五步，全链约 15-30s） */
+    ndState.conflictLast = r;
+    html += '<div class="nd-ai" id="ndDeepWrap"><b>深度检测</b>'
+        + '<span class="nd-hint">由中心编排网关 ARP / 准入 / 接入交换机 MAC 交叉核验（约 15-30s）</span>'
+        + '<div style="margin-top:8px">'
+        + '<button class="nd-btn primary" id="ndDeepBtn" onclick="ndStartDeep()">发起深度检测</button>'
+        + '<span class="nd-hint" id="ndDeepTip"></span></div>'
+        + '<div id="ndDeepBody"></div></div>';
     el.innerHTML = html;
 }
 
@@ -542,6 +553,158 @@ function ndToggleNicHist() {
     var show = b.style.display === "none";
     b.style.display = show ? "block" : "none";
     if (a) { a.textContent = show ? " ▾ 收起" : " ▸ 展开"; }
+}
+
+/* ===================== ②.b IP 冲突深度检测（平台编排，本地轮询转发） ===================== */
+
+function ndDeepBtnReset() {
+    var b = document.getElementById("ndDeepBtn");
+    if (b) { b.disabled = false; }
+}
+
+function ndStartDeep() {
+    var last = ndState.conflictLast;
+    if (!last || !last.ip || !last.mac) { return; }
+    var btn = document.getElementById("ndDeepBtn");
+    if (btn) { btn.disabled = true; }
+    var body = document.getElementById("ndDeepBody");
+    if (body) { body.innerHTML = ""; }
+    ndSetTip("ndDeepTip", "任务创建中…");
+    var q = "?ip=" + encodeURIComponent(last.ip) + "&mac=" + encodeURIComponent(last.mac);
+    ndApiFetch("/api/netdoctor/conflict-deep-start" + q).then(function (d) {
+        if (!d || d.success === false) {
+            var emap = { not_connected: "未连接中心", busy: "中心检测任务忙，请稍后重试",
+                         invalid_ip: "IP 非法", not_registered: "终端未注册",
+                         no_active_adapter: "无活动网卡" };
+            ndSetTip("ndDeepTip", "发起失败：" + (emap[d && d.error] || (d && d.error) || "未知"));
+            ndDeepBtnReset();
+            return;
+        }
+        ndState.deepTaskId = d.task_id;
+        ndState.deepRound = 0;
+        ndSetTip("ndDeepTip", "任务 " + d.task_id + " 已创建，编排中…");
+        ndDeepPollTick();
+    }).catch(function (e) {
+        ndSetTip("ndDeepTip", "发起失败：" + String(e));
+        ndDeepBtnReset();
+    });
+}
+
+function ndDeepPollTick() {
+    var tid = ndState.deepTaskId;
+    if (!tid) { return; }
+    /* 2.5s × 60 轮 = 150s 上限（服务端实测 9-30s 完成，宽裕量防网络抖动） */
+    if ((ndState.deepRound || 0) > 60) {
+        ndSetTip("ndDeepTip", "深度检测超时，可稍后重试");
+        ndDeepBtnReset();
+        return;
+    }
+    ndApiFetch("/api/netdoctor/conflict-deep-poll?task_id=" + encodeURIComponent(tid))
+        .then(function (d) {
+            if (!d || d.success === false) {
+                ndSetTip("ndDeepTip", "轮询失败：" + ((d && d.error) || "未知"));
+                ndDeepBtnReset();
+                return;
+            }
+            var t = d.task || {};
+            if (t.status === "running") {
+                ndRenderDeep(t, true);
+                ndState.deepRound = (ndState.deepRound || 0) + 1;
+                window.__ndDeepTimer = window.setTimeout(ndDeepPollTick, 2500);
+                return;
+            }
+            ndRenderDeep(t, false);
+            ndSetTip("ndDeepTip",
+                t.status === "done" ? "深度检测完成" : ("深度检测失败：" + (t.error || "未知")));
+            ndDeepBtnReset();
+        }).catch(function () {
+            /* 瞬时网络抖动容错：不终止轮询，计入轮次由上限兜底 */
+            ndState.deepRound = (ndState.deepRound || 0) + 1;
+            window.__ndDeepTimer = window.setTimeout(ndDeepPollTick, 2500);
+        });
+}
+
+function ndDeepStepBadge(s) {
+    var map = { done: ["nd-ok", "已完成"], skipped: ["nd-muted", "跳过"],
+                failed: ["nd-err", "失败"], empty: ["nd-warn", "无数据"],
+                match: ["nd-ok", "匹配"], mismatch: ["nd-err", "不匹配"],
+                multi: ["nd-warn", "多端口（漂移信号）"], running: ["nd-warn", "进行中"] };
+    var m = map[s] || ["nd-muted", s || "--"];
+    return ndBadge(m[1], m[0]);
+}
+
+function ndRenderDeep(t, running) {
+    var el = document.getElementById("ndDeepBody");
+    if (!el) { return; }
+    var html = "";
+    var steps = t.steps || [];
+    if (steps.length) {
+        html += '<div class="nd-steps">';
+        for (var i = 0; i < steps.length; i++) {
+            var s = steps[i];
+            html += '<div class="nd-step"><div class="nd-step-head">'
+                + ndDeepStepBadge(s.status)
+                + '<b>' + ndEscapeHtml(s.name || s.step || "--") + '</b>'
+                + (s.target ? '<span class="nd-hint">目标 ' + ndEscapeHtml(s.target) + '</span>' : "")
+                + '</div>';
+            if (s.note) { html += '<div class="nd-hint">' + ndEscapeHtml(s.note) + '</div>'; }
+            if (s.zone) { html += '<div class="nd-hint">区域：' + ndEscapeHtml(s.zone) + '</div>'; }
+            if (s.banner) { html += '<div class="nd-hint">' + ndEscapeHtml(s.banner) + '</div>'; }
+            var ev = s.evidence || [];
+            if (ev.length) {
+                html += '<ul class="nd-evlist">';
+                for (var e2 = 0; e2 < ev.length; e2++) {
+                    html += '<li><code>' + ndEscapeHtml(
+                        typeof ev[e2] === "string" ? ev[e2] : JSON.stringify(ev[e2])) + '</code></li>';
+                }
+                html += '</ul>';
+            }
+            var cmds = s.commands || [];
+            if (cmds.length) {
+                html += '<details class="nd-cmds"><summary>执行命令 ' + cmds.length + ' 条</summary>';
+                for (var c = 0; c < cmds.length; c++) {
+                    html += '<div class="nd-hint">$ ' + ndEscapeHtml(cmds[c].cmd || "")
+                        + (cmds[c].ok === false ? "（失败）" : "") + '</div>';
+                    if (cmds[c].output_tail) {
+                        html += '<pre class="nd-pre">' + ndEscapeHtml(cmds[c].output_tail) + '</pre>';
+                    }
+                }
+                html += '</details>';
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+    } else if (running) {
+        html += '<div class="nd-hint">任务编排中…</div>';
+    }
+    var v = t.verdict;
+    if (v) {
+        var cmap = { confirmed: ["nd-err", "确认 IP 冲突"], suspect: ["nd-warn", "疑似 IP 冲突"],
+                     normal: ["nd-ok", "无冲突"], insufficient_evidence: ["nd-muted", "证据不足"] };
+        var cm = cmap[v.conclusion] || ["nd-muted", v.conclusion || "--"];
+        html += '<div style="margin:8px 0">' + ndBadge(cm[1], cm[0]) + '</div>';
+        if (v.ip || v.mac) {
+            html += '<div class="nd-hint">核验对象：IP ' + ndEscapeHtml(v.ip || "--")
+                + ' ｜ MAC ' + ndEscapeHtml(v.mac || "--") + '</div>';
+        }
+        var rs = v.reasons || [];
+        if (rs.length) {
+            html += '<div class="nd-hint">结论依据：' + ndEscapeHtml(rs.join("、")) + '</div>';
+        }
+        var src = v.sources || {};
+        var srcNames = [["gateway_arp", "网关 ARP"], ["admission", "准入系统"],
+                        ["access_mac", "接入交换机 MAC"]];
+        var sb = [];
+        for (var s3 = 0; s3 < srcNames.length; s3++) {
+            var sv = src[srcNames[s3][0]];
+            sb.push(srcNames[s3][1] + "：" + (sv === undefined || sv === null ? "--" : String(sv)));
+        }
+        html += '<div class="nd-hint">数据源：' + ndEscapeHtml(sb.join(" ｜ ")) + '</div>';
+        if (v.checked_at) {
+            html += '<div class="nd-hint">核验时间：' + ndEscapeHtml(String(v.checked_at)) + '</div>';
+        }
+    }
+    el.innerHTML = html;
 }
 
 /* ===================== ③ 连通性测试 ===================== */
