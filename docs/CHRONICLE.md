@@ -1,6 +1,6 @@
 # 观枢终端平台｜EyeTerm · 建设史编年
 
-> 维护者：chronicler-dev ｜ v2.0 ｜ 2026-09-10 ｜ 补记设置弹窗卡片化重构（#43，ADR-013/019，按时间正序插于 #40/#41 之间；登记号 43 为追加序号非时间序）
+> 维护者：chronicler-dev ｜ v2.1 ｜ 2026-09-10 ｜ 补记晚间第二波（#44~#46，登记号非时间序：实证时间序 45→44→46）
 
 ## 卷首语
 
@@ -61,6 +61,9 @@
 | 43 | 2026-09-10 | 设置弹窗卡片化重构 | 四卡分区 + 各卡独立保存 + 锚点挂载协议；补采模态与防假阳性（ADR-013/019） |
 | 41 | 2026-09-10 | IP 冲突深度检测引擎 Phase A/B 闭环上线 | 网段→网关→ARP→准入→MAC 表→四态结论网工级证据链产品化（ADR-028/029） |
 | 42 | 2026-09-10 | 深度检测终端 UI 交付上线 | 五步时间线渐进渲染，深度检测全链闭合（ADR-014） |
+| 45 | 2026-09-10 | bridge 漏挂载热修复与门禁固化 | ROUTES 覆盖 NET_ROUTES 全键自动化门禁，根治双挂载漏配（ADR-014 增补） |
+| 44 | 2026-09-10 | AI 辅助分析修复与手动重跑 | response 字段错位根除 + conflict-ai-reanalyze 复跑入口（ADR-015） |
+| 46 | 2026-09-10 | ADR-030 IP 冲突聚合分支上线 | 四源证据喂 LLM 真实实证零编造，冲突完整闭环全链贯通 |
 
 ---
 
@@ -285,6 +288,21 @@
 - 意义：深度检测全链闭合——终端 UI → 服务端五步编排 → 交换机/准入取证；唯余用户侧交换机 reader 开户后 ARP/MAC 步骤自动全通（代码零改动）。
 - 考证：net-doctor 提交 `edbbbbe`（2026-09-10 20:46，ADR-014 已入档）；主应用提交 `3a09a77`（20:46）；主仓库 `a83e246`（20:48，origin/main 实证）；E2E 210/210、冒烟 87/87、v7 安装包时间戳来源：会话记忆（2026-09-10）。
 
+#### 2026-09-10 · bridge 漏挂载热修复与「ROUTES 覆盖 NET_ROUTES」门禁固化（ADR-014 增补）
+- 事件：api-registrar 代码实证发现深度检测两条路由（conflict-deep-start/poll）NET_ROUTES 已定义但 bridge.py ROUTES 未同步挂载——v8 主应用深度检测按钮断链；热修复（主应用 `40abd3f` / net-doctor `aa57c1b`）+ 真实 bridge 链路冒烟；「ROUTES 覆盖 NET_ROUTES 全键」自动化门禁固化（桩 E2E 不覆盖 bridge 分发层的教训入 ADR-014 检查单）。
+- 意义：暴露「桩 E2E 无法覆盖 bridge 分发层」的结构性盲区，双挂载漏配类缺陷以自动化门禁根治；接口台账（`0dfda0c`）先于修复实证指出该缺陷，登记-修复协作闭环。
+- 考证：主仓库提交 `40abd3f`（2026-09-10 21:02）；net-doctor 提交 `aa57c1b`（21:02）；台账主仓库 `0dfda0c`（20:56，BRG-052/053 登记 + SRV-078/079 归属修正，台账 153 条）；冒烟 91/91 来源：会话记忆（2026-09-10）。
+
+#### 2026-09-10 · AI 辅助分析修复与手动重跑（ADR-015）
+- 事件：IP 冲突「AI 辅助分析」修复升级（net-doctor `acee817` + `5974d81` / 主应用 `b344bbc`，ADR-015）：字段错位根除——平台返回 response 字段与旧提取链 analysis/content/result 永落空致「（无内容）」；新增手动重跑按钮（新路由 /api/netdoctor/conflict-ai-reanalyze，bridge + NET_ROUTES 双挂载）；model/analysis_id 透传可追溯。
+- 意义：AI 辅助分析结果可用性修复 + 人工复跑入口，为冲突综合研判提供终端触发点。
+- 考证：net-doctor 提交 `acee817`（2026-09-10 21:15）、`5974d81`（21:16，ADR-015）；主仓库提交 `b344bbc`（21:16）、台账 `1fa7fb2`（21:19，BRG-054 登记，台账 154 条）；E2E 222/222、冒烟 103/103 来源：会话记忆（2026-09-10）。
+
+#### 2026-09-10 · ADR-030 IP 冲突聚合分支上线：冲突完整闭环全链贯通
+- 事件：服务端 /ai/analyze 新增 IP 冲突聚合分支（server-platform `a8a6b95`，ADR-030，已部署生产）——四源聚合（冲突上报窗口 / 准入资产 / 深度检测证据链 / 数据源状态位）喂 LLM，结构感知预算 + 证据硬约束同款；真实 LLM 实证 analysis_id=27 零编造；识别兼容实证（终端 issue 前缀命中，终端零改动）；单测 29/29。
+- 意义：IP 冲突完整闭环全链上线——轻量筛查（终端上报交叉校验）→ 深度检测取证（五步编排）→ 平台算力综合研判（四源聚合）；「证据硬约束」体系从 AI 诊断延伸到聚合研判层。
+- 考证：server-platform 提交 `a8a6b95`（2026-09-10 21:20，ADR-030 已入档）；analysis_id=27 实证、单测 29/29 来源：会话记忆（2026-09-10）；ADR-027 终验与交换机 reader 开户仍待用户。
+
 ---
 
 ## 三、存疑与考证
@@ -303,11 +321,11 @@
 
 | 仓库 | 位置 | 首提交 | 最新提交（建档时） | 提交数 | 决策记录 |
 |------|------|--------|-------------------|--------|---------|
-| winhelper 主应用 | workspace 根（.git）；远程 git.wzeye.cn/zlj/eyeterm（2026-09-10 接入） | `84ea539` 2026-05-22 | `a83e246` 2026-09-10 | 82 | docs/ARCHITECTURE-CLIENT.md |
+| winhelper 主应用 | workspace 根（.git）；远程 git.wzeye.cn/zlj/eyeterm（2026-09-10 接入） | `84ea539` 2026-05-22 | `1fa7fb2` 2026-09-10 | 93 | docs/ARCHITECTURE-CLIENT.md |
 | disk-cleaner | disk-cleaner\（.git） | `3cdeb9b` 2026-09-05 | `35a31a1` 2026-09-06 | 10 | ADR-001~015（docs/DECISIONS.md） |
 | log-inspector | log-inspector\（.git） | `dde1c4b` 2026-09-06 | `5ca2c1f` 2026-09-08 | 7 | ADR-001~009（docs/DECISIONS.md） |
 | perf-analyzer | perf-analyzer\（.git） | `4192b95` 2026-09-05 | `011f086` 2026-09-10 | 16 | ADR-001~019（docs/DECISIONS.md） |
-| server-platform | server-platform\（.git） | `5a21967` 2026-09-06 | `cc34bae` 2026-09-10 | 26 | ADR-001~029（24 空缺，docs/DECISIONS.md）+ docs/login_upgrade_delivery.md、docs/iperf_e2e_report.md |
-| net-doctor | net-doctor\（.git） | `539b993` 2026-09-09 | `edbbbbe` 2026-09-10 | 17 | ADR-001~014（docs/DECISIONS.md） |
+| server-platform | server-platform\（.git） | `5a21967` 2026-09-06 | `a8a6b95` 2026-09-10 | 27 | ADR-001~030（24 空缺，docs/DECISIONS.md）+ docs/login_upgrade_delivery.md、docs/iperf_e2e_report.md |
+| net-doctor | net-doctor\（.git） | `539b993` 2026-09-09 | `5974d81` 2026-09-10 | 21 | ADR-001~015（docs/DECISIONS.md） |
 
 > 检索方式：`git log --date=short --format="%h %ad %s"`（各仓库根目录执行）。子项目仓库均位于主仓库 workspace 之下，主仓库以 gitlink 方式引用三者（server-platform 当前未以 gitlink 跟踪）。
