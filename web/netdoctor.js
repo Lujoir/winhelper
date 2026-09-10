@@ -1,7 +1,8 @@
 /* ==========================================
    网络排障 · netdoctor（观枢终端平台｜EyeTerm）
    ==========================================
-   五功能：① 配置核查 ② IP 冲突检测 ③ 连通性测试 ④ 路由追踪 ⑤ 网络压测
+   五功能 + 第六模块 AI 智能诊断：
+   ① 配置核查 ② IP 冲突检测 ③ 连通性测试 ④ 路由追踪 ⑤ 网络压测 ⑥ AI 诊断
    命名空间：除入口 initNetDoctorTab 外一律 nd 前缀；工具自包含。
    传输：ndApiFetch 三级回退（apiFetch 守卫 → pywebview → fetch）。
    后台任务：start 返回 task_id → ndPollTask 轮询 task-status → 完成渲染。
@@ -24,6 +25,8 @@ var ndState = {
     historyAgg: null,
     aiCollect: null,       /* AI 诊断数据源缓存 {key: {ok,data,note,ts}} */
     aiHistory: [],
+    aiMode: "enterprise",  /* AI 诊断模式：enterprise（中心模型链）/ personal（本地第三方 API） */
+    aiPersonal: {},        /* 个人版配置回显 {api_url, model, has_key}（key 永不回显） */
     pollers: {}
 };
 
@@ -85,10 +88,17 @@ function ndSetTip(id, text) {
 /* ===================== 入口（幂等） ===================== */
 
 function initNetDoctorTab() {
+    /* 2026-09-10 Bug0 修复：中心状态每次激活都重查。旧逻辑一次性 inited 守卫导致
+       首帧 uplink 处于 connecting/注册退避期时 gate 永久误判「未连接」
+       （应用内切换菜单不触发 visibilitychange，无补救路径）。 */
+    ndLoadUplink();
     if (ndState.inited) { return; }
     ndState.inited = true;
+    try {
+        ndState.aiMode = localStorage.getItem("nd_ai_mode") === "personal" ? "personal" : "enterprise";
+    } catch (e) { ndState.aiMode = "enterprise"; }
+    ndAiRenderMode();
     ndLoadConfig();
-    ndLoadUplink();
     ndLoadHistory();
     ndAiInitHistory();
     ndAiRenderSources();
@@ -128,6 +138,28 @@ function ndConnected() {
     return !!(ndState.uplink && ndState.uplink.state === "connected");
 }
 
+/* 第九项：AI 双模式——企业版依赖中心，个人版不依赖中心始终可用 */
+function ndAiPersonal() {
+    return ndState.aiMode === "personal";
+}
+
+function ndAiSetMode(m) {
+    ndState.aiMode = m === "personal" ? "personal" : "enterprise";
+    try { localStorage.setItem("nd_ai_mode", ndState.aiMode); } catch (e) { /* 存储禁用仅内存态 */ }
+    ndAiRenderMode();
+    ndRenderUplink();
+    ndSetTip("ndAiSummary", ndAiPersonal()
+        ? "个人版：使用本机配置的第三方 LLM API，不依赖中心（在「系统设置 · AI 诊断（个人版）」配置）"
+        : "企业版：日志包提交中心模型链诊断（需已连接中心）");
+}
+
+function ndAiRenderMode() {
+    var e = document.getElementById("ndAiModeEnt");
+    var p = document.getElementById("ndAiModePers");
+    if (e) { e.className = ndAiPersonal() ? "nd-seg" : "nd-seg on"; }
+    if (p) { p.className = ndAiPersonal() ? "nd-seg on" : "nd-seg"; }
+}
+
 function ndLoadUplink() {
     ndApiFetch("/api/perf/uplink/status").then(function (d) {
         ndState.uplink = d && d.uplink ? d.uplink : null;
@@ -161,18 +193,30 @@ function ndRenderUplink() {
     /* 二元判定：已注册+心跳成功（state=connected）→ 已连接；其余一律未连接（无中间态） */
     var on = ndConnected();
     el.innerHTML = ndBadge(on ? "已连接" : "未连接", on ? "nd-ok" : "nd-muted");
-    /* 依赖中心的功能置灰/解灰（如实标注，不虚构可用） */
-    var ids = ["ndConflictBtn", "ndStressBtn", "ndAiBtn"];
+    /* 依赖中心的功能置灰/解灰（如实标注，不虚构可用）；AI gate 仅对企业版生效（第九项） */
+    var ids = ["ndConflictBtn", "ndStressBtn"];
     for (var i = 0; i < ids.length; i++) {
         var b = document.getElementById(ids[i]);
         if (b) { b.disabled = !on; }
     }
+    var aiOn = on || ndAiPersonal();
+    var aiBtn = document.getElementById("ndAiBtn");
+    if (aiBtn) { aiBtn.disabled = !aiOn; }
     var wrap1 = document.getElementById("ndConflictGate");
     if (wrap1) { wrap1.style.display = on ? "none" : "block"; }
     var wrap2 = document.getElementById("ndStressGate");
     if (wrap2) { wrap2.style.display = on ? "none" : "block"; }
     var wrap3 = document.getElementById("ndAiGate");
-    if (wrap3) { wrap3.style.display = on ? "none" : "block"; }
+    if (wrap3) { wrap3.style.display = aiOn ? "none" : "block"; }
+    /* AI 日志·网络压测总结子项依赖中心：未连禁勾标注，恢复后重采（2026-09-10 优化7/8） */
+    var cbStress = document.getElementById("ndAiChk-net_stress");
+    if (cbStress) {
+        cbStress.disabled = !on;
+        var stS = document.getElementById("ndAiSt-net_stress");
+        if (stS && !on) { stS.textContent = "需连接中心"; }
+        else if (stS && on && stS.textContent === "需连接中心") { ndAiCollectNow("net_stress"); }
+        ndAiSyncNetGroup();
+    }
 }
 
 /* ===================== 配置加载 ===================== */
@@ -182,6 +226,7 @@ function ndLoadConfig() {
         if (d && d.success !== false) {
             ndState.nodes = d.nodes || [];
             ndState.expectedDns = d.expected_dns || [];
+            ndState.aiPersonal = d.ai_personal || {};   /* {api_url, model, has_key}，key 不回显 */
         }
         ndRenderNodes();
     }).catch(function () { ndRenderNodes(); });
@@ -478,6 +523,7 @@ function ndRenderPing(r) {
     ndSetTip("ndPingSummary", "完成：" + s.ok + " 正常 / " + s.err + " 异常" +
         (s.muted ? " / " + s.muted + " 未连接" : "") +
         "（结果已记录到 netdoctor_records）");
+    if (ndState.inited) { ndAiCollectNow("net_conn"); }   /* AI 数据源联动刷新（连通性） */
 }
 
 function ndLoadHistory() {
@@ -552,6 +598,7 @@ function ndRenderTracert(r) {
         return;
     }
     ndState.lastTracert = r;
+    if (ndState.inited) { ndAiCollectNow("net_tracert"); }   /* AI 数据源联动刷新（追踪） */
     ndSetTip("ndTracertSummary", "完成：共 " + (r.hops || []).length + " 跳 ｜ 知识库节点 "
         + r.kb_count + " 条" + (r.kb_error ? "（知识库不可用：" + r.kb_error + "）" : ""));
     var html = '<table class="nd-table"><tr><th>跳数</th><th>延迟</th><th>IP</th><th>主机名</th><th>所属区域</th></tr>';
@@ -625,6 +672,7 @@ function ndRenderStress(r) {
         return;
     }
     ndState.lastStressResult = r;
+    if (ndState.inited) { ndAiCollectNow("net_stress"); }   /* AI 数据源联动刷新（压测） */
     var v = r.verdict || {};
     var vcls = v.cls === "ok" ? "nd-ok" : (v.cls === "err" ? "nd-err" : "nd-warn");
     var html = '<div style="margin:6px 0">' + ndBadge(v.text || "--", vcls)
@@ -719,6 +767,7 @@ function ndRenderSettings() {
             + '<td><button class="nd-btn" onclick="ndDelSettingRow(' + i + ')">删除</button></td></tr>';
     }
     var dnsVal = (ndState.expectedDns || []).join(", ");
+    var apCfg = ndState.aiPersonal || {};
     host.innerHTML =
         '<div class="nd-set-block" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-color,#262b3a)">'
         + '<b style="font-size:13px">网络排障</b>'
@@ -731,6 +780,21 @@ function ndRenderSettings() {
         + '<button class="nd-btn" onclick="ndResetNetSettings()">恢复默认</button>'
         + '<button class="nd-btn primary" id="ndSettingsSaveBtn" onclick="ndSaveNetSettings()">保存</button>'
         + '<span class="nd-hint" id="ndSettingsTip">网关与中心服务器目标为动态获取，不可编辑</span>'
+        + '</div>'
+        + '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-color,#262b3a)">'
+        + '<b style="font-size:13px">AI 诊断 · 个人版（不依赖中心，直连第三方 LLM API）</b>'
+        + '<div class="nd-params" style="margin:8px 0 4px"><label>API 地址</label>'
+        + '<input class="nd-input" id="ndSetAiUrl" value="' + ndEscapeHtml(apCfg.api_url || "") + '"'
+        + ' placeholder="如 https://api.deepseek.com（自动补 /v1/chat/completions）" style="width:330px"></div>'
+        + '<div class="nd-params" style="margin:4px 0"><label>API Key</label>'
+        + '<input class="nd-input" type="password" id="ndSetAiKey" value="" autocomplete="new-password"'
+        + ' placeholder="' + (apCfg.has_key ? "已配置（留空不修改）" : "sk-...") + '" style="width:220px">'
+        + '<label>模型名</label>'
+        + '<input class="nd-input" id="ndSetAiModel" value="' + ndEscapeHtml(apCfg.model || "") + '"'
+        + ' placeholder="如 deepseek-chat" style="width:150px">'
+        + '<button class="nd-btn" id="ndSetAiTestBtn" onclick="ndTestPersonal()">测试连通性</button>'
+        + '<span class="nd-hint" id="ndSetAiTestTip"></span></div>'
+        + '<div class="nd-hint" style="margin-top:4px">配置保存在本机 app_config.json（netdoctor.ai_personal，明文本机可接受），随上方「保存」一并提交；API Key 留空 = 不修改</div>'
         + '</div></div>';
 }
 
@@ -771,9 +835,15 @@ function ndSaveNetSettings() {
     }
     var dnsRaw = (document.getElementById("ndSetDns") || {}).value || "";
     var dns = dnsRaw.split(/[,，;；\s]+/).filter(function (s) { return !!s; });
+    /* 个人版配置：api_key 留空 = 不修改（后端保留原值） */
+    var aiKey = ((document.getElementById("ndSetAiKey") || {}).value || "").trim();
+    var ai = { api_url: ((document.getElementById("ndSetAiUrl") || {}).value || "").trim(),
+               model: ((document.getElementById("ndSetAiModel") || {}).value || "").trim() };
+    if (aiKey) { ai.api_key = aiKey; }
     if (tip) { tip.textContent = "保存中…"; }
     ndApiFetch("/api/netdoctor/config?nodes_json=" + encodeURIComponent(JSON.stringify(nodes))
-        + "&expected_dns_json=" + encodeURIComponent(JSON.stringify(dns)))
+        + "&expected_dns_json=" + encodeURIComponent(JSON.stringify(dns))
+        + "&ai_personal_json=" + encodeURIComponent(JSON.stringify(ai)))
         .then(function (d) {
             if (!d || d.success === false) {
                 if (tip) { tip.textContent = "保存失败：" + ((d && d.error) || "未知"); }
@@ -781,12 +851,33 @@ function ndSaveNetSettings() {
             }
             ndState.nodes = d.nodes || nodes;
             ndState.expectedDns = d.expected_dns || dns;
+            ndState.aiPersonal = d.ai_personal || {};
             ndRenderNodes();
             ndRenderSettings();
             if (tip) { tip.textContent = "已保存，连通性检测即时生效"; }
         }).catch(function (e) {
             if (tip) { tip.textContent = "保存失败：" + String(e); }
         });
+}
+
+/* 个人版连通性测试（轻量 GET /models；用表单当前值，不要求先保存） */
+function ndTestPersonal() {
+    var tip = document.getElementById("ndSetAiTestTip");
+    var url = ((document.getElementById("ndSetAiUrl") || {}).value || "").trim();
+    var key = ((document.getElementById("ndSetAiKey") || {}).value || "").trim();
+    if (!url) { if (tip) { tip.textContent = "请先填写 API 地址"; } return; }
+    if (tip) { tip.textContent = "测试中…"; }
+    var q = "/api/netdoctor/ai-personal-test?api_url=" + encodeURIComponent(url)
+        + (key ? "&api_key=" + encodeURIComponent(key) : "");
+    ndApiFetch(q).then(function (d) {
+        if (!d || d.success === false) {
+            if (tip) { tip.textContent = "测试失败：" + ((d && d.error) || "未知"); }
+            return;
+        }
+        if (tip) { tip.textContent = (d.ok ? "✓ " : "✗ ") + (d.hint || (d.ok ? "服务可达" : "不可达")); }
+    }).catch(function (e) {
+        if (tip) { tip.textContent = "测试失败：" + String(e); }
+    });
 }
 
 function ndResetNetSettings() {
@@ -806,20 +897,53 @@ function ndResetNetSettings() {
 
 /* ===================== ⑥ AI 智能诊断 ===================== */
 
-var ND_AI_SOURCES = [
-    { key: "hwinfo",       name: "硬件信息（hwinfo）" },
-    { key: "os_info",      name: "系统信息（os_info）" },
-    { key: "perf_analysis", name: "性能分析记录（perf_analysis）" },
-    { key: "perf_stress",   name: "性能压测记录（perf_stress）" },
-    { key: "system_log",    name: "系统日志（system_log · 最近事件）" },
-    { key: "network",       name: "网络排障数据（network · 连通性/追踪/压测）" }
+/* 2026-09-10 优化4/7：单类勾选 + 网络组拆子选项；时间维度类（system_log/net_conn）
+   行内时间范围选择（1h/24h 默认/3d/自定义起止），无时间维度类（实时快照/最近一次
+   记录/平台记录接口不支持范围检索的 perf 两类）显示「—」。 */
+var ND_AI_SINGLES = [
+    { key: "hwinfo",        name: "硬件信息（hwinfo）",              time: false },
+    { key: "os_info",       name: "系统信息（os_info）",             time: false },
+    { key: "perf_analysis", name: "性能分析记录（perf_analysis）",   time: false },
+    { key: "perf_stress",   name: "性能压测记录（perf_stress）",     time: false },
+    { key: "system_log",    name: "系统日志（system_log · 检索窗口内事件）", time: true }
 ];
+var ND_AI_NET_SUBS = [
+    { key: "net_conn",    name: "连通性历史（含最近检测结果）", time: true,  needCenter: false },
+    { key: "net_tracert", name: "路由追踪记录（最近一次）",     time: false, needCenter: false },
+    { key: "net_stress",  name: "网络压测总结（最近一次）",     time: false, needCenter: true }
+];
+
+function ndAiAllKeys() {
+    return ["hwinfo", "os_info", "perf_analysis", "perf_stress", "system_log",
+            "net_conn", "net_tracert", "net_stress"];
+}
+
+/* 时间范围参数：{hours:n} 或 {start,end(YYYY-MM-DD HH:MM)}；custom 无效 → null */
+function ndAiTimeParams(key) {
+    var t = (ndState.aiTime || {})[key] || { preset: "24h" };
+    if (t.preset === "custom") {
+        var s = Date.parse((t.start || "").replace("T", " "));
+        var e = Date.parse((t.end || "").replace("T", " "));
+        if (isNaN(s) || isNaN(e) || e <= s) { return null; }
+        return { start_ts: Math.floor(s / 1000), end_ts: Math.floor(e / 1000),
+                 start: (t.start || "").replace("T", " "), end: (t.end || "").replace("T", " ") };
+    }
+    var hours = t.preset === "1h" ? 1 : (t.preset === "3d" ? 72 : 24);
+    return { hours: hours };
+}
+
+function ndAiTimeNote(tp) {
+    if (!tp) { return "时间范围无效"; }
+    if (tp.hours !== undefined) { return "近 " + tp.hours + " 小时"; }
+    return "自定义范围";
+}
 
 /* 提交走 net_service 转发代理（token 仅后端注入）；pywebview 双参透传 JSON body，
    独立页/浏览器回退 fetch POST。诊断为长请求（服务端 ≤120s），独立 130s 客户端超时
    （不经 ndApiFetch 的 15s 通用保护）。 */
 function ndAiPostDiagnose(issue, logs) {
-    var body = JSON.stringify({ issue: issue, logs: logs });
+    var body = JSON.stringify({ issue: issue, logs: logs,
+        mode: ndAiPersonal() ? "personal" : "enterprise" });
     var call;
     if (window.pywebview && window.pywebview.api) {
         call = window.pywebview.api.call("/api/netdoctor/ai-diagnose", body);
@@ -859,66 +983,185 @@ function ndAiCollectOne(key) {
             return { ok: true, data: { hostname: h.hostname, os: h.os }, note: "实时" };
         }).catch(fail);
     }
-    if (key === "network") {
-        var parts = {}, n = 0;
-        if (ndState.lastPing) { parts.connectivity = ndState.lastPing; n++; }
-        if (ndState.lastTracert) { parts.tracert = ndState.lastTracert; n++; }
-        if (ndState.lastStressResult) { parts.stress = ndState.lastStressResult; n++; }
-        var aggP = ndState.historyAgg ? Promise.resolve(ndState.historyAgg)
-            : ndApiFetch("/api/netdoctor/ping-history?limit=50");
-        return aggP.then(function (agg) {
-            if (agg && agg.length) { parts.history = agg; n++; }
-            return n ? { ok: true, data: parts, note: n + " 组数据" }
-                     : { ok: false, data: null, note: "不可用（尚未检测）" };
+    if (key === "system_log") {
+        /* 2026-09-10 优化7：按勾选行时间范围过滤（loginspector search 的 hours / start+end 参数） */
+        var tp = ndAiTimeParams("system_log");
+        if (!tp) { return Promise.resolve({ ok: false, data: null, note: ndAiTimeNote(tp) }); }
+        var q = "/api/loginspector/search?per_page=200";
+        if (tp.hours !== undefined) { q += "&hours=" + tp.hours; }
+        else { q += "&start=" + encodeURIComponent(tp.start) + "&end=" + encodeURIComponent(tp.end); }
+        return ndApiFetch(q).then(function (d) {
+            var evs = (d && d.events) || [];
+            var data = evs.length ? { events: evs, summary: d.summary || null } : null;
+            var note = evs.length
+                ? (ndAiTimeNote(tp) + " · " + evs.length + " 条 · " + (evs[0].time_text || ""))
+                : (ndAiTimeNote(tp) + " · 0 条");
+            if (!data) { return { ok: false, data: null, note: note }; }
+            return { ok: true, data: data, note: note };
         }).catch(fail);
+    }
+    if (key === "net_conn") {
+        /* 连通性历史：JSONL 按 ts 过滤（ping-history hours / start_ts+end_ts，net_service 同步支持） */
+        var tpn = ndAiTimeParams("net_conn");
+        if (!tpn) { return Promise.resolve({ ok: false, data: null, note: ndAiTimeNote(tpn) }); }
+        var qh = "/api/netdoctor/ping-history?limit=200";
+        if (tpn.hours !== undefined) { qh += "&hours=" + tpn.hours; }
+        else { qh += "&start_ts=" + tpn.start_ts + "&end_ts=" + tpn.end_ts; }
+        return ndApiFetch(qh).then(function (d) {
+            var parts = {}, n = 0;
+            var agg = (d && d.agg) || [];
+            if (agg.length) { parts.history = agg; n++; }
+            if (ndState.lastPing) { parts.connectivity = ndState.lastPing; n++; }
+            if (!n) { return { ok: false, data: null, note: ndAiTimeNote(tpn) + " · 无检测记录" }; }
+            return { ok: true, data: parts, note: ndAiTimeNote(tpn) + " · " + n + " 组数据" };
+        }).catch(fail);
+    }
+    if (key === "net_tracert") {
+        if (!ndState.lastTracert) {
+            return Promise.resolve({ ok: false, data: null, note: "不可用（尚未追踪）" });
+        }
+        return Promise.resolve({ ok: true, data: ndState.lastTracert,
+            note: "最近一次 · " + ((ndState.lastTracert.hops || []).length) + " 跳" });
+    }
+    if (key === "net_stress") {
+        if (!ndConnected()) { return Promise.resolve({ ok: false, data: null, note: "需连接中心" }); }
+        if (!ndState.lastStressResult) {
+            return Promise.resolve({ ok: false, data: null, note: "不可用（尚未压测）" });
+        }
+        return Promise.resolve({ ok: true, data: ndState.lastStressResult, note: "最近一次 · 压测总结" });
     }
     var route = key === "hwinfo" ? "/api/perf/hwinfo"
         : key === "perf_analysis" ? "/api/perf/record-report"
-        : key === "perf_stress" ? "/api/perf/stress-status"
-        : "/api/loginspector/search?per_page=200";
+        : "/api/perf/stress-status";
     return ndApiFetch(route).then(function (d) {
-        var data = null, note = "";
+        var data = null, note = "已采集";
         if (key === "hwinfo") {
             data = d && d.hwinfo ? d.hwinfo : null;
             note = "实时";
-        } else if (key === "system_log") {
-            var evs = (d && d.events) || [];
-            data = evs.length ? { events: evs, summary: d.summary || null } : null;
-            note = evs.length ? ("最近 " + evs.length + " 条 · " + (evs[0].time_text || "")) : "";
         } else {
             data = (d && d.success !== false) ? (d.report || d.task || (d.result || null)) : null;
-            note = "已采集";
         }
         if (!data || (typeof data === "object" && !Object.keys(data).length)) { return fail(); }
         return { ok: true, data: data, note: note };
     }).catch(fail);
 }
 
+/* 2026-09-10 优化4/8：诊断日志默认收起，标题行点击展开/收起；「重新探测数据源」
+   移至标题行右侧（展开后可见）；网络配置与检测数据拆 3 子选项勾选。 */
+function ndAiToggleLogs() {
+    var body = document.getElementById("ndAiLogsBody");
+    var arrow = document.getElementById("ndAiLogsArrow");
+    var btn = document.getElementById("ndAiRefreshBtn");
+    if (!body) { return; }
+    var show = body.style.display === "none";
+    body.style.display = show ? "block" : "none";
+    if (arrow) { arrow.textContent = show ? "▾" : "▸"; }
+    if (btn) { btn.style.display = show ? "inline-block" : "none"; }
+}
+
+function ndAiTimeCell(key) {
+    var opts = [["1h", "最近 1 小时"], ["24h", "最近 24 小时"], ["3d", "最近 3 天"], ["custom", "自定义"]];
+    var preset = ((ndState.aiTime || {})[key] || {}).preset || "24h";
+    var sel = '<select class="nd-select nd-time-select" id="ndAiTime-' + key
+        + '" onchange="ndAiTimeChange(\'' + key + '\')">';
+    for (var i = 0; i < opts.length; i++) {
+        sel += '<option value="' + opts[i][0] + '"' + (preset === opts[i][0] ? " selected" : "")
+            + '>' + opts[i][1] + '</option>';
+    }
+    sel += '</select>';
+    sel += '<div class="nd-params" id="ndAiTimeCustom-' + key + '" style="display:none;margin-top:4px">'
+        + '<input type="datetime-local" class="nd-input nd-time-input" id="ndAiTimeStart-' + key
+        + '" onchange="ndAiTimeChange(\'' + key + '\')">'
+        + '<span class="nd-hint">至</span>'
+        + '<input type="datetime-local" class="nd-input nd-time-input" id="ndAiTimeEnd-' + key
+        + '" onchange="ndAiTimeChange(\'' + key + '\')"></div>';
+    return sel;
+}
+
+function ndAiSourceRow(s, sub) {
+    var cb = '<input type="checkbox" id="ndAiChk-' + s.key + '" checked'
+        + (s.needCenter ? "" : ' onchange="ndAiSyncNetGroup()"') + '>';
+    return '<tr' + (sub ? ' class="nd-ai-sub"' : "") + '><td>' + cb + '</td>'
+        + '<td>' + ndEscapeHtml(s.name) + '</td>'
+        + '<td>' + (s.time ? ndAiTimeCell(s.key) : '<span class="nd-hint">—</span>') + '</td>'
+        + '<td class="nd-hint" id="ndAiSt-' + s.key + '">待探测</td></tr>';
+}
+
 function ndAiRenderSources() {
     var body = document.getElementById("ndAiSourcesBody");
     if (!body) { return; }
     var rows = "";
-    for (var i = 0; i < ND_AI_SOURCES.length; i++) {
-        var s = ND_AI_SOURCES[i];
-        rows += '<tr><td><input type="checkbox" id="ndAiChk-' + s.key + '" checked></td>'
-            + '<td>' + ndEscapeHtml(s.name) + '</td>'
-            + '<td class="nd-hint" id="ndAiSt-' + s.key + '">待探测</td></tr>';
-    }
+    for (var i = 0; i < ND_AI_SINGLES.length; i++) { rows += ndAiSourceRow(ND_AI_SINGLES[i], false); }
+    rows += '<tr><td><input type="checkbox" id="ndAiChk-netgroup" checked onchange="ndAiNetGroupChange(this.checked)"></td>'
+        + '<td><b>网络配置与检测数据</b></td>'
+        + '<td><span class="nd-hint">—</span></td>'
+        + '<td class="nd-hint" id="ndAiSt-netgroup">—</td></tr>';
+    for (var j = 0; j < ND_AI_NET_SUBS.length; j++) { rows += ndAiSourceRow(ND_AI_NET_SUBS[j], true); }
     body.innerHTML = rows;
+}
+
+/* 网络组主选框 ↔ 子选项联动（禁用项不计入） */
+function ndAiNetGroupChange(on) {
+    for (var i = 0; i < ND_AI_NET_SUBS.length; i++) {
+        var cb = document.getElementById("ndAiChk-" + ND_AI_NET_SUBS[i].key);
+        if (cb && !cb.disabled) { cb.checked = on; }
+    }
+}
+
+function ndAiSyncNetGroup() {
+    var m = document.getElementById("ndAiChk-netgroup");
+    if (!m) { return; }
+    var total = 0, on = 0;
+    for (var i = 0; i < ND_AI_NET_SUBS.length; i++) {
+        var cb = document.getElementById("ndAiChk-" + ND_AI_NET_SUBS[i].key);
+        if (!cb || cb.disabled) { continue; }
+        total++;
+        if (cb.checked) { on++; }
+    }
+    m.disabled = total === 0;
+    m.checked = total > 0 && on === total;
+    m.indeterminate = on > 0 && on < total;
+}
+
+/* 时间范围变化：记录选择并即时重采该类（体量提示随范围变化） */
+function ndAiTimeChange(key) {
+    var sel = document.getElementById("ndAiTime-" + key);
+    var wrap = document.getElementById("ndAiTimeCustom-" + key);
+    if (wrap) { wrap.style.display = (sel && sel.value === "custom") ? "flex" : "none"; }
+    ndState.aiTime = ndState.aiTime || {};
+    ndState.aiTime[key] = {
+        preset: sel ? sel.value : "24h",
+        start: (document.getElementById("ndAiTimeStart-" + key) || {}).value || "",
+        end: (document.getElementById("ndAiTimeEnd-" + key) || {}).value || ""
+    };
+    ndAiCollectNow(key);
+}
+
+function ndAiCollectNow(key) {
+    var st = document.getElementById("ndAiSt-" + key);
+    if (st) { st.textContent = "采集中…"; }
+    ndAiCollectOne(key).then(function (r) {
+        r.ts = Date.now();
+        ndState.aiCollect = ndState.aiCollect || {};
+        ndState.aiCollect[key] = r;
+        if (st) { st.textContent = r.ok ? (r.note + " · 约 " + ndAiSize(r.data)) : r.note; }
+    });
 }
 
 function ndAiRefreshSources() {
     ndState.aiCollect = {};
-    for (var i = 0; i < ND_AI_SOURCES.length; i++) {
-        (function (s) {
-            var st = document.getElementById("ndAiSt-" + s.key);
-            if (st) { st.textContent = "采集中…"; }
-            ndAiCollectOne(s.key).then(function (r) {
-                r.ts = Date.now();
-                ndState.aiCollect[s.key] = r;
-                if (st) { st.textContent = r.ok ? (r.note + " · 约 " + ndAiSize(r.data)) : r.note; }
-            });
-        })(ND_AI_SOURCES[i]);
+    var keys = ndAiAllKeys();
+    for (var i = 0; i < keys.length; i++) {
+        (function (key) {
+            if (key === "net_stress" && !ndConnected()) {
+                var skip = { ok: false, data: null, note: "需连接中心", ts: Date.now() };
+                ndState.aiCollect[key] = skip;
+                var st0 = document.getElementById("ndAiSt-" + key);
+                if (st0) { st0.textContent = skip.note; }
+                return;
+            }
+            ndAiCollectNow(key);
+        })(keys[i]);
     }
 }
 
@@ -961,7 +1204,7 @@ function ndAiRenderHistory() {
         rows += '<tr style="cursor:pointer" onclick="ndAiShowHistory(' + i + ')">'
             + '<td>' + ndEscapeHtml(h[i].issue || "--") + '</td>'
             + '<td class="nd-num">' + ndEscapeHtml(new Date(h[i].ts).toLocaleString()) + '</td>'
-            + '<td>' + ndEscapeHtml(h[i].analysis_id || "--") + '</td></tr>';
+            + '<td>' + ndEscapeHtml(h[i].analysis_id || "本地") + '</td></tr>';
     }
     el.innerHTML = '<table class="nd-table"><tr><th>问题摘要</th><th>时间</th><th>analysis_id</th></tr>' + rows + '</table>';
 }
@@ -973,52 +1216,141 @@ function ndAiShowHistory(i) {
                        duration_ms: h.duration_ms, response_text: h.text });
 }
 
-function ndAiRenderResult(d) {
-    var el = document.getElementById("ndAiBody");
-    if (!el) { return; }
-    var meta = '<div class="nd-hint">analysis_id ' + ndEscapeHtml(d.analysis_id || "--")
-        + ' ｜ 模型 ' + ndEscapeHtml(d.model || "--")
-        + ' ｜ 耗时 ' + ndEscapeHtml(d.duration_ms !== null && d.duration_ms !== undefined
-            ? d.duration_ms + " ms" : "--") + '</div>';
-    el.innerHTML = meta + '<pre class="nd-pre" style="max-height:340px;overflow:auto">'
-        + ndEscapeHtml(d.response_text || "（无内容）") + '</pre>';
-}
-
 function ndAiWaitCollect(maxTicks) {
     return new Promise(function (resolve) {
         var n = 0;
         var t = setInterval(function () {
             n++;
-            var done = ndState.aiCollect && ND_AI_SOURCES.every(function (s) {
-                return ndState.aiCollect[s.key];
+            var keys = ndAiAllKeys();
+            var done = !!ndState.aiCollect && keys.every(function (k) {
+                return ndState.aiCollect[k];
             });
             if (done || n >= maxTicks) { clearInterval(t); resolve(); }
         }, 300);
     });
 }
 
+/* 2026-09-10 优化5：response_text 结构化渲染。服务端模型链强制输出
+   【故障原因分析】/【处理意见】/【风险提示】三段（server/ai.py 诊断 prompt），
+   按段分卡着色；元信息徽章化；无段落标记时回退纯文本。 */
+var ND_AI_SECTIONS = [
+    { title: "故障原因分析", cls: "nd-ai-sec-cause" },
+    { title: "处理意见", cls: "nd-ai-sec-advice" },
+    { title: "风险提示", cls: "nd-ai-sec-risk" }
+];
+
+function ndAiSplitSections(text) {
+    var t = String(text || "");
+    var found = [];
+    for (var i = 0; i < ND_AI_SECTIONS.length; i++) {
+        var token = "【" + ND_AI_SECTIONS[i].title + "】";
+        var p = t.indexOf(token);
+        if (p < 0) { token = ND_AI_SECTIONS[i].title; p = t.indexOf(token); }
+        if (p >= 0) { found.push({ sec: ND_AI_SECTIONS[i], hs: p, cs: p + token.length }); }
+    }
+    if (!found.length || found[0].sec !== ND_AI_SECTIONS[0]) { return null; }
+    var segs = [];
+    for (var j = 0; j < found.length; j++) {
+        var end = (j + 1 < found.length) ? found[j + 1].hs : t.length;
+        var body = t.slice(found[j].cs, end).replace(/^[\s：:、\-—·.]*/, "").replace(/\s+$/, "");
+        segs.push({ title: found[j].sec.title, cls: found[j].sec.cls, body: body });
+    }
+    return segs;
+}
+
+function ndAiRenderResult(d) {
+    var el = document.getElementById("ndAiBody");
+    if (!el) { return; }
+    var meta = '<div class="nd-ai-meta">'
+        + '<span class="nd-badge nd-info">'
+        + (d.analysis_id ? ("analysis_id " + ndEscapeHtml(d.analysis_id)) : "本地诊断") + '</span>'
+        + '<span class="nd-badge nd-muted">模型 ' + ndEscapeHtml(d.model || "--") + '</span>'
+        + '<span class="nd-badge nd-muted">耗时 '
+        + ndEscapeHtml(d.duration_ms !== null && d.duration_ms !== undefined
+            ? d.duration_ms + " ms" : "--") + '</span></div>';
+    var segs = ndAiSplitSections(d.response_text);
+    if (segs) {
+        var html = meta;
+        for (var i = 0; i < segs.length; i++) {
+            html += '<div class="nd-ai-sec ' + segs[i].cls + '"><b class="nd-ai-sec-title">'
+                + ndEscapeHtml(segs[i].title) + '</b><pre class="nd-pre">'
+                + ndEscapeHtml(segs[i].body || "（无内容）") + '</pre></div>';
+        }
+        el.innerHTML = html;
+    } else {
+        el.innerHTML = meta + '<pre class="nd-pre" style="max-height:340px;overflow:auto">'
+            + ndEscapeHtml(d.response_text || "（无内容）") + '</pre>';
+    }
+}
+
+/* 失败态样式区分：错误卡（重试引导 + 平台留档 analysis_id 追溯提示） */
+function ndAiRenderError(msg, analysisId) {
+    var el = document.getElementById("ndAiBody");
+    if (!el) { return; }
+    el.innerHTML = '<div class="nd-ai-err"><div style="margin-bottom:4px">'
+        + ndBadge("诊断失败", "nd-err") + '</div>'
+        + '<pre class="nd-pre">' + ndEscapeHtml(msg || "未知错误") + '</pre>'
+        + (analysisId ? '<div class="nd-hint" style="margin-top:6px">已在平台留档（analysis_id '
+            + ndEscapeHtml(analysisId) + '），可在控制台「AI 分析」页追溯</div>' : "")
+        + '<div class="nd-hint" style="margin-top:4px">可点击「提交诊断」重试</div></div>';
+}
+
 function ndAiSubmit() {
-    if (!ndConnected()) { ndSetTip("ndAiSummary", "未连接中心，功能不可用"); return; }
+    /* 2026-09-10 Bug0 修复兜底：gate 状态可能为旧值（tab 常驻期间缓存），
+       提交前强制重查一次中心状态，杜绝「心跳在线却判未连接」。
+       个人版不依赖中心，跳过重查直接提交（第九项）。 */
+    if (ndAiPersonal() || ndConnected()) { ndAiSubmitProceed(); return; }
+    ndSetTip("ndAiSummary", "正在确认中心连接状态…");
+    ndApiFetch("/api/perf/uplink/status").then(function (d) {
+        ndState.uplink = d && d.uplink ? d.uplink : null;
+        ndRenderUplink();
+        if (!ndConnected()) { ndSetTip("ndAiSummary", "未连接中心，功能不可用"); return; }
+        ndAiSubmitProceed();
+    }).catch(function () {
+        ndSetTip("ndAiSummary", "未连接中心，功能不可用（中心状态确认失败）");
+    });
+}
+
+/* 提交前强制刷新网络三子源（预采集可能早于 ③④⑤ 实测，避免「尚未追踪/尚未压测」陈旧态） */
+function ndAiFreshNetSubs() {
+    var t0 = Date.now();
+    var keys = ["net_conn", "net_tracert", "net_stress"];
+    for (var i = 0; i < keys.length; i++) { ndAiCollectNow(keys[i]); }
+    return new Promise(function (resolve) {
+        var n = 0;
+        var t = setInterval(function () {
+            n++;
+            var done = keys.every(function (k) {
+                var c = ndState.aiCollect ? ndState.aiCollect[k] : null;
+                return c && (c.ts || 0) >= t0;
+            });
+            if (done || n >= 15) { clearInterval(t); resolve(); }
+        }, 200);
+    });
+}
+
+function ndAiSubmitProceed() {
     var issue = ((document.getElementById("ndAiIssue") || {}).value || "").trim();
     if (!issue) { ndSetTip("ndAiSummary", "请先填写问题概述"); return; }
-    var btn = document.getElementById("ndAiSubmitBtn");
+    var btn = document.getElementById("ndAiBtn");
     if (btn) { btn.disabled = true; }
     ndSetTip("ndAiSummary", "采集日志并提交分析中（模型链处理约 10-30 秒）…");
     var c0 = ndState.aiCollect && ndState.aiCollect.hwinfo;
     var needFresh = !c0 || (Date.now() - (c0.ts || 0) > 300000);
-    var ready = needFresh ? (ndAiRefreshSources(), ndAiWaitCollect(20)) : Promise.resolve();
+    var ready = needFresh ? (ndAiRefreshSources(), ndAiWaitCollect(20)) : ndAiFreshNetSubs();
     ready.then(function () {
         var logs = {};
         var total = 0;
-        for (var i = 0; i < ND_AI_SOURCES.length; i++) {
-            var s = ND_AI_SOURCES[i];
-            var cb = document.getElementById("ndAiChk-" + s.key);
-            if (!cb || !cb.checked) { continue; }
-            var r = ndState.aiCollect ? ndState.aiCollect[s.key] : null;
+        var keys = ndAiAllKeys();
+        for (var i = 0; i < keys.length; i++) {
+            var k = keys[i];
+            var cb = document.getElementById("ndAiChk-" + k);
+            if (!cb || !cb.checked || cb.disabled) { continue; }
+            var r = ndState.aiCollect ? ndState.aiCollect[k] : null;
             if (!r || !r.ok) { continue; }          /* 不可用类不提交，不阻断 */
             var text = JSON.stringify(r.data);
             if (text.length > 32768) { text = text.slice(0, 32768); }   /* 单类 ≤32KB（契约对齐） */
-            logs[s.key] = text;
+            logs[k] = text;
             total += text.length;
         }
         if (total > 4 * 1024 * 1024) { throw new Error("日志总体量超限（>4MB）"); }
@@ -1029,9 +1361,13 @@ function ndAiSubmit() {
         });
     }).catch(function (e) {
         var msg = (e && e.message ? e.message : String(e));
-        var ref = (e && e.analysis_id)
-            ? "（已在平台留档，analysis_id " + e.analysis_id + "，可在控制台 AI 分析页追溯）" : "";
-        ndSetTip("ndAiSummary", "诊断失败：" + msg + ref + "，可重试");
+        if (msg.indexOf("not_configured") >= 0) {
+            /* 个人版未配置：引导去设置，不渲染错误卡 */
+            ndSetTip("ndAiSummary", "个人版未配置：请到「系统设置 · AI 诊断（个人版）」填写 API 地址 / API Key / 模型名并保存");
+            return;
+        }
+        ndAiRenderError(msg, e && e.analysis_id);
+        ndSetTip("ndAiSummary", "诊断失败：" + msg + "，可重试");
     }).then(function () {
         if (btn) { btn.disabled = false; }
     });

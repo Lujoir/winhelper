@@ -43,6 +43,7 @@ from net_service import (
     handle_net_ping_start, handle_net_ping_history, handle_net_tracert_start,
     handle_net_stress_start, handle_net_stress_export,
     handle_net_task_status, handle_net_task_cancel, handle_net_ai_diagnose,
+    handle_net_ai_personal_test,
 )
 
 # 路由表：前端请求路径 -> 业务处理器
@@ -104,6 +105,7 @@ ROUTES = {
     "/api/netdoctor/task-status": handle_net_task_status,
     "/api/netdoctor/task-cancel": handle_net_task_cancel,
     "/api/netdoctor/ai-diagnose": handle_net_ai_diagnose,
+    "/api/netdoctor/ai-personal-test": handle_net_ai_personal_test,
 }
 
 

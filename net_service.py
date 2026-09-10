@@ -126,7 +126,7 @@ _DEFAULT_STRESS_SIZES = [64, 256, 1024, 4096]
 def _load_app_config():
     """读取 app_config.json 的 netdoctor 段（缺键回退默认值，读端容错：
     perf_service 的保存为整文件覆盖式，netdoctor.* 键可能被剥离——见 ADR-004）。"""
-    cfg = {"expected_dns": [], "nodes": DEFAULT_NODES}
+    cfg = {"expected_dns": [], "nodes": DEFAULT_NODES, "ai_personal": {}}
     path = os.path.join(_data_dir(), "app_config.json")
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -150,6 +150,13 @@ def _load_app_config():
                         })
                 if clean:
                     cfg["nodes"] = clean
+            ap = nd.get("ai_personal")
+            if isinstance(ap, dict):
+                cfg["ai_personal"] = {
+                    "api_url": str(ap.get("api_url") or "").strip(),
+                    "api_key": str(ap.get("api_key") or "").strip(),
+                    "model": str(ap.get("model") or "").strip(),
+                }
     except Exception:
         pass
     return cfg
@@ -784,8 +791,9 @@ def run_ping_suite(task, params):
             "center_connected": center_connected, "ts": int(time.time())}
 
 
-def ping_history(limit=200):
-    """最近连通性记录摘要：读取近 7 天 JSONL，返回最近 limit 条 + 按 key 聚合。"""
+def ping_history(limit=200, hours=None, start_ts=None, end_ts=None):
+    """最近连通性记录摘要：读取近 7 天 JSONL，返回最近 limit 条 + 按 key 聚合。
+    2026-09-10：AI 诊断时间范围过滤——hours（小时数）或 start_ts/end_ts（epoch 秒）。"""
     recs = []
     d = _records_dir()
     try:
@@ -807,6 +815,14 @@ def ping_history(limit=200):
     except Exception:
         pass
     recs.sort(key=lambda x: x.get("ts") or 0)
+    if hours is not None or start_ts is not None or end_ts is not None:
+        lo = start_ts
+        if lo is None and hours is not None:
+            lo = time.time() - hours * 3600.0
+        hi = end_ts
+        recs = [r for r in recs
+                if (lo is None or (r.get("ts") or 0) >= lo)
+                and (hi is None or (r.get("ts") or 0) <= hi)]
     agg = {}
     for r in recs[-limit:]:
         k = r.get("key") or "?"
@@ -1382,21 +1398,27 @@ def _save_netdoctor_section(nd):
 
 
 def handle_net_config(params=None):
-    """读配置（无参）/ 写配置（nodes_json / expected_dns_json / reset=1）。
-    写入为 merge 原子写，保存后连通性检测即时生效（每次检测读取最新配置，无缓存）。"""
+    """读配置（无参）/ 写配置（nodes_json / expected_dns_json / ai_personal_json / reset=1）。
+    写入为 merge 原子写，保存后连通性检测即时生效（每次检测读取最新配置，无缓存）。
+    ai_personal：个人版 LLM 配置；api_key 留空 = 不修改（与 uplink token 同款语义），
+    读取端只回传 has_key 不回显明文。"""
     params = params or {}
     raw_nodes = params.get("nodes_json")
     raw_dns = params.get("expected_dns_json")
+    raw_ai = params.get("ai_personal_json")
     reset = str(params.get("reset") or "").strip().lower() in ("1", "true", "yes")
-    if raw_nodes is not None or raw_dns is not None or reset:
+    if raw_nodes is not None or raw_dns is not None or raw_ai is not None or reset:
         cur = _load_app_config()
         nd = {}
         if reset:
-            # 恢复出厂：不写 nodes 键（读取端回退内置默认表），基线清空
+            # 恢复出厂：不写 nodes 键（读取端回退内置默认表），基线清空；
+            # 个人版凭据属用户配置，随恢复保留
             nd["expected_dns"] = []
+            nd["ai_personal"] = cur.get("ai_personal") or {}
         else:
             nd["nodes"] = cur["nodes"]
             nd["expected_dns"] = cur["expected_dns"]
+            nd["ai_personal"] = cur.get("ai_personal") or {}
         if raw_dns is not None:
             try:
                 dns = json.loads(raw_dns)
@@ -1414,14 +1436,31 @@ def handle_net_config(params=None):
                 return {"success": False,
                         "error": "节点表校验失败（名称必填；方式限 ping/nslookup/ntp；目标仅 IP/域名）"}
             nd["nodes"] = nodes
+        if raw_ai is not None:
+            try:
+                ai = json.loads(raw_ai)
+            except Exception:
+                return {"success": False, "error": "ai_personal_json 解析失败"}
+            if not isinstance(ai, dict):
+                return {"success": False, "error": "ai_personal_json 须为对象"}
+            cur_ai = cur.get("ai_personal") or {}
+            key_in = str(ai.get("api_key") or "").strip()
+            nd["ai_personal"] = {
+                "api_url": str(ai.get("api_url") or "").strip()[:300],
+                "api_key": key_in or str(cur_ai.get("api_key") or ""),
+                "model": str(ai.get("model") or "").strip()[:120],
+            }
         try:
             _save_netdoctor_section(nd)
         except Exception as e:
             return {"success": False, "error": "save_failed: %s" % e}
     cfg = _load_app_config()
     u = _uplink_config()
+    ap = cfg.get("ai_personal") or {}
     return {"success": True,
             "nodes": cfg["nodes"], "expected_dns": cfg["expected_dns"],
+            "ai_personal": {"api_url": ap.get("api_url") or "", "model": ap.get("model") or "",
+                            "has_key": bool(ap.get("api_key"))},
             "uplink": {"enabled": bool(u.get("enabled")),
                        "server_url": u.get("server_url") or "",
                        "terminal_id": _terminal_id(u),
@@ -1452,11 +1491,26 @@ def handle_net_ping_start(params=None):
 
 
 def handle_net_ping_history(params=None):
+    p = params or {}
     try:
-        limit = max(10, min(500, int(params.get("limit") or 100))) if params else 100
+        limit = max(10, min(500, int(p.get("limit") or 100)))
     except (TypeError, ValueError):
         limit = 100
-    return ping_history(limit)
+    hours = None
+    try:
+        if p.get("hours") not in (None, ""):
+            hours = max(0.1, min(8760.0, float(p.get("hours"))))
+    except (TypeError, ValueError):
+        hours = None
+    start_ts = end_ts = None
+    try:
+        if p.get("start_ts") not in (None, ""):
+            start_ts = float(p.get("start_ts"))
+        if p.get("end_ts") not in (None, ""):
+            end_ts = float(p.get("end_ts"))
+    except (TypeError, ValueError):
+        start_ts = end_ts = None
+    return ping_history(limit, hours=hours, start_ts=start_ts, end_ts=end_ts)
 
 
 def handle_net_tracert_start(params):
@@ -1505,13 +1559,24 @@ def handle_net_stress_export(params):
 
 
 def handle_net_ai_diagnose(params=None, body=None):
-    """AI 智能诊断转发代理（第六模块，2026-09-09）：
-    前端聚合六类日志 → 本代理 → 平台 POST /api/v1/terminals/{tid}/ai/diagnose。
-    - token 仅在服务端注入（前端永不接触 token/平台地址，复用 _platform_post 语义）
-    - body 为 dict（bridge.call 双参透传 JSON）；issue 截 2000 字，logs 六类透传
-      （每类 ≤32KB 由前端截断，服务端契约侧再截——双保险）
-    - 同步等待 ≤120s（服务端模型链），本端 urllib 超时 125s 保护
-    """
+    """AI 智能诊断双模式入口（2026-09-10 第九项优化）：
+    - mode=enterprise（默认）：转发代理 → 平台 /ai/diagnose（token 仅后端注入），
+      未连中心 → not_connected
+    - mode=personal：本机直连第三方 OpenAI 兼容 API（/v1/chat/completions），
+      不依赖中心；未配置 → not_configured 引导设置
+    响应结构对齐：{success, response_text, model, duration_ms}
+    （个人版无 analysis_id；失败 {success:false, error}）"""
+    b = body if isinstance(body, dict) else {}
+    mode = str(b.get("mode") or "enterprise").strip().lower()
+    if mode == "personal":
+        return _ai_diagnose_personal(b)
+    return _ai_diagnose_enterprise(b)
+
+
+def _ai_diagnose_enterprise(body):
+    """企业版：转发代理（第六模块 2026-09-09 原逻辑）。
+    token 仅在服务端注入；issue 截 2000 字，logs 每类 ≤32KB 双保险；
+    同步等待 ≤120s（服务端模型链），本端 urllib 超时 125s 保护。"""
     if not uplink_configured():
         return {"success": False, "error": "not_connected"}
     if not isinstance(body, dict):
@@ -1540,6 +1605,144 @@ def handle_net_ai_diagnose(params=None, body=None):
             "duration_ms": resp.get("duration_ms")}
 
 
+# 个人版三段结构提示词（与 server-platform/server/ai.py DIAG_SYSTEM_PROMPT 语义对齐，
+# 单份沉淀防漂移；企业版 prompt 在中心侧，本常量供个人版直调使用）
+_ND_AI_PROMPT_SYSTEM = (
+    "你是医院网络运维诊断专家。基于终端上报的问题概述与日志数据，输出中文诊断结论，"
+    "必须且只能按以下三段结构输出：\n"
+    "【故障原因分析】按可能性排序，引用日志依据（注明来自哪一类日志）；\n"
+    "【处理意见】分「立即处理」「建议观察」两档，给出可执行步骤；\n"
+    "【风险提示】数据缺失或需要补充采集的部分。\n"
+    "约束：只基于给出的日志数据分析，不要编造；中文输出；简洁专业。\n"
+    "隐私边界：日志包仅含运维诊断数据，不涉及用户个人文件内容与任何凭据。"
+)
+
+
+def _nd_ai_logs_text(logs):
+    """logs dict → 分节文本（与中心 build_diagnose_context 语义对齐）"""
+    if not isinstance(logs, dict) or not logs:
+        return "（无日志数据）"
+    parts = []
+    for k in sorted(logs.keys()):
+        v = logs[k]
+        if not isinstance(v, str):
+            try:
+                v = json.dumps(v, ensure_ascii=False)
+            except Exception:
+                v = str(v)
+        parts.append("== %s ==\n%s" % (k, str(v)[:32768]))
+    return "\n\n".join(parts)
+
+
+def _personal_chat_url(url):
+    """API 地址自适配：完整 /v1/chat/completions 原样；以 /v1 结尾补 /chat/completions；
+    其余按 base 处理补 /v1/chat/completions"""
+    u = (url or "").strip().rstrip("/")
+    if u.endswith("/chat/completions"):
+        return u
+    if u.endswith("/v1"):
+        return u + "/chat/completions"
+    return u + "/v1/chat/completions"
+
+
+def _personal_models_url(url):
+    """连通性测试地址自适配（GET /models）"""
+    u = (url or "").strip().rstrip("/")
+    if u.endswith("/chat/completions"):
+        u = u[: -len("/chat/completions")]
+    if u.endswith("/models"):
+        return u
+    if u.endswith("/v1"):
+        return u + "/models"
+    return u + "/v1/models"
+
+
+def _ai_personal_config():
+    ap = _load_app_config().get("ai_personal") or {}
+    api_url = str(ap.get("api_url") or "").strip()
+    api_key = str(ap.get("api_key") or "").strip()
+    model = str(ap.get("model") or "").strip()
+    if not api_url or not model:
+        return None
+    return {"api_url": api_url, "api_key": api_key, "model": model}
+
+
+def _ai_diagnose_personal(body):
+    """个人版：本机直连第三方 OpenAI 兼容 API（chat/completions，120s 超时）。
+    错误信息永不携带 api_key。"""
+    conf = _ai_personal_config()
+    if not conf:
+        return {"success": False, "error": "not_configured"}
+    issue = str(body.get("issue") or "").strip()[:2000]
+    if not issue:
+        return {"success": False, "error": "issue_empty"}
+    logs = body.get("logs") if isinstance(body.get("logs"), dict) else {}
+    clean = {}
+    for k, v in logs.items():
+        if isinstance(k, str) and re.match(r"^[a-z_]{1,32}$", k):
+            clean[k] = v
+    payload = {
+        "model": conf["model"],
+        "messages": [
+            {"role": "system", "content": _ND_AI_PROMPT_SYSTEM},
+            {"role": "user",
+             "content": "问题概述：%s\n\n诊断日志数据：\n%s" % (issue, _nd_ai_logs_text(clean))},
+        ],
+        "temperature": 0.3,
+        "stream": False,
+    }
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(_personal_chat_url(conf["api_url"]), data=data, method="POST",
+                                 headers={"Content-Type": "application/json"})
+    if conf["api_key"]:
+        req.add_header("Authorization", "Bearer " + conf["api_key"])
+    t0 = time.time()
+    try:
+        with urllib.request.urlopen(req, timeout=120) as r:
+            resp = json.loads(r.read().decode("utf-8", "replace"))
+    except urllib.error.HTTPError as e:
+        detail = ""
+        try:
+            detail = e.read().decode("utf-8", "replace")[:200]
+        except Exception:
+            pass
+        return {"success": False, "error": "personal_http_%s: %s" % (e.code, detail)}
+    except Exception as e:
+        return {"success": False, "error": "personal_request_failed: %s" % e}
+    duration_ms = int((time.time() - t0) * 1000)
+    try:
+        content = str(resp["choices"][0]["message"]["content"] or "")
+    except Exception:
+        return {"success": False, "error": "personal_bad_response"}
+    if not content.strip():
+        return {"success": False, "error": "personal_empty_response"}
+    return {"success": True, "response_text": content,
+            "model": conf["model"], "duration_ms": duration_ms}
+
+
+def handle_net_ai_personal_test(params=None):
+    """个人版连通性测试（轻量 GET /models，15s 超时；鉴权被拒/不可达如实标注）"""
+    p = params or {}
+    api_url = (p.get("api_url") or "").strip()
+    api_key = (p.get("api_key") or "").strip()
+    if not api_url:
+        return {"success": False, "error": "api_url_required"}
+    req = urllib.request.Request(_personal_models_url(api_url), method="GET")
+    if api_key:
+        req.add_header("Authorization", "Bearer " + api_key)
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            code = r.getcode()
+    except urllib.error.HTTPError as e:
+        return {"success": True, "ok": False, "http_code": e.code,
+                "hint": "服务可达但请求被拒（HTTP %s，请检查 Key / 地址）" % e.code}
+    except Exception as e:
+        return {"success": True, "ok": False, "http_code": None, "hint": "连接失败：%s" % e}
+    if 200 <= code < 300:
+        return {"success": True, "ok": True, "http_code": code, "hint": "服务可达（HTTP %s）" % code}
+    return {"success": True, "ok": False, "http_code": code, "hint": "HTTP %s" % code}
+
+
 NET_ROUTES = {
     "/api/netdoctor/config": handle_net_config,
     "/api/netdoctor/config-check": handle_net_config_check,
@@ -1552,6 +1755,7 @@ NET_ROUTES = {
     "/api/netdoctor/task-status": handle_net_task_status,
     "/api/netdoctor/task-cancel": handle_net_task_cancel,
     "/api/netdoctor/ai-diagnose": handle_net_ai_diagnose,
+    "/api/netdoctor/ai-personal-test": handle_net_ai_personal_test,
 }
 
 
