@@ -818,6 +818,9 @@
                 .nd-seg.on { background: rgba(79,195,247,.14); color: var(--accent-cyan, #4fc3f7); }
                 /* AI 诊断结果区文本可选复制（2026-09-10 用户反馈）：仅限结果容器与历史列表，不改全局选择行为 */
                 #ndAiBody, #ndAiBody *, #ndAiHistoryBody, #ndAiHistoryBody * { user-select: text; -webkit-user-select: text; cursor: text; }
+                /* 设置弹窗卡片化（2026-09-10 UX 重构）：样式与 perf 端统一（圆角 10px / 1px 边框 / 内边距） */
+                .nd-set-card { background: var(--bg-card, #171a23); border: 1px solid var(--border-color, #262b3a); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+                .nd-set-card > b { display: block; font-size: 13px; margin-bottom: 8px; }
             </style>
             <div class="page-header">
                 <h2>网络监测配置</h2>
@@ -929,7 +932,7 @@
         </div>
     </main>
 
-    <!-- 设置（中心平台配置） -->
+    <!-- 设置（中心平台接入 / 性能分析 / 网络监测配置挂载点） -->
     <style>
         .app-settings-overlay { display: none; position: fixed; inset: 0; background: rgba(6,8,12,.72); z-index: 998; align-items: center; justify-content: center; }
         .app-settings-panel { width: min(760px, 92vw); max-height: 84vh; overflow: auto; background: var(--bg-card, #171a23); border: 1px solid var(--border-color, #262b3a); border-radius: 12px; box-shadow: 0 12px 44px rgba(0,0,0,.55); }
@@ -937,37 +940,59 @@
         .app-settings-head h3 { font-size: 15px; margin: 0; }
         .app-settings-close { background: none; border: none; color: var(--text-secondary, #8a93a5); font-size: 22px; cursor: pointer; line-height: 1; }
         .app-settings-close:hover { color: var(--text-primary, #e8ebf2); }
-        .app-settings-body { padding: 14px 18px 18px; }
+        .app-settings-body { padding: 16px 20px 20px; }
         .settings-btn { background: none; border: 1px solid var(--border-color, #262b3a); border-radius: 8px; color: var(--text-secondary, #8a93a5); padding: 5px 7px; cursor: pointer; display: inline-flex; align-items: center; }
         .settings-btn:hover { color: var(--accent-cyan, #4fc3f7); border-color: var(--accent-cyan, #4fc3f7); }
-        .uplink-toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+        .settings-card { border: 1px solid var(--border-color, #262b3a); border-radius: 10px; padding: 14px 16px; margin: 0 0 12px; background: rgba(255,255,255,.015); }
+        .settings-card:last-child { margin-bottom: 0; }
+        .settings-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+        .settings-card-title { font-size: 13.5px; font-weight: 600; margin: 0; color: var(--text-primary, #e8ebf2); }
+        .settings-card-desc { font-size: 12px; color: var(--text-secondary, #8a93a5); margin: 0 0 10px; line-height: 1.6; }
+        .settings-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+        .settings-row + .settings-row { margin-top: 10px; }
+        .settings-input { background: var(--panel2, #1d212e); color: var(--text-primary, #e8ebf2); border: 1px solid var(--border-color, #262b3a); border-radius: 8px; padding: 6px 10px; font-size: 12.5px; }
+        .settings-label { font-size: 12.5px; color: var(--text-secondary, #9aa0b0); }
+        .settings-card .perf-rec-status { margin-top: 10px; }
     </style>
     <div class="app-settings-overlay" id="appSettingsOverlay">
         <div class="app-settings-panel">
             <div class="app-settings-head">
-                <h3>设置 · 中心平台配置</h3>
+                <h3>设置</h3>
                 <button class="app-settings-close" onclick="closeAppSettings()" title="关闭">×</button>
             </div>
             <div class="app-settings-body">
-                <div class="uplink-toolbar">
-                    <span class="card-badge" id="perfUplinkBadge">未启用</span>
-                    <input id="perfUplinkServer" type="text" placeholder="服务端地址，如 http://127.0.0.1:18090" style="background:var(--panel2,#1d212e);color:var(--text-primary,#e8ebf2);border:1px solid var(--border-color,#262b3a);border-radius:8px;padding:6px 10px;font-size:12.5px;width:250px">
-                    <input id="perfUplinkToken" type="password" placeholder="接入 Token（留空不修改）" autocomplete="new-password" style="background:var(--panel2,#1d212e);color:var(--text-primary,#e8ebf2);border:1px solid var(--border-color,#262b3a);border-radius:8px;padding:6px 10px;font-size:12.5px;width:180px">
-                    <button class="btn btn-primary" id="perfUplinkSaveBtn" onclick="savePerfUplink(true)">保存并启用</button>
+                <!-- 中心平台接入 -->
+                <div class="settings-card" id="settingsCardUplink">
+                    <div class="settings-card-head">
+                        <h4 class="settings-card-title">中心平台接入</h4>
+                        <span class="card-badge" id="perfUplinkBadge">未启用</span>
+                    </div>
+                    <p class="settings-card-desc">接入观枢终端平台服务端后，本终端保持在线并上报运行状态，供平台统一管理与诊断。</p>
+                    <div class="settings-row">
+                        <input id="perfUplinkServer" class="settings-input" type="text" placeholder="服务端地址，如 http://127.0.0.1:18090" style="width:250px">
+                        <input id="perfUplinkToken" class="settings-input" type="password" placeholder="接入 Token（留空不修改）" autocomplete="new-password" style="width:180px">
+                    </div>
+                    <div class="settings-row">
+                        <button class="btn btn-primary" id="perfUplinkSaveBtn" onclick="savePerfUplink(true)">保存并启用</button>
+                        <button class="btn" id="perfUplinkRegBtn" onclick="registerPerfUplink()">立即注册</button>
+                        <button class="btn" id="perfUplinkDisableBtn" onclick="savePerfUplink(false)">停用接入</button>
+                    </div>
+                    <div class="perf-rec-status" id="perfUplinkStatus"><span>状态 <b>读取中…</b></span></div>
                 </div>
-                <div style="display:flex;align-items:center;gap:8px;margin-top:12px">
-                    <label style="font-size:12.5px;color:var(--text-secondary,#9aa0b0);min-width:110px">温度采样间隔（秒）</label>
-                    <input id="tempsIntervalInput" type="number" min="30" max="3600" step="30" value="300" style="background:var(--panel2,#1d212e);color:var(--text-primary,#e8ebf2);border:1px solid var(--border-color,#262b3a);border-radius:8px;padding:6px 10px;font-size:12.5px;width:120px">
-                    <button class="btn btn-primary" onclick="saveTempsInterval()">保存</button>
+                <!-- 性能分析 -->
+                <div class="settings-card" id="settingsCardPerf">
+                    <div class="settings-card-head">
+                        <h4 class="settings-card-title">性能分析</h4>
+                    </div>
+                    <p class="settings-card-desc">CPU/GPU 温度按设定间隔自动采样，间隔越长后台占用越低（30~3600 秒）。</p>
+                    <div class="settings-row">
+                        <span class="settings-label">温度采样间隔（秒）</span>
+                        <input id="tempsIntervalInput" class="settings-input" type="number" min="30" max="3600" step="30" value="300" style="width:110px">
+                        <button class="btn btn-primary" id="perfSaveAppConfigBtn" onclick="saveTempsInterval()">保存</button>
+                    </div>
                 </div>
-                <div class="disk-note" style="margin-top:8px">CPU/GPU 温度按此间隔采样（默认 300 秒 = 5 分钟，范围 30~3600）。降低频率可显著减少静默运行时的资源占用；保存于本机 <b>%LOCALAPPDATA%\winhelper\app_config.json</b>。</div>
-                    <button class="btn" id="perfUplinkRegBtn" onclick="registerPerfUplink()">立即注册</button>
-                    <button class="btn" id="perfUplinkDisableBtn" onclick="savePerfUplink(false)">停用接入</button>
-                </div>
-                <div class="perf-rec-status" id="perfUplinkStatus"><span>状态 <b>读取中…</b></span></div>
-                <div class="disk-note">接入观枢终端平台（EyeTerm）服务端后，本终端将注册资产信息并按 30s 心跳保持在线，随心跳上报性能指标快照；平台可按需下发网络测试（iperf3 已内置）、网络探测等命令。接入 Token 仅保存在本机 <b>%LOCALAPPDATA%\winhelper\uplink_config.json</b>，不会上传到任何其他位置，也不在此回显。</div>
-                <!-- 网络排障节点维护（net-doctor：渲染于 web/netdoctor.js ndRenderSettings） -->
-                <div id="ndSettingsHost"></div>
+                <!-- 网络监测配置（net-doctor：渲染于 web/netdoctor.js ndRenderSettings） -->
+                <div class="settings-card" id="ndSettingsHost"></div>
             </div>
         </div>
     </div>
