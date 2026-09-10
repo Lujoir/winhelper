@@ -814,8 +814,18 @@
                 .nd-time-select { width: 128px; }
                 .nd-time-input { width: 180px; }
                 .nd-segwrap { display: inline-flex; border: 1px solid var(--border-color, #262b3a); border-radius: 8px; overflow: hidden; }
-                .nd-seg { background: transparent; color: var(--text-secondary, #8a93a5); border: none; padding: 5px 12px; cursor: pointer; font-size: 12px; }
-                .nd-seg.on { background: rgba(79,195,247,.14); color: var(--accent-cyan, #4fc3f7); }
+                /* AI 卡头部按钮组（2026-09-10 UX）：仅作用 AI 卡元素，不波及 nd-btn 其它使用位置 */
+                #ndAiModeSeg { margin-left: auto; }
+                .nd-seg { width: 68px; height: 30px; padding: 0; text-align: center; background: transparent; color: var(--text-secondary, #8a93a5); border: none; cursor: pointer; font-size: 12px; opacity: .85; }
+                .nd-seg.on { background: var(--accent-cyan, #4fc3f7); color: #10213a; font-weight: 600; opacity: 1; }
+                #ndAiBtn { height: 30px; margin-left: 8px; background: var(--accent-cyan, #4fc3f7); color: #10213a; font-weight: 600; border-color: transparent; }
+                #ndAiBtn:hover { background: #7bd7ff; border-color: transparent; }
+                #ndAiBtn:disabled { background: var(--bg-hover, #1d212e); color: var(--text-secondary, #8a93a5); cursor: not-allowed; opacity: .6; }
+                /* 补采模态（2026-09-10）：应用内自绘，风格对齐设置卡片 */
+                #ndAiCompleteOverlay { display: none; position: fixed; inset: 0; background: rgba(6,8,12,.72); z-index: 999; align-items: center; justify-content: center; }
+                .nd-modal { width: min(500px, 92vw); background: var(--bg-card, #171a23); border: 1px solid var(--border-color, #262b3a); border-radius: 10px; padding: 16px 18px; box-shadow: 0 12px 44px rgba(0,0,0,.55); }
+                .nd-modal > b { display: block; font-size: 13.5px; margin-bottom: 6px; }
+                .nd-modal-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 12.5px; flex-wrap: wrap; }
                 /* AI 诊断结果区文本可选复制（2026-09-10 用户反馈）：仅限结果容器与历史列表，不改全局选择行为 */
                 #ndAiBody, #ndAiBody *, #ndAiHistoryBody, #ndAiHistoryBody * { user-select: text; -webkit-user-select: text; cursor: text; }
                 /* 设置弹窗卡片化（2026-09-10 UX 重构）：样式与 perf 端统一（圆角 10px / 1px 边框 / 内边距） */

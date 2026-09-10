@@ -637,8 +637,53 @@ def run_config_check_result():
 # ============================================================
 
 
+def _resolve_uplink_route_adapter(host):
+    """解析本机到 uplink host 的出口接口（Find-NetRoute → 源 IP → 接口名/MAC）。
+    解析失败返回 None（调用方回退活动网卡）。PowerShell UTF8 + CREATE_NO_WINDOW 铁律。"""
+    if not host:
+        return None
+    ps = (
+        "$ErrorActionPreference='SilentlyContinue';"
+        "$src=(Find-NetRoute -RemoteIPAddress '%s' | Select-Object -Last 1).IPAddress;"
+        "if(-not $src){exit 1};"
+        "$ip=Get-NetIPAddress -IPAddress $src | Select-Object -First 1;"
+        "if(-not $ip){exit 1};"
+        "$ad=Get-NetAdapter -InterfaceIndex $ip.InterfaceIndex | Select-Object -First 1;"
+        "Write-Output ('SRC='+$src);"
+        "Write-Output ('IFNAME='+$ad.Name);"
+        "Write-Output ('MAC='+$ad.MacAddress)"
+    ) % host
+    try:
+        rc, out = _run_ps(ps, timeout=15)
+    except Exception:
+        return None
+    if rc != 0:
+        return None
+    info = {}
+    for ln in out.splitlines():
+        ln = ln.strip()
+        for pre in ("SRC=", "IFNAME=", "MAC="):
+            if ln.startswith(pre):
+                info[pre[:-1]] = ln[len(pre):].strip()
+    if not info.get("SRC") or not info.get("MAC"):
+        return None
+    return info
+
+
+def _pick_conflict_adapter(candidates, route_adapter):
+    """检测对象选择（纯函数，smoke 可单测）：优先中心路由出口网卡（按 MAC 匹配候选），
+    否则回退首个候选。返回 (adapter, note)。"""
+    if route_adapter:
+        rmac = str(route_adapter.get("MAC") or "").strip().lower().replace("-", ":")
+        for a in candidates:
+            if str(a.get("mac") or "").strip().lower().replace("-", ":") == rmac:
+                return a, "与中心通信网卡：" + str(route_adapter.get("IFNAME") or a["name"])
+    return candidates[0], "（中心路由不可解析，回退活动网卡）"
+
+
 def run_ipconflict_result(cancel=None):
-    """IP 冲突引擎：活动网卡 IP+MAC → 平台 ipconflict → 疑似时自动 AI 分析。"""
+    """IP 冲突引擎：检测对象锁定与中心通信网卡（Find-NetRoute 路由解析，
+    失败回退活动网卡并如实标注）→ 平台 ipconflict → 疑似时自动 AI 分析。"""
     adapters, err = _collect_adapters()
     candidates = []
     if adapters:
@@ -648,10 +693,17 @@ def run_ipconflict_result(cancel=None):
                 candidates.append(a)
     if not candidates:
         return {"success": False, "error": err or "未找到带 IPv4+MAC 的活动网卡"}
-    a = candidates[0]
+    host = ""
+    try:
+        host = urlsplit((_uplink_config().get("server_url") or "")).hostname or ""
+    except Exception:
+        host = ""
+    route_adapter = _resolve_uplink_route_adapter(host)
+    a, obj_note = _pick_conflict_adapter(candidates, route_adapter)
     ip, mac = a["ipv4"][0], a["mac"]
     tid = _terminal_id()
     result = {"success": True, "ip": ip, "mac": mac, "adapter": a["name"],
+              "object_note": obj_note,
               "connected": uplink_configured(), "verdict": None, "ai": None, "error": None}
     if not result["connected"]:
         result["error"] = "not_connected"
@@ -1642,10 +1694,22 @@ def _nd_ai_logs_text(logs):
     return "\n\n".join(parts)
 
 
+def _personal_norm_url(url):
+    """URL 归一化（2026-09-10 假阳性缺陷）：折叠路径中的连续斜杠（保留 scheme:// 头）。
+    实证 https://host//v1/... 会脱离 API 路由落入站点前端兜底页（200 HTML），
+    单斜杠才是真实 API——归一化后两种输入行为一致。"""
+    u = (url or "").strip()
+    m = re.match(r"^[a-zA-Z][a-zA-Z0-9+.\-]*://", u)
+    if not m:
+        return u
+    head = m.group(0)
+    return head + re.sub(r"/{2,}", "/", u[len(head):])
+
+
 def _personal_chat_url(url):
     """API 地址自适配：完整 /v1/chat/completions 原样；以 /v1 结尾补 /chat/completions；
     其余按 base 处理补 /v1/chat/completions"""
-    u = (url or "").strip().rstrip("/")
+    u = _personal_norm_url(url).rstrip("/")
     if u.endswith("/chat/completions"):
         return u
     if u.endswith("/v1"):
@@ -1655,7 +1719,7 @@ def _personal_chat_url(url):
 
 def _personal_models_url(url):
     """连通性测试地址自适配（GET /models）"""
-    u = (url or "").strip().rstrip("/")
+    u = _personal_norm_url(url).rstrip("/")
     if u.endswith("/chat/completions"):
         u = u[: -len("/chat/completions")]
     if u.endswith("/models"):
@@ -1752,6 +1816,8 @@ def handle_net_ai_personal_test(params=None):
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
             code = r.getcode()
+            ctype = (r.headers.get("Content-Type") or "").lower()
+            raw = r.read(65536)
     except urllib.error.HTTPError as e:
         hint = ("Key 被拒（HTTP 401）——请核对 Key 是否完整/有效" if e.code == 401
                 else "服务可达但请求被拒（HTTP %s，请检查 Key / 地址）" % e.code)
@@ -1760,6 +1826,22 @@ def handle_net_ai_personal_test(params=None):
         return {"success": True, "ok": False, "http_code": None, "used_key": used_key,
                 "hint": "连接失败：%s" % e}
     if 200 <= code < 300:
+        # 防假阳性（2026-09-10）：200 但返回 HTML（站点前端兜底页）→ 不是 API 接口。
+        # /models 合法响应应为 JSON 且含 data 字段（OpenAI 兼容结构，宽松判定）。
+        parsed = None
+        try:
+            parsed = json.loads(raw.decode("utf-8", "replace"))
+        except Exception:
+            parsed = None
+        head = raw[:64].lstrip().lower()
+        is_html = head.startswith(b"<!doctype") or head.startswith(b"<html")
+        if is_html or not (isinstance(parsed, dict) and "data" in parsed):
+            if not is_html and parsed is None and "json" in ctype:
+                # CT 为 JSON 但读取截断等异常——保守放行不误杀
+                return {"success": True, "ok": True, "http_code": code, "used_key": used_key,
+                        "hint": "服务可达（HTTP %s）" % code}
+            return {"success": True, "ok": False, "http_code": code, "used_key": used_key,
+                    "hint": "服务可达但该地址不是 API 接口（返回了网页），请检查 URL 路径"}
         return {"success": True, "ok": True, "http_code": code, "used_key": used_key,
                 "hint": "服务可达（HTTP %s）" % code}
     return {"success": True, "ok": False, "http_code": code, "used_key": used_key,
