@@ -510,11 +510,7 @@ function ndRenderConflict(r) {
                 (sv === true || sv === "ok" ? "已接入" : (sv === false || sv === "not_connected" ? "未接入" : String(sv)))));
         }
         html += '<div class="nd-hint">数据源：' + ndEscapeHtml(srcBits.join(" ｜ ")) + '</div>';
-        if (r.ai) {
-            html += '<div class="nd-ai"><b>AI 辅助分析</b>' +
-                (r.ai.ok ? '<pre class="nd-pre">' + ndEscapeHtml(r.ai.analysis || "（无内容）") + '</pre>'
-                         : '<span class="nd-hint">分析失败：' + ndEscapeHtml(r.ai.error || "--") + '</span>') + '</div>';
-        }
+        html += ndRenderAiAssist(r.ai);
     } else {
         html += '<div style="margin:8px 0">' + ndBadge("未发现冲突疑似", "nd-ok") + '</div>';
         if (v.evidence && v.evidence.length) {
@@ -543,7 +539,57 @@ function ndRenderConflict(r) {
         + '<button class="nd-btn primary" id="ndDeepBtn" onclick="ndStartDeep()">发起深度检测</button>'
         + '<span class="nd-hint" id="ndDeepTip"></span></div>'
         + '<div id="ndDeepBody"></div></div>';
+    /* AI 分析手动按钮（2026-09-10：数据更新后可重跑，服务端聚合最新多方证据） */
+    html += '<div class="nd-ai" id="ndAiReWrap"><b>AI 分析（平台多方证据聚合）</b>'
+        + '<span class="nd-hint">依托平台算力结合最新多方日志分析冲突，耗时最长约 45s</span>'
+        + '<div style="margin-top:8px">'
+        + '<button class="nd-btn primary" id="ndAiReBtn" onclick="ndReanalyzeAi()">AI 分析</button>'
+        + '<span class="nd-hint" id="ndAiReTip"></span></div>'
+        + '<div id="ndAiReBody"></div></div>';
     el.innerHTML = html;
+}
+
+function ndRenderAiAssist(ai) {
+    /* AI 辅助分析结果片段（自动触发与手动重跑共用）：文本 + model 徽章 + analysis_id 可追溯 */
+    if (!ai) { return ""; }
+    var meta = "";
+    if (ai.model) { meta += '<span class="nd-hint"> [' + ndEscapeHtml(String(ai.model)) + ']</span>'; }
+    if (ai.analysis_id) { meta += '<span class="nd-hint"> #' + ndEscapeHtml(String(ai.analysis_id)) + '</span>'; }
+    return '<div class="nd-ai"><b>AI 辅助分析</b>' + meta
+        + (ai.ok ? '<pre class="nd-pre">' + ndEscapeHtml(ai.analysis || "（无内容）") + '</pre>'
+                 : '<div class="nd-hint">分析失败：' + ndEscapeHtml(ai.error || "--") + '</div>')
+        + '</div>';
+}
+
+function ndAiReBtnReset() {
+    var b = document.getElementById("ndAiReBtn");
+    if (b) { b.disabled = false; }
+}
+
+function ndReanalyzeAi() {
+    var last = ndState.conflictLast;
+    if (!last || !last.ip || !last.mac) { return; }
+    var btn = document.getElementById("ndAiReBtn");
+    if (btn) { btn.disabled = true; }
+    var body = document.getElementById("ndAiReBody");
+    if (body) { body.innerHTML = ""; }
+    ndSetTip("ndAiReTip", "分析中…（最长约 45s）");
+    var ev = (last.verdict && last.verdict.evidence) || [];
+    var q = "?ip=" + encodeURIComponent(last.ip) + "&mac=" + encodeURIComponent(last.mac)
+        + "&evidence_json=" + encodeURIComponent(JSON.stringify(ev.slice(0, 12)));
+    ndApiFetch("/api/netdoctor/conflict-ai-reanalyze" + q).then(function (d) {
+        if (!d || d.success === false) {
+            ndSetTip("ndAiReTip", "分析失败：" + ((d && d.error) || "未知") + "（可重试）");
+            ndAiReBtnReset();
+            return;
+        }
+        ndSetTip("ndAiReTip", "分析完成");
+        if (body) { body.innerHTML = ndRenderAiAssist(d.ai); }
+        ndAiReBtnReset();
+    }).catch(function (e) {
+        ndSetTip("ndAiReTip", "分析失败：" + String(e) + "（可重试）");
+        ndAiReBtnReset();
+    });
 }
 
 function ndToggleNicHist() {

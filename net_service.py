@@ -682,6 +682,23 @@ def _pick_conflict_adapter(candidates, route_adapter):
     return candidates[0], "（中心路由不可解析，回退活动网卡）"
 
 
+def _ai_analyze_issue(tid, issue, timeout=45):
+    """调平台 AI 分析（/api/v1/ai/analyze），返回 result["ai"] 结构（45s 超时）。
+    提取链 2026-09-10 热修复：平台实证返回字段为 response（platform 冒烟 j2.get("response")），
+    旧链 analysis/content/result 永远落空致「（无内容）」；analysis_id 透传供 UI 可追溯。"""
+    ai_code, ai_resp = _platform_post("/api/v1/ai/analyze",
+                                      {"terminal_id": tid, "issue_description": issue},
+                                      timeout=timeout)
+    if 200 <= ai_code < 300:
+        return {"ok": True,
+                "analysis": (ai_resp.get("response") or ai_resp.get("analysis")
+                             or ai_resp.get("content") or ai_resp.get("result") or ""),
+                "model": ai_resp.get("model"),
+                "analysis_id": str(ai_resp.get("analysis_id") or "")}
+    return {"ok": False,
+            "error": "ai_http_%s: %s" % (ai_code, (ai_resp or {}).get("error", ""))}
+
+
 def run_ipconflict_result(cancel=None):
     """IP 冲突引擎：检测对象锁定与中心通信网卡（Find-NetRoute 路由解析，
     失败回退活动网卡并如实标注）→ 平台 ipconflict → 疑似时自动 AI 分析。"""
@@ -719,16 +736,7 @@ def run_ipconflict_result(cancel=None):
         evidence = result["verdict"].get("evidence") or []
         issue = ("IP冲突疑似：终端 %s 网卡 %s IP=%s MAC=%s；平台证据：%s"
                  % (tid, a["name"], ip, mac, "; ".join(str(e)[:120] for e in evidence[:6]) or "无明细"))
-        ai_code, ai_resp = _platform_post("/api/v1/ai/analyze",
-                                          {"terminal_id": tid, "issue_description": issue},
-                                          timeout=45)
-        if 200 <= ai_code < 300:
-            result["ai"] = {"ok": True,
-                            "analysis": (ai_resp.get("analysis") or ai_resp.get("content")
-                                         or ai_resp.get("result") or ""),
-                            "model": ai_resp.get("model")}
-        else:
-            result["ai"] = {"ok": False, "error": "ai_http_%s: %s" % (ai_code, (ai_resp or {}).get("error", ""))}
+        result["ai"] = _ai_analyze_issue(tid, issue)
     return result
 
 
@@ -1599,6 +1607,32 @@ def handle_net_conflict_deep_poll(params=None):
     return {"success": True, "task": resp.get("task") or None}
 
 
+def handle_net_conflict_ai_reanalyze(params=None):
+    """手动重跑 IP 冲突 AI 辅助分析（2026-09-10 用户要求：数据更新后可重跑）。
+    服务端聚合分支就绪前行为=现状：以最新本地证据构造 issue 透传平台 /ai/analyze。
+    params: {ip, mac, evidence_json?}（evidence 为 JSON 数组字符串，最多 12 条）。"""
+    if not uplink_configured():
+        return {"success": False, "error": "not_connected"}
+    p = params or {}
+    ip = str(p.get("ip") or "").strip()
+    mac = str(p.get("mac") or "").strip()
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError:
+        return {"success": False, "error": "invalid_ip"}
+    evidence = []
+    try:
+        raw = json.loads(p.get("evidence_json") or "[]")
+        if isinstance(raw, list):
+            evidence = [str(e) for e in raw[:12]]
+    except Exception:
+        evidence = []
+    tid = _terminal_id()
+    issue = ("IP冲突疑似核查：终端 %s IP=%s MAC=%s；平台证据：%s"
+             % (tid, ip, mac, "; ".join(e[:120] for e in evidence) or "无明细"))
+    return {"success": True, "ai": _ai_analyze_issue(tid, issue)}
+
+
 def handle_net_ping_start(params=None):
     """启动连通性全量检测任务。"""
     task_id, reused = _start_task("ping", run_ping_suite, {})
@@ -1917,6 +1951,7 @@ NET_ROUTES = {
     "/api/netdoctor/ipconflict": handle_net_ipconflict,
     "/api/netdoctor/conflict-deep-start": handle_net_conflict_deep_start,
     "/api/netdoctor/conflict-deep-poll": handle_net_conflict_deep_poll,
+    "/api/netdoctor/conflict-ai-reanalyze": handle_net_conflict_ai_reanalyze,
     "/api/netdoctor/ping-start": handle_net_ping_start,
     "/api/netdoctor/ping-history": handle_net_ping_history,
     "/api/netdoctor/tracert-start": handle_net_tracert_start,
