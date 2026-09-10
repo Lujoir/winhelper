@@ -1,6 +1,6 @@
 # 观枢终端平台｜EyeTerm · 建设史编年
 
-> 维护者：chronicler-dev ｜ v1.0 ｜ 2026-09-09 ｜ 首版建档
+> 维护者：chronicler-dev ｜ v1.1 ｜ 2026-09-10 ｜ 补记 2026-09-09 里程碑（新增 5 条 + #24 哈希回填 + 存疑 #3/#4 消项）
 
 ## 卷首语
 
@@ -42,6 +42,11 @@
 | 22 | 2026-09-09 | Windows 一键安装包交付 | Inno Setup 安装包（WebView2 离线静默装/自启/卸载） |
 | 23 | 2026-09-09 | 服务端控制台登录改造上线 | PBKDF2+持久会话+锁定限速+审计+剩余信息保护（等保三级） |
 | 24 | 2026-09-09 | 服务端资产管理改造上线 | 资产组树形维护（多级嵌套/删除保护）+ 终端绑定资产组 |
+| 25 | 2026-09-09 | 客户端↔服务端 iperf3 打流端到端测通 | 四类测试全通（TCP 887.8 Mbps）；firewalld 端口段 TCP/UDP 成对放行教训 |
+| 26 | 2026-09-09 | 终端「网络排障」菜单首版上线 | net-doctor 五功能引擎交付，第四个独立子系统（exe v4.0.0） |
+| 27 | 2026-09-09 | 服务端「系统管理」模块上线 | 账户/算力网关/第三方接口/多 Token，admin-only + 审计（ADR-021） |
+| 28 | 2026-09-09 | SMB 日志存储挂载收尾 | NAS SMB 2.0 对接，fstab 统一挂载点 + _netdev,nofail |
+| 29 | 2026-09-09 | 终端 AI 智能诊断全链路上线 | 六类日志包 → llm_chat_chain → 终端第六模块（ADR-023/ADR-008） |
 
 ---
 
@@ -169,7 +174,32 @@
 #### 2026-09-09 · 服务端控制台资产管理改造：资产组树形维护与终端绑定上线
 - 事件：「资产清单」菜单升级为「资产管理」，左侧新增资产维护入口（资产组树），支持根目录下创建/重命名/删除多级嵌套子目录（层级自由扩展），删除保护：含子组拒绝并返回 409，删除组时直属终端自动解绑保证关联一致；终端资产绑定资产组（单终端单组，支持绑定/改绑/解绑），组视图展示直属终端并支持批量绑定（已属其它组自动改绑），未分组终端以虚拟节点呈现。实现于 store.py（新增 asset_groups 表 + terminals.group_id 列，幂等迁移、索引后置于 ALTER，共 6 个存储方法）与 api.py（/console/asset-groups CRUD、/console/terminals/{tid}/group 绑定端点，均在控制台会话鉴权内）；console/index.html 改双栏布局（参照钉钉组织架构树交互）。验证：存储层本地测试 18/18（含存量库迁移场景）、远程 API 冒烟 16/16（多级创建/绑定双向一致/409 保护/自动解绑/测试数据自清理）、esprima JS 语法检查通过；已部署 172.17.5.215:18090 并重启验证。
 - 意义：终端资产管理从「平铺清单」升级为「组织化资产组」治理模型，是服务端资产维度的首个结构性功能扩展；资产组数据模型为后续按组策略下发与分组统计奠基。
-- 考证：**待考证**——server-platform 代码未提交（与登录改造同根因，见存疑 #3，待 git 提交后回填哈希）；部署备份 store.py / api.py / index.html.bak.20260909_090701（服务器侧）；来源：team-lead 会话记忆（2026-09-09）。
+- 考证：server-platform 提交 `4d2924b`（2026-09-09）——资产组代码（store.py asset_groups 表、api.py 资产组端点、console/index.html 双栏布局）随系统管理模块批次首次入库；主仓库 `239cc2b`（子仓库指针登记）；部署备份 index.html.bak.20260909_090701（服务器侧）。**勘误（2026-09-10）**：原记「待考证」（见存疑 #3），经考证代码已入库，回填哈希消项；来源：team-lead 会话记忆（2026-09-09）+ git 实证。
+
+#### 2026-09-09 · 客户端↔服务端 iperf3 打流端到端测通（四类全通）
+- 事件：终端（winhelper uplink 内置 iperf3 3.1.3）与服务端四类打流测试端到端全通：TCP 887.8 Mbits/sec、UDP 1.0 Mbps（jitter 0.155ms / loss 0%）、服务器与网关 ping 均 1ms / loss 0%，任务闭环 24-48s（launch→命令通道下发→心跳拉取→执行→JSON 回传→done）。过程中定位一起数据面故障：服务器 firewalld 仅放行 18200-18299/tcp 缺 UDP，UDP 打流包被丢致客户端挂起超时（iperf3_timeout），补放行 18200-18299/udp 后一次通过。
+- 意义：服务端 v2 iperf3 打流能力（ADR-016）首次真实联调打通，「命令通道→任务槽→打流→回执」全链路验证；沉淀运维教训——iperf 端口段放行必须 TCP/UDP 成对，任务超时 + 命令回执 failed 组合优先排查数据面过滤。
+- 考证：server-platform 提交 `721afb1`（2026-09-10 补录，含 docs/iperf_e2e_report.md 交付报告与 server/iperf.py spawn_server 入库）；交付报告 server-platform/docs/iperf_e2e_report.md；联调工具主仓库 `3f04672`（tools/_iperf_e2e.py）；实测数据来源：会话记忆（2026-09-09）。
+
+#### 2026-09-09 · 终端「网络排障」菜单首版上线（net-doctor）
+- 事件：主应用新增导航菜单「网络排障」，net-doctor 独立项目首版交付五功能引擎：配置核查（DHCP/DNS 基线比对，离线可用）、IP 冲突检测（终端上报 IP+MAC，服务端交叉校验）、连通性测试（8 节点含 w32tm stripchart 校时 / nslookup 指定 DNS，结果 JSONL 落 %LOCALAPPDATA%\winhelper\netdoctor_records）、路由追踪（tracert + route-nodes CIDR 区域标注）、网络压测（多档包长 ping + iperf3 TCP/UDP，HTML 报告导出）；主应用集成 bridge.py 10 条 /api/netdoctor/* 路由 + 导航 + switchTab 守卫。集成时 web/home.js 存在损坏块，被 E2E 门禁拦截后修复（门禁有效拦截案例）。随后用户实测完成四项修复：中心状态简化徽章、核查补全 ipconfig /all 全字段 + 非活动网卡折叠、w32tm 中文逗号格式解析 + 校时偏差阈值、节点目标入设置弹窗维护区块。
+- 意义：EyeTerm 第四个独立子系统诞生，终端侧首次具备网络故障观测与排障能力；exe 重建至 client_version 4.0.0 上线。
+- 考证：net-doctor 仓库提交 `539b993`（首版）、`97abfd1`（四项修复）；主仓库提交 `628c210`（集成）、`6afcac9`（修复同步）；均 2026-09-09。E2E 75/75、后端冒烟 41/41、exe 版本 4.0.0 来源：会话记忆（2026-09-09）。
+
+#### 2026-09-09 · 服务端「系统管理」模块上线（ADR-021）
+- 事件：控制台新增「系统管理」模块四功能：账户管理、算力网关（连通性测试）、第三方接口、终端 Token（多 token 鉴权模型）；admin-only 权限模型 + 审计事件覆盖。同批次顺带修复两缺陷：register 上报补传 asset（TBC-001，配套终端资产 schema1 结构化上报）与 PUT 请求体缺陷；真实终端验证 asset_detail 由 NULL 转为结构化数据。
+- 意义：服务端运维自治能力（账户/凭据/外部系统接入）首次成模块交付；多 token 鉴权模型为终端规模化接入奠基；同批次入库一并补齐登录改造代码（auth_upgrade.py 等）的历史欠账（存疑 #3 消项）。
+- 考证：server-platform 提交 `4d2924b`（2026-09-09，ADR-021，含 tools/smoke_sysadmin.py、tools/test_sysadmin.py）；终端侧 schema1 上报主仓库 `77e1081`；指针与接口台账主仓库 `239cc2b`、`ed95c63`；TBC-001 消项记录 `a47c14b`；asset_detail NULL→1 实测来源：会话记忆（2026-09-09）。
+
+#### 2026-09-09 · SMB 日志存储挂载收尾（NAS 对接）
+- 事件：服务端日志存储对接 NAS 收尾完成：NAS 仅支持 SMB 2.0（SMB 3.x 协商报 error 95），按 2.0 协议挂载成功；fstab 挂载点统一对齐 /data/terminal-platform/storage，credentials=/etc/eyeterm/smb.cred + _netdev,nofail；读写验证通过。
+- 意义：v2 配置清单（ADR-014 SMB 存储配置化）遗留的挂载收尾完成，服务端日志归档外部存储落地；_netdev,nofail 保证网络未就绪时不阻塞系统启动。
+- 考证：来源：会话记忆（2026-09-09，服务器侧运维操作，无 git 变更）；服务器侧 fstab 与 /etc/eyeterm/smb.cred（凭据文件）待现场核验。
+
+#### 2026-09-09 · 终端 AI 智能诊断全链路上线（第六模块）
+- 事件：终端侧第六模块「AI 智能诊断」全链路上线：服务端新增 diagnose API——终端推送六类日志包，issue 类目走 llm_chat_chain 主备模型链出结论（截断策略：单类 32KB / 注入 4KB / 存证 4KB，trigger=terminal_diagnose 落库）；真实联调验证 analysis_id=12（Qwen3.6，30.3s 从系统日志定位 Schannel 根因）；终端侧由 net-doctor 承载第六模块（六类日志聚合 + 转发代理 + 结果/历史渲染），主应用 bridge 集成 /api/netdoctor/ai-diagnose；exe 18:00 版就位 dist（用户次日打开生效）。同日附带三项修复：①主页平台接入卡轮询冻结——apiFetch 统一 15s 超时（全模块保护）+ uplink 轮询失败可见 + 可见即刷 + 挂起注入回归门禁（底层 IPC 挂死触发器未定位，现象由永冻降级为自愈）；②网络排障核查卡片补链路速率；③连通性 ok 语义修复（探测通道成功即 ok，偏差过大 warn 标注）。
+- 意义：EyeTerm AI 能力从服务端控制台延伸到终端一线场景，终端可自主发起智能诊断，「终端采集→服务端模型链→结论回显」全链路闭环；前端 IPC 超时兜底确认为防御规范并纳入回归门禁。
+- 考证：server-platform 提交 `8aaa64e`（2026-09-09，ADR-023）；net-doctor 提交 `b794381`（ADR-008）、`e00e1d7`、`1a1d235`、`f82f511`；主仓库提交 `98c0595`、`29ef6f3`、`94a681b`、`590e2e8`；均 2026-09-09。E2E 112/112、analysis_id=12 实测、exe 18:00 版来源：会话记忆（2026-09-09）。
 
 ---
 
@@ -177,8 +207,8 @@
 
 1. **主应用功能演进静默期（2026-05-23 ~ 2026-09-04）**：主仓库首提交 `84ea539`（2026-05-22）与 `ea5fada`（2026-09-05）之间无任何 git 提交。此期间日志诊断/磁盘清理等功能的迭代时间、首个 exe 构建时间均无法从 git 考证；B/S 形态存续的证据仅来自 `ea5fada` 提交说明与 log-inspector ADR-001（旧引擎自主应用迁入）。待补充考证。
 2. **首个 winhelper.exe 构建时间待考证**：git 中首次提及 exe 重建为 2026-09-05（`5f4eaad`「exe已重建」）；「dist_new 构建 → 停进程 → 替换 dist → 重启」流程在 `5f4eaad` 与 log-inspector ADR-009 中固化。首个 exe 诞生的准确日期无据。
-3. **2026-09-09 控制台登录改造与资产管理改造代码均未入 git**：server-platform 仓库最后提交为 `e8f3aaf`（2026-09-08），登录改造五件套（auth_upgrade/migrate/api_patch/schema/文档）与资产管理改造（store.py/api.py/console/index.html/kb_store.py）尚未提交；条目时间依据交付报告、部署备份时间戳（index.html.bak.20260909_090701）与会话记忆。待补提交后回填哈希并消项（含总览 #23/#24 与存疑 #4 同根因）。
-4. **运维知识库 kb_store 待考证**：会话记忆称 2026-09-08 完成「kb_store 三表 + 5 版本迭代（8/8 冒烟）」，但 server-platform 仓库无对应提交，主仓库根目录仅有未跟踪的 kb_smoke.py。时间与仓库归属待考证。
+3. **【已消项 2026-09-10】2026-09-09 控制台登录改造与资产管理改造代码补录入库**：原记代码未入 git（server-platform 最后提交 `e8f3aaf` 2026-09-08）。经考证：两类改造代码已随 `4d2924b`（2026-09-09，系统管理模块批次）首次入库——该提交含 server/auth_upgrade.py（1515 行）、store.py 资产组改造（asset_groups 表）等历史增量；登录迁移脚本与两份交付报告（login_upgrade_delivery.md / iperf_e2e_report.md）随后经 `721afb1`（2026-09-10）补录。条目 #23/#24 考证已回填。原判「未提交」系 2026-09-09 建档时点早于入库时点所致。
+4. **【已消项 2026-09-10】运维知识库 kb_store 归属考证**：原记「server-platform 仓库无对应提交」。经考证：kb_store.py 已随 `31f8e1d`（2026-09-09，ADR-022 控制台知识库页）首次入库，kb 冒烟工具（server/kb_smoke.py）经 `721afb1` 补录。功能开发完成于 2026-09-08（会话记忆），首次入库于 2026-09-09，两者不矛盾。
 5. **终端资产明细（asset schema1）部署确认待考证**：功能本体源自 `eba91c5`（2026-09-06，ADR-015）；会话记忆称 2026-09-08 已部署至生产并提供控制台资产明细弹窗，但 api.py register 传参 asset 曾因断言失败未写回（部署后 asset 走 hwinfo 回退），补丁是否已重新应用并部署待确认。
 6. **disk-cleaner ADR 范围勘误**：任务简报记为「ADR-001~011」，实际仓库 DECISIONS.md 已演进至 ADR-015（`a29b0fb`/`4b8d4b1`/`97794d3`/`fd87cda`）。本编年以仓库为准。
 7. **安卓端统一管理**：为规划目标（会话记忆，无日期、无交付物），暂不入大事记，仅于卷首语注明。
@@ -189,10 +219,11 @@
 
 | 仓库 | 位置 | 首提交 | 最新提交（建档时） | 提交数 | 决策记录 |
 |------|------|--------|-------------------|--------|---------|
-| winhelper 主应用 | workspace 根（.git） | `84ea539` 2026-05-22 | `0bdfdce` 2026-09-09 | 28 | docs/ARCHITECTURE-CLIENT.md |
+| winhelper 主应用 | workspace 根（.git） | `84ea539` 2026-05-22 | `611245e` 2026-09-10 | 51 | docs/ARCHITECTURE-CLIENT.md |
 | disk-cleaner | disk-cleaner\（.git） | `3cdeb9b` 2026-09-05 | `35a31a1` 2026-09-06 | 10 | ADR-001~015（docs/DECISIONS.md） |
 | log-inspector | log-inspector\（.git） | `dde1c4b` 2026-09-06 | `5ca2c1f` 2026-09-08 | 7 | ADR-001~009（docs/DECISIONS.md） |
-| perf-analyzer | perf-analyzer\（.git） | `4192b95` 2026-09-05 | `40f4d74` 2026-09-08 | 14 | ADR-001~017（docs/DECISIONS.md） |
-| server-platform | server-platform\（.git） | `5a21967` 2026-09-06 | `e8f3aaf` 2026-09-08 | 14 | ADR-001~020（docs/DECISIONS.md）+ docs/login_upgrade_delivery.md |
+| perf-analyzer | perf-analyzer\（.git） | `4192b95` 2026-09-05 | `11c4ddc` 2026-09-09 | 15 | ADR-001~018（docs/DECISIONS.md） |
+| server-platform | server-platform\（.git） | `5a21967` 2026-09-06 | `721afb1` 2026-09-10 | 20 | ADR-001~026（24 空缺，docs/DECISIONS.md）+ docs/login_upgrade_delivery.md、docs/iperf_e2e_report.md |
+| net-doctor | net-doctor\（.git） | `539b993` 2026-09-09 | `b794381` 2026-09-09 | 7 | ADR-001~008（docs/DECISIONS.md） |
 
 > 检索方式：`git log --date=short --format="%h %ad %s"`（各仓库根目录执行）。子项目仓库均位于主仓库 workspace 之下，主仓库以 gitlink 方式引用三者（server-platform 当前未以 gitlink 跟踪）。
