@@ -931,11 +931,18 @@
                     <div class="nd-gate" id="ndStressGate" style="display:none">未连接中心平台，功能不可用</div>
                     <div class="nd-params" style="margin-bottom:8px">
                         <label>iperf3 每轮时长（秒）</label>
-                        <select class="nd-select" id="ndStressDur">
+                        <select class="nd-select" id="ndStressDur" onchange="ndOnDurChange()">
                             <option value="10" selected>10</option>
                             <option value="15">15</option>
                             <option value="30">30</option>
+                            <option value="60">60</option>
+                            <option value="120">120</option>
+                            <option value="180">180</option>
+                            <option value="300">300</option>
+                            <option value="custom">自定义</option>
                         </select>
+                        <input class="nd-input" id="ndStressDurCustom" style="width:70px;display:none" placeholder="1~300">
+                        <span id="ndStressDurErr" style="color:#ef9a9a"></span>
                         <label>包长 1（字节）</label>
                         <input class="nd-input nd-stress-size" id="ndStressSize1" value="64" style="width:64px">
                         <label>包长 2（字节）</label>

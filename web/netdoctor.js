@@ -103,6 +103,7 @@ function initNetDoctorTab() {
     } catch (e) { ndState.aiMode = "enterprise"; }
     ndAiRenderMode();
     ndSizesEcho();   /* 压测包长档位回显（localStorage 逗号串，2026-09-10 分档重构） */
+    ndDurEcho();     /* iperf3 每轮时长回显（自定义档=custom:秒，2026-09-10 档位扩充） */
     ndLoadConfig();
     ndLoadHistory();
     ndAiInitHistory();
@@ -952,6 +953,56 @@ function ndSizesEcho() {
     }
 }
 
+function ndOnDurChange() {
+    /* iperf3 时长档位切换：选中「自定义」时行内展开数字输入框，切回固定档隐藏并清红字 */
+    var sel = document.getElementById("ndStressDur");
+    var box = document.getElementById("ndStressDurCustom");
+    var err = document.getElementById("ndStressDurErr");
+    var custom = !!sel && sel.value === "custom";
+    if (box) { box.style.display = custom ? "inline-block" : "none"; }
+    if (err) { err.textContent = ""; }
+}
+
+function ndReadDur() {
+    /* iperf3 每轮时长读取（2026-09-10 档位扩充 + 自定义）：固定档直接取值；自定义档
+       正整数 1~300，超 300 按 300 截断并 UI 提示（硬约束，后端 clamp 已对齐），非法红字不发起。 */
+    var sel = document.getElementById("ndStressDur");
+    if (!sel || sel.value !== "custom") {
+        return { dur: sel ? sel.value : "10", err: "", hard: false };
+    }
+    var box = document.getElementById("ndStressDurCustom");
+    var v = box ? String(box.value).trim() : "";
+    if (!/^\d+$/.test(v)) {
+        return { dur: "", err: "自定义时长需为正整数（1~300 秒）", hard: true };
+    }
+    var n = parseInt(v, 10);
+    if (n < 1) { return { dur: "", err: "自定义时长需为正整数（1~300 秒）", hard: true }; }
+    if (n > 300) {
+        /* 超上限：按 300 截断照常发起，err 仅作提示（hard=false 不拦截） */
+        return { dur: "300", err: "自定义时长超上限，已按 300 秒执行", hard: false };
+    }
+    return { dur: String(n), err: "", hard: false };
+}
+
+function ndDurEcho() {
+    /* 重开回显（localStorage.ndStressDur）：custom:秒 → 选中自定义并回填；
+       固定档值 → 直接回显（选项存在才设，防旧记忆残留） */
+    var saved = "";
+    try { saved = localStorage.getItem("ndStressDur") || ""; } catch (e) { saved = ""; }
+    if (!saved) { return; }
+    var sel = document.getElementById("ndStressDur");
+    if (!sel) { return; }
+    if (saved.indexOf("custom:") === 0) {
+        sel.value = "custom";
+        var box = document.getElementById("ndStressDurCustom");
+        if (box) { box.value = saved.slice(7); }
+        ndOnDurChange();
+    } else if (sel.querySelector('option[value="' + saved + '"]')) {
+        sel.value = saved;
+        ndOnDurChange();
+    }
+}
+
 function ndStartStress() {
     var btn = document.getElementById("ndStressBtn");
     var cancelBtn = document.getElementById("ndStressCancelBtn");
@@ -962,14 +1013,25 @@ function ndStartStress() {
         ndSetTip("ndStressSummary", "包长档位有误，请修正后重试");
         return;   /* 其它参数不受影响，修正后可立即重试 */
     }
+    var dr = ndReadDur();
+    var durErr = document.getElementById("ndStressDurErr");
+    if (durErr) { durErr.textContent = dr.err; }
+    if (dr.hard) {
+        ndSetTip("ndStressSummary", "每轮时长有误，请修正后重试");
+        return;
+    }
     if (btn) { btn.disabled = true; }
     if (cancelBtn) { cancelBtn.style.display = "inline-block"; }
-    var dur = document.getElementById("ndStressDur");
     var udp = document.getElementById("ndStressUdp");
-    var q = "?duration_sec=" + encodeURIComponent(dur ? dur.value : "10")
+    var sel = document.getElementById("ndStressDur");
+    var q = "?duration_sec=" + encodeURIComponent(dr.dur || "10")
         + "&sizes=" + encodeURIComponent(sr.sizes || "64,256,1024,4096")
         + "&udp_mbps=" + encodeURIComponent(udp ? udp.value : "100");
-    try { localStorage.setItem("ndStressSizes", sr.sizes || "64,256,1024,4096"); } catch (e) {}
+    try {
+        localStorage.setItem("ndStressSizes", sr.sizes || "64,256,1024,4096");
+        localStorage.setItem("ndStressDur",
+            sel && sel.value === "custom" ? "custom:" + (dr.dur || "10") : (dr.dur || "10"));
+    } catch (e) {}
     ndApiFetch("/api/netdoctor/stress-start" + q).then(function (d) {
         if (!d || d.success === false) {
             ndSetTip("ndStressSummary", "启动失败：" + (d && d.error === "not_connected"

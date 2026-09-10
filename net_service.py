@@ -1144,7 +1144,7 @@ def run_stress(task, params):
     if not center:
         return {"success": False, "error": "center_host_missing"}
     try:
-        duration = max(5, min(120, int(float(params.get("duration_sec") or 10))))
+        duration = max(5, min(300, int(float(params.get("duration_sec") or 10))))
     except (TypeError, ValueError):
         duration = 10
     try:
