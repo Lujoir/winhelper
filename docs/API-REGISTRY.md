@@ -5,12 +5,12 @@
 - **维护人**：api-registrar-dev（接口登记官）
 - **事实来源**：代码实证（server-platform/server/api.py、bridge.py、uplink.py、net-doctor/net_service.py 等），每条注明文件+函数
 - **登记统计**：
-  - 一、服务端 REST API（SRV）：77 条
+  - 一、服务端 REST API（SRV）：79 条（2026-09-10 晚新增 ADR-029 IP 冲突深度检测 2 条）
   - 二、终端本地桥接 API（BRG）：51 条（netdoctor 12 条：10 条 2026-09-09 合入主应用转「在用」commit 628c210；AI 诊断 2 条 2026-09-10 登记，commit a892f62/bd965ae）
   - 三、终端↔平台协议（UPL）：10 条
   - 四、外部依赖接口（EXT）：6 条
   - 五、废弃/规划接口（DEP）：5 条
-  - **合计 149 条**
+  - **合计 151 条**
 - **通用约定**：
   - 服务端监听：ThreadingHTTPServer，`0.0.0.0:{port}`，默认 18090（app.py `_load_config` / `main`）；配置经 `$ETP_CONFIG` → `server/config.local.json` → dev 默认三级加载
   - 终端上行鉴权：请求头 `X-ETP-Token`（对照 config.json `terminal_token`）> 更新 2026-09-09：收敛为**多 token 模型**——config token 或 SQLite `terminal_tokens` 表 status='active' 命中均放行（详见 UPL-010，commit 4d2924b）
@@ -468,7 +468,7 @@
 - **调用方式**：浏览器 `http://<server>/`
 - **代码出处**：api.py `_static`
 - **状态**：在用
-- **登记记录**：2026-09-09，代码实证
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-10：静态资源协商缓存（commit 25d48e2）——响应加 `ETag`（`W/"mtime-size"`）与 `Last-Modified`，`Cache-Control: no-cache`；请求带 `If-None-Match` 命中 → **304 revalidate**（api.py:1539-1566），根治 index.html 更新后浏览器启发式缓存旧页面
 
 #### SRV-043 控制台静态文件 `GET /<file>`
 - **用途**：console/ 目录下静态资源（js/css/png/svg/json 等，按扩展名映射 Content-Type）
@@ -478,7 +478,7 @@
 - **调用方式**：`curl http://<server>/app.js`
 - **代码出处**：api.py `_static`
 - **状态**：在用
-- **登记记录**：2026-09-09，代码实证
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-10：同 SRV-042，静态资源协商缓存（commit 25d48e2）——ETag（`W/"mtime-size"`）+ Last-Modified + no-cache，If-None-Match 命中 304 revalidate（api.py:1539-1566）
 
 #### SRV-044 favicon `GET /favicon.ico`
 - **用途**：图标占位（返回 204 空响应）
@@ -579,7 +579,7 @@
 - **调用方式**：`curl -X POST http://<server>/api/v1/terminals/WIN-HOST/netdoctor/ipconflict -H "X-ETP-Token: <token>" -d '{"ip":"192.168.1.23","mac":"AA-BB-CC-DD-EE-FF"}'`
 - **代码出处**：api.py `_terminal_api` → store.py `ipconflict_report`
 - **状态**：在用
-- **登记记录**：2026-09-09，代码实证
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-10：判定精化（ADR-028，commit 257ed21，store.py:453-490）——①判定基准从「同 IP 7 天多 MAC」改为「同 IP 窗口内出现**其它 terminal_id** 的报告」→ conflict_suspect=true；②verdict 新增 `suspect_reasons`（`multi_terminal`=其它已知终端 / `unknown_terminal`=terminal_id 不在 terminals 表，保守原则同样 suspect）与 `nic_history`（仅同一 terminal_id 的 MAC 变化→**不** suspect，记 [{mac,last_ts}] 供人工参考，证据照存）；③MAC 经 `_mac_key` 归一比对（去分隔符+小写，格式差异不误判）；④新增只读交叉校验 `ipconflict_lookup`（不落库，ADR-029 深度检测 conclude 步骤复用，无独立端点）；画方 admission 注入链不变（api.py:418）
 
 #### SRV-052 路由节点知识库（netdoctor）`GET /api/v1/terminals/{tid}/netdoctor/route-nodes`
 - **用途**：下发路由节点表（CIDR→区域标注），供终端 tracert 逐跳标注
@@ -589,7 +589,7 @@
 - **调用方式**：`curl http://<server>/api/v1/terminals/WIN-HOST/netdoctor/route-nodes -H "X-ETP-Token: <token>"`
 - **代码出处**：api.py `_terminal_api`（settings 读取）
 - **状态**：在用
-- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：①响应新增 `source` 字段（`"kb"|"settings"`）；②数据源变更（ADR-022，api.py:383-397 `_kb_route_nodes`）：优先 kb_entries 中 category='route_nodes' 最新条目（content 为 JSON 数组 [{match,zone,desc}]，即预置 kb_id=route-nodes），解析失败/无条目回退 settings `netdoctor.route_nodes`；注意响应节点字段为 match/zone/desc（首版登记的 cidr/name 为笔误，以本行为准）（commit 31f8e1d，代码实证）
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：①响应新增 `source` 字段（`"kb"|"settings"`）；②数据源变更（ADR-022，api.py:383-397 `_kb_route_nodes`）：优先 kb_entries 中 category='route_nodes' 最新条目（content 为 JSON 数组 [{match,zone,desc}]，即预置 kb_id=route-nodes），解析失败/无条目回退 settings `netdoctor.route_nodes`；注意响应节点字段为 match/zone/desc（首版登记的 cidr/name 为笔误，以本行为准）（commit 31f8e1d，代码实证）> 更新 2026-09-10：数据内容基线升 v2（kb_id=route-nodes 预置条目内容版本迭代，编年史 #40「route_nodes v2 与 v5 发布」）；**接口契约不变**（source 字段/节点结构 match/zone/desc/kb 优先 settings 兜底链均未变，api.py:1734-1751 复核）
 
 #### SRV-053 iperf 服务端起流（netdoctor）`POST /api/v1/terminals/{tid}/netdoctor/iperf-server`
 - **用途**：终端主动压测时，服务端起单会话 `iperf3 -s -1`（不经命令通道）
@@ -630,7 +630,7 @@
 - **调用方式**：`curl -X POST http://<server>/api/v1/terminals/WIN-HOST/ai/diagnose -H "X-ETP-Token: <token>" -d '{"issue":"开机后风扇狂转","logs":{"perf_analysis":"..."}}'`
 - **代码出处**：api.py `_terminal_api`（分支 api.py:419-445）→ `run_terminal_diagnose`（api.py:1160+，DIAG_SYSTEM_PROMPT + `build_diagnose_context` + llm_chat_chain，timeout=45×max_retries=0 双模型最坏约 90s）
 - **状态**：在用
-- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit 8aaa64e，ADR-023；冒烟：真实终端 200 analysis_id=9 model=Qwen3.6 duration=11340ms）
+- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit 8aaa64e，ADR-023；冒烟：真实终端 200 analysis_id=9 model=Qwen3.6 duration=11340ms）> 更新 2026-09-10：截断层重做（ADR-027，commit 47de462+91b2fe6，ai.py）——①预算对齐终端 AI 卡「单类超 32KB 自动截断」承诺：单类原始/存证 32KB（`DIAG_RAW_LIMIT`/`DIAG_EVIDENCE_PER_KEY`；历史缺陷：原 4KB 截断致证据饥饿、LLM 虚构日志依据——analysis_id=16 事故）；注入单类 16KB（`DIAG_PROMPT_PER_KEY`）、全 prompt 日志总预算 32KB（`DIAG_PROMPT_TOTAL`）（原 4KB/24KB）；②优先级贪心预算分配：system_log 恒第一、issue 关键词命中类提前（`_KEY_HINT_WORDS` 六类映射）、快照类（os_info/hwinfo）垫底；③**结构感知截断**：JSON 列表/对象按完整条目粒度二分保留头部前缀（`_clip_json_list/_clip_json_dict`，存证可再解析），非 JSON 头部截断，均带 `…[truncated]`；④双向乱码探测标记 `_detect_mojibake`（91b2fe6 加项，analysis_id=16 取证定性为终端采集层乱码）；⑤context_json 新增 `logs_stats`（每类 original_items/kept_items/truncated，api.py:1461-1465）；⑥`DIAG_SYSTEM_PROMPT` 加证据可信性硬约束（只允许引用日志中实际出现的事件 ID/来源/时间戳、引用必附时间戳、缺日志显式声明证据不足；net_service `_ND_AI_PROMPT_SYSTEM` 同款对齐）；响应字段不变
 
 #### SRV-071 AI 分析单条详情 `GET /api/v1/console/ai/analyses/{id}`（属 1.6 控制台-AI 组）
 - **用途**：单条分析详情（**含 context_json**——终端诊断时为 `{issue, logs 各类截断存证}`；列表接口 SRV-024 不含 context_json，行为不变）
@@ -641,6 +641,25 @@
 - **代码出处**：api.py `_console_api`（api.py:784-790）→ store.py `ai_get`
 - **状态**：在用
 - **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit 8aaa64e，ADR-023）
+
+#### SRV-078 IP 冲突深度检测启动 `POST /api/v1/terminals/{tid}/netdoctor/ipconflict-deep`
+- **用途**：IP 冲突深度检测异步编排（五步 resolve→arp→nad→macaddr→conclude，逐步进度经 SRV-079 轮询；结论由 deep_engine.run_deep_check 汇总）
+- **鉴权**：X-ETP-Token（+ 准入）
+- **请求参数**：`{"ip":"192.168.1.23","mac":"AA-BB-CC-DD-EE-FF"}`（均必填；ip 经 `ipaddress.ip_address` 校验，mac 经 `deep_engine.mac_key` 归一校验）
+- **响应**：`{"ok":true,"task_id":"DC-xxxxxxxx","status":"running"}`；参数非法 400（invalid ip address / invalid mac address）；并发槽满 **429** `"deep check busy, retry later"`（全局信号量 `_DEEP_SEMAPHORE=2`，SSH 逐设备串行）；终端未注册 404
+- **后台**：daemon 线程 `_deep_task_worker` 逐步 `deep_task_update(steps)`，结论 verdict 落库（注入 kb_route_nodes CIDR 标注与 settings 上下文）；异常置 status=failed
+- **代码出处**：api.py:388-409 → `_deep_task_worker`(api.py:1382) / `_DEEP_SEMAPHORE`(api.py:1379) → store.py `deep_task_create`(509) → deep_engine.py `run_deep_check`
+- **状态**：在用
+- **登记记录**：2026-09-10，代码实证（ADR-029，随 257ed21 批次入仓；team-lead 晚间批次提示并入登记）
+
+#### SRV-079 IP 冲突深度检测状态 `GET /api/v1/terminals/{tid}/netdoctor/ipconflict-deep/{task_id}`
+- **用途**：深度检测任务进度/结论轮询（steps_json 逐步证据 + verdict 终局判定）
+- **鉴权**：X-ETP-Token（+ 准入）
+- **请求参数**：路径 `{tid}`、`{task_id}`（如 `DC-a1b2c3d4`）
+- **响应**：`{"ok":true,"task":{task_id,terminal_id,ip,mac,status,steps_json,verdict,created_ts,updated_ts}}`（以 store.py `deep_task_get` 行为准）；task 不存在或 terminal_id 不匹配 404 `"task not found"`；终端未注册 404
+- **代码出处**：api.py:371-380 → store.py `deep_task_get`
+- **状态**：在用
+- **登记记录**：2026-09-10，代码实证（ADR-029）
 
 > 注：SRV-001~071 中编号按登记顺序连续分配；「1.x」小节标题与编号的对应关系以条目内「方法与路径」为准（SRV-070 属 1.10 终端上行，SRV-071 属 1.6 控制台-AI）。
 
@@ -1199,7 +1218,7 @@
 - **用途**：活动网卡 IP+MAC → 平台 ipconflict 端点交叉校验；未连中心拒绝（error=not_connected）；疑似时自动调 `/api/v1/ai/analyze`
 - **代码出处**：bridge.py `ROUTES` → net_service.py `handle_net_ipconflict` → `run_ipconflict_result`（合入 commit 628c210，main 下发）
 - **状态**：在用
-- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：bridge.py ROUTES 已挂载，转「在用」（代码实证 bridge.py:96）> 更新 2026-09-09：admission_log 数据源将接入画方 NAD 准入 API（EXT-006，cross 校验源 admission_log+交换机端口证据）——sources.admission_log 由 not_connected 转 connected，server-platform-dev 实施中，落地后本条与 EXT-006 补代码实证 > 更新 2026-09-09：**sources.admission_log=connected 已上线**（commit a5156cc，api.py:383 `_enrich_ipconflict_admission` 注入）：①同 IP 异 MAC 升级判定含 `admission_registered_macs`（准入登记 MAC 与上报 MAC 不一致 → conflict_suspect=true，evidence 追加 nad 证据块 {source:'nad',name,ou,ttype,manfct/model,online,block,reginfo,macs}，api.py:1196-1200）；②core_switch_state 三态近似：上报 MAC 在准入库且有 macports 交换机记录 → `nas_connected`、有登记无端口 → `registered_no_port`、不在准入库 → `not_connected`（api.py:1187-1195）；③增强逻辑异常防御不阻断主流程（error:xx，api.py:1176-1177）。响应新增字段：admission_hit/admission/conflict_suspect/evidence/admission_registered_macs > 更新 2026-09-10：AI 诊断批次回归核对——nad_client.py `nad_fetch_terms`（nad_client.py:109）、api.py `_enrich_ipconflict_admission`（api.py:1260）及 ipconflict 注入调用点（api.py:383）、bridge.py ipconflict 路由（bridge.py:99）均在位，批次未触碰该链路，无回归（代码实证）
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：bridge.py ROUTES 已挂载，转「在用」（代码实证 bridge.py:96）> 更新 2026-09-09：admission_log 数据源将接入画方 NAD 准入 API（EXT-006，cross 校验源 admission_log+交换机端口证据）——sources.admission_log 由 not_connected 转 connected，server-platform-dev 实施中，落地后本条与 EXT-006 补代码实证 > 更新 2026-09-09：**sources.admission_log=connected 已上线**（commit a5156cc，api.py:383 `_enrich_ipconflict_admission` 注入）：①同 IP 异 MAC 升级判定含 `admission_registered_macs`（准入登记 MAC 与上报 MAC 不一致 → conflict_suspect=true，evidence 追加 nad 证据块 {source:'nad',name,ou,ttype,manfct/model,online,block,reginfo,macs}，api.py:1196-1200）；②core_switch_state 三态近似：上报 MAC 在准入库且有 macports 交换机记录 → `nas_connected`、有登记无端口 → `registered_no_port`、不在准入库 → `not_connected`（api.py:1187-1195）；③增强逻辑异常防御不阻断主流程（error:xx，api.py:1176-1177）。响应新增字段：admission_hit/admission/conflict_suspect/evidence/admission_registered_macs > 更新 2026-09-10：AI 诊断批次回归核对——nad_client.py `nad_fetch_terms`（nad_client.py:109）、api.py `_enrich_ipconflict_admission`（api.py:1260）及 ipconflict 注入调用点（api.py:383）、bridge.py ipconflict 路由（bridge.py:99）均在位，批次未触碰该链路，无回归（代码实证）> 更新 2026-09-10（晚）：①检测对象锁定改 **Find-NetRoute 路由解析**（目标=uplink server_url 主机所在通信网卡，失败回退活动网卡并 `object_note` 如实标注，net_service.py:684-712 `run_ipconflict_result`，net-doctor 1f60f95 ADR-013）；②verdict 透传 SRV-051 新契约（ADR-028：suspect_reasons/nic_history）；③疑似深度取证消费 SRV-078/079（ADR-029 深度检测，前端深度证据渲染）
 
 #### BRG-043 连通性检测启动 `GET /api/netdoctor/ping-start`
 - **用途**：8 节点逐节点 ping / nslookup / w32tm(stripchart) 探测，JSONL 落盘
@@ -1263,7 +1282,7 @@
 - **提示词**：`_ND_AI_PROMPT_SYSTEM` 三段结构（【故障原因分析】引用日志依据/【处理意见】立即处理+建议观察/【风险提示】数据缺失）单份沉淀于 net_service（与 server-platform/server/ai.py `DIAG_SYSTEM_PROMPT` 语义对齐，防漂移；企业版 prompt 在中心侧）
 - **代码出处**：bridge.py `call`（ai-diagnose 特殊分支 bridge.py:128-133）→ net_service.py `handle_net_ai_diagnose`(1561) / `_ai_diagnose_enterprise`(1576) / `_ai_diagnose_personal`(1670) / `_ai_personal_config`(1660) / `_nd_ai_logs_text`(1621) / `_ND_AI_PROMPT_SYSTEM`(1610)
 - **状态**：在用（exe 待用户窗口重启生效，代码已入库）
-- **登记记录**：2026-09-10，代码实证（**补登**：路由与 body 双参自主应用 98c0595 第六模块已存在但漏登台账，本次补登）> 更新 2026-09-10：mode 参数扩展（net-doctor a892f62 / 主应用 bd965ae，ADR-009）——enterprise=中心转发原逻辑不变（b794381）；personal=本机 urllib 直连 OpenAI 兼容 /v1/chat/completions（120s 超时）；三段提示词常量 `_ND_AI_PROMPT_SYSTEM` 单份沉淀（与 server/ai.py DIAG_SYSTEM_PROMPT 语义对齐）；个人版配置存 app_config.json netdoctor.ai_personal（url/api_key/model，key 留空保持语义，经 BRG-040 `ai_personal_json` 写入）；personal 响应无 analysis_id（meta 本地诊断）
+- **登记记录**：2026-09-10，代码实证（**补登**：路由与 body 双参自主应用 98c0595 第六模块已存在但漏登台账，本次补登）> 更新 2026-09-10：mode 参数扩展（net-doctor a892f62 / 主应用 bd965ae，ADR-009）——enterprise=中心转发原逻辑不变（b794381）；personal=本机 urllib 直连 OpenAI 兼容 /v1/chat/completions（120s 超时）；三段提示词常量 `_ND_AI_PROMPT_SYSTEM` 单份沉淀（与 server/ai.py DIAG_SYSTEM_PROMPT 语义对齐）；个人版配置存 app_config.json netdoctor.ai_personal（url/api_key/model，key 留空保持语义，经 BRG-040 `ai_personal_json` 写入）；personal 响应无 analysis_id（meta 本地诊断）> 更新 2026-09-10（晚）：①personal URL 预处理 `_personal_norm_url`——折叠路径连续斜杠（保留 scheme:// 头；实证 `https://host//v1/...` 会脱离 API 路由落入站点前端兜底页致假阳性 200），`_personal_chat_url`/`_personal_models_url` 均已接入（net-doctor 1f60f95）；②`_ND_AI_PROMPT_SYSTEM` 加**证据可信性硬约束**三条（只引用日志中实际出现的事件 ID/来源/时间戳、引用必附时间戳、缺日志显式声明证据不足；与 server DIAG_SYSTEM_PROMPT 同款加固，analysis_id=16 虚构 WHEA-Logger 17 实证，net_service.py:1664-1678）；enterprise/personal 本体契约不变
 
 #### BRG-051 个人版 LLM 连通性测试 `GET /api/netdoctor/ai-personal-test`
 - **用途**：个人版第三方 LLM 连通性测试（轻量 GET /models 探测，不消耗对话额度；供设置弹窗保存前验证）
@@ -1277,7 +1296,7 @@
 - **地址自适配**：`_personal_models_url`（完整 `/models` 原样 / 以 `/v1` 结尾补 `/models` / 其余按 base 补 `/v1/models`）
 - **代码出处**：bridge.py ROUTES（bridge.py:108，bd965ae +1 路由）→ net_service.py `handle_net_ai_personal_test`(1723) / `_personal_models_url`(1648)；调用方 web/netdoctor.js
 - **状态**：在用（exe 待用户窗口重启生效，代码已入库）
-- **登记记录**：2026-09-10，代码实证（net-doctor a892f62 / 主应用 bd965ae）
+- **登记记录**：2026-09-10，代码实证（net-doctor a892f62 / 主应用 bd965ae）> 更新 2026-09-10（晚）：语义修复（c7219c7）+ 防假阳性（1f60f95）——①api_key 留空=**回退已保存配置 Key**（对齐保存端「留空不修改」语义），响应新增 `used_key` 三态（provided=表单现值 / saved=已保存 / none）；②used_key=none 不发请求，直接 `{"success":true,"ok":false,"used_key":"none","hint":"未配置 API Key，请先填写并保存（设置 → AI 诊断（个人版））"}`；③401 专用 hint「Key 被拒（HTTP 401）——请核对 Key 是否完整/有效」（net_service.py:1795-1848）；④200 防假阳性：响应非 OpenAI 结构（无 `data` 字段）或为 HTML 兜底页 → ok=false「服务可达但该地址不是 API 接口（返回了网页）」，请检查 URL 路径；CT 为 JSON 但读取截断等异常保守放行不误杀；⑤URL 先经 `_personal_norm_url` 连续斜杠折叠
 
 ---
 
@@ -1499,6 +1518,6 @@
 
 ## 附：对账约定
 
-- 本台账对账基线 commit：工作区当前版本（bridge.py / uplink.py 有未提交修改，以台账登记时点代码为准）> 更新 2026-09-09：net-doctor 合入基线 commit 628c210（bridge.py ROUTES 含 /api/netdoctor/* 10 条）> 更新 2026-09-09：系统管理模块基线 commit 4d2924b（sysadmin 13 路由 + 多 token 模型 UPL-010 + session-info，代码实证 api.py:88-104/243-248/764-773/829+）> 更新 2026-09-09：知识库模块语义修正基线 commit 31f8e1d（KB 9 端点 ADR-022 语义 + route-nodes source 字段，代码实证 api.py:1396-1461/1369-1377/383-397、kb_store.py:43/59/157）> 更新 2026-09-09：终端 AI 智能诊断基线 commit 8aaa64e（SRV-070 diagnose + SRV-071 单条详情 + trigger=terminal_diagnose，代码实证 api.py:419-445/784-790/1160+，ADR-023）> 更新 2026-09-09：画方 admission_log 接入基线 commit a5156cc（nad_client.py + _enrich_ipconflict_admission，EXT-006 补代码实证与 3 处文档-实际差异，ADR-024）> 更新 2026-09-09：交换机管理基线 commit f031152（SRV-072~077 sysadmin 组，ADR-026，代码实证 api.py:1059-1133、settings.py:15/31、store.py:170-177）> 更新 2026-09-10：AI 诊断批次基线 net-doctor a892f62 / 主应用 bd965ae（BRG-050 补登+mode 双模式扩展、BRG-051 新增、BRG-040 ai_personal_json 写配置；bridge.py `call` body 双参透传仅 ai-diagnose 一条，bridge.py:128-133；EXT-006/BRG-042 回归核对无变化）
+- 本台账对账基线 commit：工作区当前版本（bridge.py / uplink.py 有未提交修改，以台账登记时点代码为准）> 更新 2026-09-09：net-doctor 合入基线 commit 628c210（bridge.py ROUTES 含 /api/netdoctor/* 10 条）> 更新 2026-09-09：系统管理模块基线 commit 4d2924b（sysadmin 13 路由 + 多 token 模型 UPL-010 + session-info，代码实证 api.py:88-104/243-248/764-773/829+）> 更新 2026-09-09：知识库模块语义修正基线 commit 31f8e1d（KB 9 端点 ADR-022 语义 + route-nodes source 字段，代码实证 api.py:1396-1461/1369-1377/383-397、kb_store.py:43/59/157）> 更新 2026-09-09：终端 AI 智能诊断基线 commit 8aaa64e（SRV-070 diagnose + SRV-071 单条详情 + trigger=terminal_diagnose，代码实证 api.py:419-445/784-790/1160+，ADR-023）> 更新 2026-09-09：画方 admission_log 接入基线 commit a5156cc（nad_client.py + _enrich_ipconflict_admission，EXT-006 补代码实证与 3 处文档-实际差异，ADR-024）> 更新 2026-09-09：交换机管理基线 commit f031152（SRV-072~077 sysadmin 组，ADR-026，代码实证 api.py:1059-1133、settings.py:15/31、store.py:170-177）> 更新 2026-09-10：AI 诊断批次基线 net-doctor a892f62 / 主应用 bd965ae（BRG-050 补登+mode 双模式扩展、BRG-051 新增、BRG-040 ai_personal_json 写配置；bridge.py `call` body 双参透传仅 ai-diagnose 一条，bridge.py:128-133；EXT-006/BRG-042 回归核对无变化）> 更新 2026-09-10（晚）：AI 诊断收尾批次基线——server-platform 子仓 47de462/91b2fe6（ADR-027 截断重做+证据硬约束，SRV-070）、257ed21（ADR-028 判定精化 SRV-051 + ADR-029 深度检测 SRV-078/079）、25d48e2（静态资源 ETag 协商缓存，SRV-042/043）；net-doctor 子仓 c7219c7/1f60f95（BRG-051 used_key 三态+防假阳性、BRG-050 URL 归一化+提示词加固、BRG-042 Find-NetRoute 路由解析）；主仓同步 a81bd1c/3069ea7（net-doctor 指针前进 1f60f95）
 - 对账方法：grep api.py `_terminal_api`/`_console_api`/`_console_kb_api`/`_console_nettest` 分支 + bridge.py `ROUTES`，与台账逐条比对，输出差异清单（新增未登记/已废弃仍登记/字段不符）
 - 维护规则：接口变更（改参数/改路径/废弃）必须同步更新台账，条目内追加 `> 更新 YYYY-MM-DD：变更点（出处）`，保留历史痕迹
