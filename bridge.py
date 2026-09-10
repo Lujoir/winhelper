@@ -40,6 +40,7 @@ from uplink import (
 from home_service import handle_home_network
 from net_service import (
     handle_net_config, handle_net_config_check, handle_net_ipconflict,
+    handle_net_conflict_deep_start, handle_net_conflict_deep_poll,
     handle_net_ping_start, handle_net_ping_history, handle_net_tracert_start,
     handle_net_stress_start, handle_net_stress_export,
     handle_net_task_status, handle_net_task_cancel, handle_net_ai_diagnose,
@@ -97,6 +98,8 @@ ROUTES = {
     "/api/netdoctor/config": handle_net_config,
     "/api/netdoctor/config-check": handle_net_config_check,
     "/api/netdoctor/ipconflict": handle_net_ipconflict,
+    "/api/netdoctor/conflict-deep-start": handle_net_conflict_deep_start,
+    "/api/netdoctor/conflict-deep-poll": handle_net_conflict_deep_poll,
     "/api/netdoctor/ping-start": handle_net_ping_start,
     "/api/netdoctor/ping-history": handle_net_ping_history,
     "/api/netdoctor/tracert-start": handle_net_tracert_start,
