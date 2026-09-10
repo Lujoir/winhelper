@@ -1041,22 +1041,110 @@ function ndStartStress() {
             return;
         }
         ndState.stressTaskId = d.task_id;
+        ndState.stressDur = parseInt(dr.dur || "10", 10) || 10;
+        ndStressProgressInit();
         ndPollTask(d.task_id, function (t) {
             var p = t.progress || {};
             ndSetTip("ndStressSummary", "压测中：" + (p.stage || "--")
                 + (p.current ? " ｜ " + p.current : "")
                 + "（" + (p.done || 0) + "/" + (p.total || "?") + "）");
+            ndStressProgressTick(p);
         }, function (err, result) {
             if (btn) { btn.disabled = false; }
             if (cancelBtn) { cancelBtn.style.display = "none"; }
-            if (err) { ndSetTip("ndStressSummary", "压测失败：" + err.error); return; }
-            ndRenderStress(result);
+            if (err) {
+                ndStressProgressEnd("failed", err.error || "未知");
+                ndSetTip("ndStressSummary", "压测失败：" + err.error);
+                return;
+            }
+            if (result && result.cancelled) {
+                ndStressProgressEnd("cancelled", "");
+                ndSetTip("ndStressSummary", "压测已取消");
+                return;
+            }
+            ndStressProgressEnd("done", "");
+            window.setTimeout(function () { ndRenderStress(result); }, 700);
         });
     }).catch(function (e) {
         if (btn) { btn.disabled = false; }
         if (cancelBtn) { cancelBtn.style.display = "none"; }
         ndSetTip("ndStressSummary", "压测失败：" + String(e));
     });
+}
+
+function ndStressProgressInit() {
+    /* 压测进度条初始化（2026-09-10 用户要求：进行中提示不明显）：分 6 段加权
+       （多档 ping 每档一等份 + iperf3 TCP/UDP 各一等份，与后端 (done/total) 口径一致） */
+    var body = document.getElementById("ndStressBody");
+    if (!body) { return; }
+    body.innerHTML = '<div class="nd-progress" id="ndStressProg">'
+        + '<div class="nd-progress-head"><span id="ndStressProgName">准备中</span>'
+        + '<span id="ndStressProgPct">0%</span></div>'
+        + '<div class="nd-progress-bar"><div class="nd-progress-fill stripes" style="width:2%"></div></div></div>';
+    ndState.stressTrack = null;
+}
+
+function ndStressProgressTick(p) {
+    /* 段内线性推进：ping 段预估 20s（ping -n 20），iperf 段用发起时自选时长；
+       阶段切换时微闪一次。纯前端（progress 字段 stage/done/total/current 已足，零后端改动） */
+    var wrap = document.getElementById("ndStressProg");
+    if (!wrap) { return; }
+    var total = p.total || 6, done = p.done || 0, stage = p.stage || "";
+    var now = Date.now();
+    var tr = ndState.stressTrack;
+    if (!tr || tr.stage !== stage || tr.done !== done) {
+        if (tr) {
+            var pf = wrap.querySelector(".nd-progress-fill");
+            if (pf) {
+                pf.classList.add("flash");
+                window.setTimeout(function () { pf.classList.remove("flash"); }, 400);
+            }
+        }
+        ndState.stressTrack = { stage: stage, done: done, ts: now };
+        tr = ndState.stressTrack;
+    }
+    var est = (stage === "ping") ? 20000 : ((ndState.stressDur || 10) * 1000);
+    var segPct = Math.min(95, Math.floor((now - tr.ts) / est * 100));
+    var pct = Math.min(99, Math.floor((done + segPct / 100) / total * 100));
+    var cur = String(p.current || "").replace("ping -l ", "");
+    var name = stage === "ping" ? ("多档 ping " + cur + " 字节")
+        : (stage === "iperf-tcp" ? "iperf3 TCP"
+            : (stage === "iperf-udp" ? "iperf3 UDP" : "准备中"));
+    var fill = wrap.querySelector(".nd-progress-fill");
+    var nm = document.getElementById("ndStressProgName");
+    var pc = document.getElementById("ndStressProgPct");
+    if (fill) { fill.style.width = pct + "%"; }
+    if (nm) { nm.textContent = name; }
+    if (pc) { pc.textContent = pct + "%"; }
+}
+
+function ndStressProgressEnd(kind, errText) {
+    /* 终态：done=满条绿字一闪后切总结（外层 setTimeout）；cancelled=灰条；failed=红字 */
+    var prog = document.getElementById("ndStressProg");
+    if (!prog) {
+        if (kind === "failed") { ndSetTip("ndStressSummary", "压测失败：" + errText); }
+        return;
+    }
+    var fill = prog.querySelector(".nd-progress-fill");
+    var nm = document.getElementById("ndStressProgName");
+    var pc = document.getElementById("ndStressProgPct");
+    if (fill) {
+        fill.style.width = "100%";
+        fill.classList.remove("stripes");
+    }
+    if (kind === "done") {
+        prog.classList.add("done", "flash");
+        if (nm) { nm.textContent = "压测完成"; }
+        if (pc) { pc.textContent = "100%"; }
+    } else if (kind === "cancelled") {
+        prog.classList.add("cancelled");
+        if (nm) { nm.textContent = "已取消"; }
+        if (pc) { pc.textContent = "100%"; }
+    } else {
+        prog.classList.add("failed");
+        if (nm) { nm.textContent = "压测失败"; }
+        if (pc) { pc.textContent = "100%"; }
+    }
 }
 
 function ndCancelStress() {
