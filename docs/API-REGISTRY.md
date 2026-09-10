@@ -6,11 +6,11 @@
 - **事实来源**：代码实证（server-platform/server/api.py、bridge.py、uplink.py、net-doctor/net_service.py 等），每条注明文件+函数
 - **登记统计**：
   - 一、服务端 REST API（SRV）：79 条（2026-09-10 晚新增 ADR-029 IP 冲突深度检测 2 条）
-  - 二、终端本地桥接 API（BRG）：53 条（netdoctor 14 条：10 条 2026-09-09 合入主应用转「在用」commit 628c210；AI 诊断 2 条 2026-09-10 登记 commit a892f62/bd965ae；深度检测本地转发 2 条 2026-09-10 晚登记，主应用 bridge 挂载待同步）
+  - 二、终端本地桥接 API（BRG）：54 条（netdoctor 15 条：10 条 2026-09-09 合入主应用转「在用」commit 628c210；AI 诊断 2 条 2026-09-10 登记 commit a892f62/bd965ae；冲突检测本地转发 3 条 2026-09-10 晚登记，bridge.py:102-104 已挂载）
   - 三、终端↔平台协议（UPL）：10 条
   - 四、外部依赖接口（EXT）：6 条
   - 五、废弃/规划接口（DEP）：5 条
-  - **合计 153 条**
+  - **合计 154 条**
 - **通用约定**：
   - 服务端监听：ThreadingHTTPServer，`0.0.0.0:{port}`，默认 18090（app.py `_load_config` / `main`）；配置经 `$ETP_CONFIG` → `server/config.local.json` → dev 默认三级加载
   - 终端上行鉴权：请求头 `X-ETP-Token`（对照 config.json `terminal_token`）> 更新 2026-09-09：收敛为**多 token 模型**——config token 或 SQLite `terminal_tokens` 表 status='active' 命中均放行（详见 UPL-010，commit 4d2924b）
@@ -1309,7 +1309,7 @@
 - **响应**：成功 `{"success":true,"task_id":"DC-xxxxxxxx","status":"running","ip":"...","mac":"..."}`；失败 `{"success":false,"error":"...","detail":"<平台error>"}`——`not_connected`（未连中心）/`no_active_adapter`/`invalid_ip`/平台错误映射（400→`invalid_ip`、404→`not_registered`、429→`busy`，其余 `platform_http_<code>`）
 - **代码出处**：net_service.py `handle_net_conflict_deep_start`(1540)；调用方 net-doctor/web/netdoctor.js:574；契约 server ADR-029（9e604a7+cc34bae）+ net-doctor ADR-014
 - **状态**：在用（net_service `NET_ROUTES`:1918 已定义，standalone 可用；**主应用 bridge.py ROUTES 挂载待同步**——grep 实证当前未挂载，主应用内调用将返回「未知接口」）
-- **登记记录**：2026-09-10（晚），代码实证（net-doctor-dev/server-platform-dev 双向确认增量，team-lead 下发）
+- **登记记录**：2026-09-10（晚），代码实证（net-doctor-dev/server-platform-dev 双向确认增量，team-lead 下发）> 更新 2026-09-10（晚 2）：主应用 bridge.py ROUTES 已挂载（**40abd3f** hotfix「v8 内按钮不可用根因」），转「在用（双端就绪）」，撤「挂载待同步」
 
 #### BRG-053 IP 冲突深度检测轮询（本地转发）`GET /api/netdoctor/conflict-deep-poll`
 - **用途**：深度检测任务进度/结论轮询（执行在平台侧，本地纯转发 task 视图）
@@ -1319,7 +1319,19 @@
 - **响应**：成功 `{"success":true,"task":{status:"running|done|failed",steps:[...],verdict:{...}}}`（平台 task 视图原样透传，net_service.py:1594-1599）；失败 `{"success":false,"error":"..."}`——`not_connected`/`missing_task_id`/`platform_http_<code>`（未知任务即 platform_http_404）
 - **代码出处**：net_service.py `handle_net_conflict_deep_poll`(1585)；调用方 net-doctor/web/netdoctor.js:602（encodeURIComponent）；契约同 BRG-052
 - **状态**：在用（net_service `NET_ROUTES`:1919 已定义，standalone 可用；**主应用 bridge.py ROUTES 挂载待同步**——同 BRG-052）
-- **登记记录**：2026-09-10（晚），代码实证（同 BRG-052 来源）
+- **登记记录**：2026-09-10（晚），代码实证（同 BRG-052 来源）> 更新 2026-09-10（晚 2）：主应用 bridge.py ROUTES 已挂载（40abd3f，同 BRG-052），转「在用（双端就绪）」
+
+#### BRG-054 IP 冲突 AI 辅助分析重跑（本地转发）`GET|POST /api/netdoctor/conflict-ai-reanalyze`
+- **用途**：手动重跑 IP 冲突 AI 辅助分析（数据更新后可重跑；与 BRG-042 疑似时自动分析同款引擎，issue 由最新本地证据构造）
+- **鉴权**：无（本机进程内）；平台侧 X-ETP-Token 由 uplink 后端注入
+- **请求参数**：query/params（method 不敏感，bridge 按 path 分发；前端 netdoctor.js:580 以 query 串调用）——`ip`（必填，ipaddress 本地校验 → invalid_ip）、`mac`（随 issue 携带，无本地校验）、`evidence_json`（可选，JSON 数组字符串，**最多 12 条**、构造 issue 时每条截 120 字；解析失败按空处理）
+- **issue 构造**：`"IP冲突疑似核查：终端 {tid} IP={ip} MAC={mac}；平台证据：{条目以「; 」join 或「无明细」}"`
+- **转发目标**：`POST /api/v1/ai/analyze`（SRV-055），复用 `_ai_analyze_issue(tid, issue, timeout=45)`（45s 超时）
+- **响应**：`{"success":true,"ai":{"ok":true,"analysis":"<结论>","model":"...","analysis_id":"N"}}`；业务失败 `{"success":true,"ai":{"ok":false,"error":"ai_http_<code>: ..."}}`；本地失败 `{"success":false,"error":"not_connected|invalid_ip"}`
+- **提取链热修复（2026-09-10）**：平台实证返回字段为 **`response`**，旧提取链 analysis/content/result 永远落空致「（无内容）」；`analysis_id` 透传供 UI 追溯（net_service.py:685-699）
+- **代码出处**：net_service.py `handle_net_conflict_ai_reanalyze`(1610) / `_ai_analyze_issue`(685)；bridge.py ROUTES（bridge.py:104）+ net_service `NET_ROUTES`(1954)；调用方 net-doctor/web/netdoctor.js:580
+- **状态**：在用（bridge.py 与 NET_ROUTES 均已挂载，bridge 挂载 commit b344bbc「AI辅助分析修复与手动重跑，net-doctor acee817 同步」）
+- **登记记录**：2026-09-10（晚 2），代码实证（team-lead 下发追加，与上批 4 条一并入账）
 
 ---
 
@@ -1541,6 +1553,6 @@
 
 ## 附：对账约定
 
-- 本台账对账基线 commit：工作区当前版本（bridge.py / uplink.py 有未提交修改，以台账登记时点代码为准）> 更新 2026-09-09：net-doctor 合入基线 commit 628c210（bridge.py ROUTES 含 /api/netdoctor/* 10 条）> 更新 2026-09-09：系统管理模块基线 commit 4d2924b（sysadmin 13 路由 + 多 token 模型 UPL-010 + session-info，代码实证 api.py:88-104/243-248/764-773/829+）> 更新 2026-09-09：知识库模块语义修正基线 commit 31f8e1d（KB 9 端点 ADR-022 语义 + route-nodes source 字段，代码实证 api.py:1396-1461/1369-1377/383-397、kb_store.py:43/59/157）> 更新 2026-09-09：终端 AI 智能诊断基线 commit 8aaa64e（SRV-070 diagnose + SRV-071 单条详情 + trigger=terminal_diagnose，代码实证 api.py:419-445/784-790/1160+，ADR-023）> 更新 2026-09-09：画方 admission_log 接入基线 commit a5156cc（nad_client.py + _enrich_ipconflict_admission，EXT-006 补代码实证与 3 处文档-实际差异，ADR-024）> 更新 2026-09-09：交换机管理基线 commit f031152（SRV-072~077 sysadmin 组，ADR-026，代码实证 api.py:1059-1133、settings.py:15/31、store.py:170-177）> 更新 2026-09-10：AI 诊断批次基线 net-doctor a892f62 / 主应用 bd965ae（BRG-050 补登+mode 双模式扩展、BRG-051 新增、BRG-040 ai_personal_json 写配置；bridge.py `call` body 双参透传仅 ai-diagnose 一条，bridge.py:128-133；EXT-006/BRG-042 回归核对无变化）> 更新 2026-09-10（晚）：AI 诊断收尾批次基线——server-platform 子仓 47de462/91b2fe6（ADR-027 截断重做+证据硬约束，SRV-070）、257ed21（ADR-028 判定精化 SRV-051 + ADR-029 深度检测 SRV-078/079）、25d48e2（静态资源 ETag 协商缓存，SRV-042/043）；net-doctor 子仓 c7219c7/1f60f95（BRG-051 used_key 三态+防假阳性、BRG-050 URL 归一化+提示词加固、BRG-042 Find-NetRoute 路由解析）；主仓同步 a81bd1c/3069ea7（net-doctor 指针前进 1f60f95）> 更新 2026-09-10（晚 2）：server-platform 9e604a7+cc34bae（deep-engine ADR-029 双端点归属修正 + verdict.sources ARP 失败同步）；net-doctor 深度检测本地转发 2 条 BRG-052/053（conflict-deep-start/poll，query 传参非 body；NET_ROUTES 已定义、主应用 bridge.py ROUTES 挂载待同步——待办移交主应用集成）
+- 本台账对账基线 commit：工作区当前版本（bridge.py / uplink.py 有未提交修改，以台账登记时点代码为准）> 更新 2026-09-09：net-doctor 合入基线 commit 628c210（bridge.py ROUTES 含 /api/netdoctor/* 10 条）> 更新 2026-09-09：系统管理模块基线 commit 4d2924b（sysadmin 13 路由 + 多 token 模型 UPL-010 + session-info，代码实证 api.py:88-104/243-248/764-773/829+）> 更新 2026-09-09：知识库模块语义修正基线 commit 31f8e1d（KB 9 端点 ADR-022 语义 + route-nodes source 字段，代码实证 api.py:1396-1461/1369-1377/383-397、kb_store.py:43/59/157）> 更新 2026-09-09：终端 AI 智能诊断基线 commit 8aaa64e（SRV-070 diagnose + SRV-071 单条详情 + trigger=terminal_diagnose，代码实证 api.py:419-445/784-790/1160+，ADR-023）> 更新 2026-09-09：画方 admission_log 接入基线 commit a5156cc（nad_client.py + _enrich_ipconflict_admission，EXT-006 补代码实证与 3 处文档-实际差异，ADR-024）> 更新 2026-09-09：交换机管理基线 commit f031152（SRV-072~077 sysadmin 组，ADR-026，代码实证 api.py:1059-1133、settings.py:15/31、store.py:170-177）> 更新 2026-09-10：AI 诊断批次基线 net-doctor a892f62 / 主应用 bd965ae（BRG-050 补登+mode 双模式扩展、BRG-051 新增、BRG-040 ai_personal_json 写配置；bridge.py `call` body 双参透传仅 ai-diagnose 一条，bridge.py:128-133；EXT-006/BRG-042 回归核对无变化）> 更新 2026-09-10（晚）：AI 诊断收尾批次基线——server-platform 子仓 47de462/91b2fe6（ADR-027 截断重做+证据硬约束，SRV-070）、257ed21（ADR-028 判定精化 SRV-051 + ADR-029 深度检测 SRV-078/079）、25d48e2（静态资源 ETag 协商缓存，SRV-042/043）；net-doctor 子仓 c7219c7/1f60f95（BRG-051 used_key 三态+防假阳性、BRG-050 URL 归一化+提示词加固、BRG-042 Find-NetRoute 路由解析）；主仓同步 a81bd1c/3069ea7（net-doctor 指针前进 1f60f95）> 更新 2026-09-10（晚 2）：server-platform 9e604a7+cc34bae（deep-engine ADR-029 双端点归属修正 + verdict.sources ARP 失败同步）；net-doctor 深度检测本地转发 2 条 BRG-052/053（conflict-deep-start/poll，query 传参非 body；NET_ROUTES 已定义、主应用 bridge.py ROUTES 挂载待同步——待办移交主应用集成）> 更新 2026-09-10（晚 2）：BRG-054 conflict-ai-reanalyze 入账（主应用 b344bbc / net-doctor acee817）；BRG-052/053 撤「挂载待同步」（主应用 40abd3f hotfix 挂载 bridge.py:102-103，v8 内按钮不可用根因即漏挂载）——主应用内 netdoctor 冲突检测三路由双端就绪
 - 对账方法：grep api.py `_terminal_api`/`_console_api`/`_console_kb_api`/`_console_nettest` 分支 + bridge.py `ROUTES`，与台账逐条比对，输出差异清单（新增未登记/已废弃仍登记/字段不符）
 - 维护规则：接口变更（改参数/改路径/废弃）必须同步更新台账，条目内追加 `> 更新 YYYY-MM-DD：变更点（出处）`，保留历史痕迹
