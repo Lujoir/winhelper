@@ -624,6 +624,17 @@ function ndDeepPollTick() {
         });
 }
 
+function ndFmtEpoch(sec) {
+    /* epoch 秒 → 本地时区 YYYY-MM-DD HH:MM（server-platform 2026-09-10 建议格式化）；
+       非法值返回空串由调用方回退原值展示 */
+    var n = Number(sec);
+    if (!n || !isFinite(n)) { return ""; }
+    var d = new Date(n * 1000);
+    function p2(x) { return (x < 10 ? "0" : "") + x; }
+    return d.getFullYear() + "-" + p2(d.getMonth() + 1) + "-" + p2(d.getDate())
+        + " " + p2(d.getHours()) + ":" + p2(d.getMinutes());
+}
+
 function ndDeepStepBadge(s) {
     var map = { done: ["nd-ok", "已完成"], skipped: ["nd-muted", "跳过"],
                 failed: ["nd-err", "失败"], empty: ["nd-warn", "无数据"],
@@ -701,7 +712,14 @@ function ndRenderDeep(t, running) {
         }
         html += '<div class="nd-hint">数据源：' + ndEscapeHtml(sb.join(" ｜ ")) + '</div>';
         if (v.checked_at) {
-            html += '<div class="nd-hint">核验时间：' + ndEscapeHtml(String(v.checked_at)) + '</div>';
+            var ct = ndFmtEpoch(v.checked_at);
+            html += '<div class="nd-hint">核验时间：' + ndEscapeHtml(ct || String(v.checked_at)) + '</div>';
+        }
+        if (v.conclusion === "insufficient_evidence") {
+            /* 如实降级语义（server-platform 2026-09-10 契约补充）：三源含 skipped/failed
+               时平台判 insufficient_evidence，属证据不足而非故障，提示看时间线各步骤原因 */
+            html += '<div class="nd-hint">证据不足（各步骤原因见时间线）：部分数据源未接入或核验未命中，'
+                + '此结论不代表网络无冲突。</div>';
         }
     }
     el.innerHTML = html;
