@@ -1,6 +1,6 @@
 # 观枢终端平台｜EyeTerm · 建设史编年
 
-> 维护者：chronicler-dev ｜ v1.3 ｜ 2026-09-10 ｜ 补记静态资源 ETag/Last-Modified 协商缓存上线（#34，main 裁定入史）
+> 维护者：chronicler-dev ｜ v1.4 ｜ 2026-09-10 ｜ 补记 AI 诊断卡宿主迁移主页上线（#35，含内网 GitLab 首批接入）
 
 ## 卷首语
 
@@ -52,6 +52,7 @@
 | 32 | 2026-09-10 | 终端 AI 诊断 GUI 上线确认 | 18:00 版 exe 运行实证，analysis_id=12 真实链路闭环 |
 | 33 | 2026-09-10 | AI 诊断九项优化 + 企业/个人双模式 | 个人版本地直连第三方 LLM 不依赖中心；gate 语义根因修复（ADR-009） |
 | 34 | 2026-09-10 | 静态资源 ETag/Last-Modified 协商缓存上线 | If-None-Match 304 revalidate，根治控制台更新后浏览器缓存旧页面 |
+| 35 | 2026-09-10 | AI 诊断卡宿主迁移主页上线 | 主页成终端状态+AI 诊断一体化入口；主仓库首批接入内网 GitLab（ADR-010） |
 
 ---
 
@@ -231,6 +232,11 @@
 - 意义：服务端静态分发补上「变更必达」一环，控制台页面更新不再依赖用户手动强刷；与前端「资源版本号参数」策略互补，形成缓存治理闭环。
 - 考证：server-platform 提交 `25d48e2`（2026-09-10 14:38）；主仓库 `b4c7964`（2026-09-10 15:03，子仓库 gitlink 前进）；部署备份 api.py/app.py.bak.20260910_etag（服务器侧）；first 200 + revalidate 304 实测来源：会话记忆（2026-09-10）。
 
+#### 2026-09-10 · AI 智能诊断卡宿主迁移主页上线（ADR-010，内网 GitLab 首批接入）
+- 事件：应用户要求，网络排障页「AI 智能诊断」卡迁移至主页「终端概览」上方（移动非复制）：net-doctor 侧 netdoctor.js boot/visibilitychange 覆盖 home 激活逻辑 + E2E 宿主断言（ADR-010），主应用 index.html 卡片迁移 + app.js switchTab home 分支联动 initNetDoctorTab（网络排障页保留 5 大探测模块）；E2E 155/155 双场景 pageerror=0；main 验收后 PyInstaller 重建 exe，替换 dist_new 并重启运行（PID 53108），用户可见。同批主仓库完成内网 GitLab 接入并推送全量历史（0b890c9 Initial → b69725d merge 保留本地全史 → 0289ca4 推送至 origin/main）。
+- 意义：主页成为「终端状态 + AI 诊断」一体化入口，网络排障聚焦探测职能；主仓库首次接入内网 GitLab 远程（git.wzeye.cn/zlj/eyeterm），EyeTerm 核心仓库自此具备中心化版本载体（此前仅本地与 GitHub 个人镜像）。
+- 考证：net-doctor 提交 `4e579a0`（2026-09-10 15:58，ADR-010）；主应用提交 `0289ca4`（2026-09-10 15:58，origin/main 同步实证）；GitLab 接入提交 `0b890c9`、`b69725d`（均 2026-09-10）；E2E 155/155、exe 重建与 PID 53108 来源：会话记忆（2026-09-10）。
+
 ---
 
 ## 三、存疑与考证
@@ -249,11 +255,11 @@
 
 | 仓库 | 位置 | 首提交 | 最新提交（建档时） | 提交数 | 决策记录 |
 |------|------|--------|-------------------|--------|---------|
-| winhelper 主应用 | workspace 根（.git） | `84ea539` 2026-05-22 | `b4c7964` 2026-09-10 | 55 | docs/ARCHITECTURE-CLIENT.md |
+| winhelper 主应用 | workspace 根（.git）；远程 git.wzeye.cn/zlj/eyeterm（2026-09-10 接入） | `84ea539` 2026-05-22 | `0289ca4` 2026-09-10 | 60 | docs/ARCHITECTURE-CLIENT.md |
 | disk-cleaner | disk-cleaner\（.git） | `3cdeb9b` 2026-09-05 | `35a31a1` 2026-09-06 | 10 | ADR-001~015（docs/DECISIONS.md） |
 | log-inspector | log-inspector\（.git） | `dde1c4b` 2026-09-06 | `5ca2c1f` 2026-09-08 | 7 | ADR-001~009（docs/DECISIONS.md） |
 | perf-analyzer | perf-analyzer\（.git） | `4192b95` 2026-09-05 | `11c4ddc` 2026-09-09 | 15 | ADR-001~018（docs/DECISIONS.md） |
 | server-platform | server-platform\（.git） | `5a21967` 2026-09-06 | `25d48e2` 2026-09-10 | 21 | ADR-001~026（24 空缺，docs/DECISIONS.md）+ docs/login_upgrade_delivery.md、docs/iperf_e2e_report.md |
-| net-doctor | net-doctor\（.git） | `539b993` 2026-09-09 | `a892f62` 2026-09-10 | 8 | ADR-001~009（docs/DECISIONS.md） |
+| net-doctor | net-doctor\（.git） | `539b993` 2026-09-09 | `4e579a0` 2026-09-10 | 9 | ADR-001~010（docs/DECISIONS.md） |
 
 > 检索方式：`git log --date=short --format="%h %ad %s"`（各仓库根目录执行）。子项目仓库均位于主仓库 workspace 之下，主仓库以 gitlink 方式引用三者（server-platform 当前未以 gitlink 跟踪）。
