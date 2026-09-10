@@ -1,16 +1,16 @@
 # EyeTerm 接口总台账（观枢终端平台）
 
 - **版本**：v1.0（首版建档）
-- **最后更新**：2026-09-09
+- **最后更新**：2026-09-10
 - **维护人**：api-registrar-dev（接口登记官）
 - **事实来源**：代码实证（server-platform/server/api.py、bridge.py、uplink.py、net-doctor/net_service.py 等），每条注明文件+函数
 - **登记统计**：
   - 一、服务端 REST API（SRV）：77 条
-  - 二、终端本地桥接 API（BRG）：49 条（netdoctor 10 条已于 2026-09-09 合入主应用转「在用」，commit 628c210）
+  - 二、终端本地桥接 API（BRG）：51 条（netdoctor 12 条：10 条 2026-09-09 合入主应用转「在用」commit 628c210；AI 诊断 2 条 2026-09-10 登记，commit a892f62/bd965ae）
   - 三、终端↔平台协议（UPL）：10 条
   - 四、外部依赖接口（EXT）：6 条
   - 五、废弃/规划接口（DEP）：5 条
-  - **合计 147 条**
+  - **合计 149 条**
 - **通用约定**：
   - 服务端监听：ThreadingHTTPServer，`0.0.0.0:{port}`，默认 18090（app.py `_load_config` / `main`）；配置经 `$ETP_CONFIG` → `server/config.local.json` → dev 默认三级加载
   - 终端上行鉴权：请求头 `X-ETP-Token`（对照 config.json `terminal_token`）> 更新 2026-09-09：收敛为**多 token 模型**——config token 或 SQLite `terminal_tokens` 表 status='active' 命中均放行（详见 UPL-010，commit 4d2924b）
@@ -1187,7 +1187,7 @@
 - **用途**：节点表/DNS 基线/uplink 配置面状态
 - **代码出处**：bridge.py `ROUTES` → net_service.py `handle_net_config`；调用方 net-doctor/web/netdoctor.js（合入 commit 628c210，main 下发）
 - **状态**：在用
-- **登记记录**：2026-09-09，代码实证（net_service.py 定义，挂载待合入）> 更新 2026-09-09：bridge.py ROUTES 已挂载，转「在用」（代码实证 bridge.py:94-103）
+- **登记记录**：2026-09-09，代码实证（net_service.py 定义，挂载待合入）> 更新 2026-09-09：bridge.py ROUTES 已挂载，转「在用」（代码实证 bridge.py:94-103）> 更新 2026-09-10：写配置新增 `ai_personal_json`（个人版 LLM 配置 api_url/api_key/model：**api_key 留空=不修改**，与 uplink token 同款语义；读取端只回传 `has_key` 布尔不回显明文；api_url 截 300 字、model 截 120 字）；`reset=1` 恢复出厂时 ai_personal **保留**（用户凭据不随恢复清除）；配置落点 app_config.json `netdoctor.ai_personal`（`_load_app_config` 读端容错）（代码实证 net_service.py:1400-1468/126-162，commit a892f62/bd965ae）
 
 #### BRG-041 配置核查 `GET /api/netdoctor/config-check`
 - **用途**：DHCP/DNS 基线比对核查任务（离线可用）
@@ -1199,7 +1199,7 @@
 - **用途**：活动网卡 IP+MAC → 平台 ipconflict 端点交叉校验；未连中心拒绝（error=not_connected）；疑似时自动调 `/api/v1/ai/analyze`
 - **代码出处**：bridge.py `ROUTES` → net_service.py `handle_net_ipconflict` → `run_ipconflict_result`（合入 commit 628c210，main 下发）
 - **状态**：在用
-- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：bridge.py ROUTES 已挂载，转「在用」（代码实证 bridge.py:96）> 更新 2026-09-09：admission_log 数据源将接入画方 NAD 准入 API（EXT-006，cross 校验源 admission_log+交换机端口证据）——sources.admission_log 由 not_connected 转 connected，server-platform-dev 实施中，落地后本条与 EXT-006 补代码实证 > 更新 2026-09-09：**sources.admission_log=connected 已上线**（commit a5156cc，api.py:383 `_enrich_ipconflict_admission` 注入）：①同 IP 异 MAC 升级判定含 `admission_registered_macs`（准入登记 MAC 与上报 MAC 不一致 → conflict_suspect=true，evidence 追加 nad 证据块 {source:'nad',name,ou,ttype,manfct/model,online,block,reginfo,macs}，api.py:1196-1200）；②core_switch_state 三态近似：上报 MAC 在准入库且有 macports 交换机记录 → `nas_connected`、有登记无端口 → `registered_no_port`、不在准入库 → `not_connected`（api.py:1187-1195）；③增强逻辑异常防御不阻断主流程（error:xx，api.py:1176-1177）。响应新增字段：admission_hit/admission/conflict_suspect/evidence/admission_registered_macs
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：bridge.py ROUTES 已挂载，转「在用」（代码实证 bridge.py:96）> 更新 2026-09-09：admission_log 数据源将接入画方 NAD 准入 API（EXT-006，cross 校验源 admission_log+交换机端口证据）——sources.admission_log 由 not_connected 转 connected，server-platform-dev 实施中，落地后本条与 EXT-006 补代码实证 > 更新 2026-09-09：**sources.admission_log=connected 已上线**（commit a5156cc，api.py:383 `_enrich_ipconflict_admission` 注入）：①同 IP 异 MAC 升级判定含 `admission_registered_macs`（准入登记 MAC 与上报 MAC 不一致 → conflict_suspect=true，evidence 追加 nad 证据块 {source:'nad',name,ou,ttype,manfct/model,online,block,reginfo,macs}，api.py:1196-1200）；②core_switch_state 三态近似：上报 MAC 在准入库且有 macports 交换机记录 → `nas_connected`、有登记无端口 → `registered_no_port`、不在准入库 → `not_connected`（api.py:1187-1195）；③增强逻辑异常防御不阻断主流程（error:xx，api.py:1176-1177）。响应新增字段：admission_hit/admission/conflict_suspect/evidence/admission_registered_macs > 更新 2026-09-10：AI 诊断批次回归核对——nad_client.py `nad_fetch_terms`（nad_client.py:109）、api.py `_enrich_ipconflict_admission`（api.py:1260）及 ipconflict 注入调用点（api.py:383）、bridge.py ipconflict 路由（bridge.py:99）均在位，批次未触碰该链路，无回归（代码实证）
 
 #### BRG-043 连通性检测启动 `GET /api/netdoctor/ping-start`
 - **用途**：8 节点逐节点 ping / nslookup / w32tm(stripchart) 探测，JSONL 落盘
@@ -1248,6 +1248,36 @@
 - **代码出处**：bridge.py `ROUTES` → net_service.py `handle_net_stress_export`（合入 commit 628c210，main 下发）
 - **状态**：在用
 - **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：bridge.py ROUTES 已挂载，转「在用」（代码实证 bridge.py:101）
+
+#### BRG-050 AI 智能诊断（双模式）`POST /api/netdoctor/ai-diagnose`
+- **用途**：六类日志包 + 问题概述 → AI 诊断结论。mode 双模式：`enterprise`=转发代理至平台终端诊断接口（SRV-070，中心模型链）；`personal`=本机直连第三方 OpenAI 兼容 API（不依赖中心）
+- **鉴权**：无（本机进程内调用；enterprise 模式的平台侧 token 仅由 uplink 后端注入，前端不接触）
+- **请求参数**：经 `bridge.call(path, body)` 第二参 JSON 透传（bridge.py `call` 对本路径特殊分支：body 解析失败按 None 处理、单参旧调用兼容）；method 不敏感（bridge 按 path 分发）
+  - `mode`：`"enterprise"`（缺省）| `"personal"`
+  - `issue`：问题概述（必填，超 2000 字截断，空串 → issue_empty）
+  - `logs`：对象，键匹配 `^[a-z_]{1,32}$` 的日志类（hwinfo/os_info/perf_analysis/perf_stress/system_log/network），值对象或字符串均收；personal 侧序列化后每类截 32768 字符
+- **响应**：成功 `{"success":true,"response_text":"<三段结构诊断>","model":"...","duration_ms":N}`；enterprise 另含 `analysis_id`（中心落库可追溯，**失败诊断也落库并透传**）；personal **无 analysis_id**（本地诊断不经中心库）
+- **错误**：`{"success":false,"error":"..."}`——enterprise：`not_connected`（未连中心）/`body_invalid`/`issue_empty`/`ai_diagnose_http_<code>: <服务端error>`（含 analysis_id）；personal：`not_configured`/`issue_empty`/`personal_http_<code>: <响应体前200字>`/`personal_request_failed`/`personal_bad_response`/`personal_empty_response`（**错误信息永不携带 api_key**）
+- **enterprise 细节**：`uplink_configured()` 前置 → `_platform_post("/api/v1/terminals/{tid}/ai/diagnose", payload, timeout=125)`（目标即 SRV-070）；同步等待 ≤120s（服务端模型链）+ 本端 125s 保护
+- **personal 细节**：配置读 app_config.json `netdoctor.ai_personal`（api_url/api_key/model，缺 url 或 model 即 not_configured；api_key 可空=无鉴权服务）；地址自适配 `_personal_chat_url`（完整 `/v1/chat/completions` 原样 / 以 `/v1` 结尾补 `/chat/completions` / 其余按 base 补 `/v1/chat/completions`）；urllib 直连 120s 超时，temperature 0.3、stream false
+- **提示词**：`_ND_AI_PROMPT_SYSTEM` 三段结构（【故障原因分析】引用日志依据/【处理意见】立即处理+建议观察/【风险提示】数据缺失）单份沉淀于 net_service（与 server-platform/server/ai.py `DIAG_SYSTEM_PROMPT` 语义对齐，防漂移；企业版 prompt 在中心侧）
+- **代码出处**：bridge.py `call`（ai-diagnose 特殊分支 bridge.py:128-133）→ net_service.py `handle_net_ai_diagnose`(1561) / `_ai_diagnose_enterprise`(1576) / `_ai_diagnose_personal`(1670) / `_ai_personal_config`(1660) / `_nd_ai_logs_text`(1621) / `_ND_AI_PROMPT_SYSTEM`(1610)
+- **状态**：在用（exe 待用户窗口重启生效，代码已入库）
+- **登记记录**：2026-09-10，代码实证（**补登**：路由与 body 双参自主应用 98c0595 第六模块已存在但漏登台账，本次补登）> 更新 2026-09-10：mode 参数扩展（net-doctor a892f62 / 主应用 bd965ae，ADR-009）——enterprise=中心转发原逻辑不变（b794381）；personal=本机 urllib 直连 OpenAI 兼容 /v1/chat/completions（120s 超时）；三段提示词常量 `_ND_AI_PROMPT_SYSTEM` 单份沉淀（与 server/ai.py DIAG_SYSTEM_PROMPT 语义对齐）；个人版配置存 app_config.json netdoctor.ai_personal（url/api_key/model，key 留空保持语义，经 BRG-040 `ai_personal_json` 写入）；personal 响应无 analysis_id（meta 本地诊断）
+
+#### BRG-051 个人版 LLM 连通性测试 `GET /api/netdoctor/ai-personal-test`
+- **用途**：个人版第三方 LLM 连通性测试（轻量 GET /models 探测，不消耗对话额度；供设置弹窗保存前验证）
+- **鉴权**：无（本机进程内调用）
+- **请求参数**：query `api_url`（必填）、`api_key`（可选，非空时加 `Authorization: Bearer <key>` 头）
+- **响应**（**语义注意：测试动作完成即 success=true，业务结论看 ok 字段**）：
+  - 可达 `{"success":true,"ok":true,"http_code":200,"hint":"服务可达（HTTP 200）"}`
+  - 服务可达但被拒（key/地址错）`{"success":true,"ok":false,"http_code":401,"hint":"服务可达但请求被拒（HTTP 401，请检查 Key / 地址）"}`
+  - 连接失败/超时 `{"success":true,"ok":false,"http_code":null,"hint":"连接失败：<原因>"}`（15s 超时）
+  - 缺参 `{"success":false,"error":"api_url_required"}`
+- **地址自适配**：`_personal_models_url`（完整 `/models` 原样 / 以 `/v1` 结尾补 `/models` / 其余按 base 补 `/v1/models`）
+- **代码出处**：bridge.py ROUTES（bridge.py:108，bd965ae +1 路由）→ net_service.py `handle_net_ai_personal_test`(1723) / `_personal_models_url`(1648)；调用方 web/netdoctor.js
+- **状态**：在用（exe 待用户窗口重启生效，代码已入库）
+- **登记记录**：2026-09-10，代码实证（net-doctor a892f62 / 主应用 bd965ae）
 
 ---
 
@@ -1415,7 +1445,7 @@
 - **消费方**：net-doctor `run_ipconflict_result`（BRG-042）admission_log 数据源接入——server-platform-dev 实施中
 - **代码出处**：server-platform/server/nad_client.py（接入客户端，commit a5156cc）；消费方 api.py `_enrich_ipconflict_admission`（api.py:1163-1200）→ BRG-042 ipconflict 端点（api.py:383 注入）
 - **状态**：在用（API 已实测联通；admission_log 数据源接入已落地）
-- **登记记录**：2026-09-09，main 下发（画方《新版本NAD对外接口说明》20251231 版 37 页解析 + 生产实测）> 更新 2026-09-09：admission_log 接入落地，补代码实证 nad_client.py（commit a5156cc）。**文档-实际差异适配 3 处（实测知识，逐条登记）**：①`list` 字段实际为 dict 形态（键为序号字符串）而非文档所述数组——`_norm_macs` 归一为列表（nad_client.py:94-95）；②macs 条目实际为对象（`{"0": {"mac":.., "ips": {"0":{..}}, "macports": null|[..]}}`）且 macports 可为 null（nad_client.py:88-92）；③单页上限实际 1000 而非文档 limit≤10000——实测 1588 台需翻页 2 页，`NAD_PAGE_LIMIT=1000` + `NAD_MAX_PAGES=50` 翻页防御（nad_client.py:28-29）；配置经 `NAD_CONFIG_ID=2` 读第三方接口登记（appkey/app_secret），全量缓存 `_cache`，签名 hmac_sha256_hex(appsecret,"appkey=..&nonce=..&time=..")
+- **登记记录**：2026-09-09，main 下发（画方《新版本NAD对外接口说明》20251231 版 37 页解析 + 生产实测）> 更新 2026-09-09：admission_log 接入落地，补代码实证 nad_client.py（commit a5156cc）。**文档-实际差异适配 3 处（实测知识，逐条登记）**：①`list` 字段实际为 dict 形态（键为序号字符串）而非文档所述数组——`_norm_macs` 归一为列表（nad_client.py:94-95）；②macs 条目实际为对象（`{"0": {"mac":.., "ips": {"0":{..}}, "macports": null|[..]}}`）且 macports 可为 null（nad_client.py:88-92）；③单页上限实际 1000 而非文档 limit≤10000——实测 1588 台需翻页 2 页，`NAD_PAGE_LIMIT=1000` + `NAD_MAX_PAGES=50` 翻页防御（nad_client.py:28-29）；配置经 `NAD_CONFIG_ID=2` 读第三方接口登记（appkey/app_secret），全量缓存 `_cache`，签名 hmac_sha256_hex(appsecret,"appkey=..&nonce=..&time=..") > 更新 2026-09-10：AI 诊断批次回归核对（net-doctor a892f62 / 主应用 bd965ae，diff 仅 bridge.py/net_service.py/web 前端）——nad_client.py 与 api.py 消费链（`_enrich_ipconflict_admission` api.py:1260/383）未被触碰，在位无回归（代码实证）
 
 ---
 
@@ -1469,6 +1499,6 @@
 
 ## 附：对账约定
 
-- 本台账对账基线 commit：工作区当前版本（bridge.py / uplink.py 有未提交修改，以台账登记时点代码为准）> 更新 2026-09-09：net-doctor 合入基线 commit 628c210（bridge.py ROUTES 含 /api/netdoctor/* 10 条）> 更新 2026-09-09：系统管理模块基线 commit 4d2924b（sysadmin 13 路由 + 多 token 模型 UPL-010 + session-info，代码实证 api.py:88-104/243-248/764-773/829+）> 更新 2026-09-09：知识库模块语义修正基线 commit 31f8e1d（KB 9 端点 ADR-022 语义 + route-nodes source 字段，代码实证 api.py:1396-1461/1369-1377/383-397、kb_store.py:43/59/157）> 更新 2026-09-09：终端 AI 智能诊断基线 commit 8aaa64e（SRV-070 diagnose + SRV-071 单条详情 + trigger=terminal_diagnose，代码实证 api.py:419-445/784-790/1160+，ADR-023）> 更新 2026-09-09：画方 admission_log 接入基线 commit a5156cc（nad_client.py + _enrich_ipconflict_admission，EXT-006 补代码实证与 3 处文档-实际差异，ADR-024）> 更新 2026-09-09：交换机管理基线 commit f031152（SRV-072~077 sysadmin 组，ADR-026，代码实证 api.py:1059-1133、settings.py:15/31、store.py:170-177）
+- 本台账对账基线 commit：工作区当前版本（bridge.py / uplink.py 有未提交修改，以台账登记时点代码为准）> 更新 2026-09-09：net-doctor 合入基线 commit 628c210（bridge.py ROUTES 含 /api/netdoctor/* 10 条）> 更新 2026-09-09：系统管理模块基线 commit 4d2924b（sysadmin 13 路由 + 多 token 模型 UPL-010 + session-info，代码实证 api.py:88-104/243-248/764-773/829+）> 更新 2026-09-09：知识库模块语义修正基线 commit 31f8e1d（KB 9 端点 ADR-022 语义 + route-nodes source 字段，代码实证 api.py:1396-1461/1369-1377/383-397、kb_store.py:43/59/157）> 更新 2026-09-09：终端 AI 智能诊断基线 commit 8aaa64e（SRV-070 diagnose + SRV-071 单条详情 + trigger=terminal_diagnose，代码实证 api.py:419-445/784-790/1160+，ADR-023）> 更新 2026-09-09：画方 admission_log 接入基线 commit a5156cc（nad_client.py + _enrich_ipconflict_admission，EXT-006 补代码实证与 3 处文档-实际差异，ADR-024）> 更新 2026-09-09：交换机管理基线 commit f031152（SRV-072~077 sysadmin 组，ADR-026，代码实证 api.py:1059-1133、settings.py:15/31、store.py:170-177）> 更新 2026-09-10：AI 诊断批次基线 net-doctor a892f62 / 主应用 bd965ae（BRG-050 补登+mode 双模式扩展、BRG-051 新增、BRG-040 ai_personal_json 写配置；bridge.py `call` body 双参透传仅 ai-diagnose 一条，bridge.py:128-133；EXT-006/BRG-042 回归核对无变化）
 - 对账方法：grep api.py `_terminal_api`/`_console_api`/`_console_kb_api`/`_console_nettest` 分支 + bridge.py `ROUTES`，与台账逐条比对，输出差异清单（新增未登记/已废弃仍登记/字段不符）
 - 维护规则：接口变更（改参数/改路径/废弃）必须同步更新台账，条目内追加 `> 更新 YYYY-MM-DD：变更点（出处）`，保留历史痕迹
