@@ -36,7 +36,7 @@
             </button>
             <button class="nav-tab" data-tab="netdoctor" onclick="switchTab('netdoctor')">
                 <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" fill="currentColor"/></svg>
-                网络监测配置
+                网络排障
             </button>
         </div>
         <div class="nav-actions">
@@ -782,19 +782,30 @@
                 .nd-muted { color: var(--text-secondary, #8a93a5); border-color: var(--border-color, #262b3a); background: var(--bg-hover, #1d212e); }
                 .nd-hint { color: var(--text-secondary, #8a93a5); font-size: 11.5px; }
                 .nd-empty { color: var(--text-muted, #5a6274); font-size: 12.5px; padding: 10px 0; }
-                /* AI 智能诊断卡排版对齐终端概览三卡设计语言（2026-09-11 用户要求，作用域限 nd-ai-card） */
-                .nd-ai-card .card-header h3 { font-size: 13.5px; font-weight: 600; color: var(--accent-cyan, #4fc3f7); letter-spacing: .5px; }
-                .nd-ai-card .card-body { padding: 15px 17px; }
-                .nd-ai-card .nd-summary { margin: 0 0 10px; line-height: 1.6; }
-                .nd-ai-card .nd-hint { font-size: 12px; }
+                /* 网络排障模块卡排版对齐终端概览三卡设计语言（2026-09-11，作用域 nd-ai-card + nd-styled；
+                   规格登记见 net-doctor/docs/STYLE.md，新卡不合规=门禁红） */
+                .nd-ai-card .card-header h3, .nd-styled .card-header h3 { font-size: 13.5px; font-weight: 600; color: var(--accent-cyan, #4fc3f7); letter-spacing: .5px; }
+                .nd-ai-card .card-body, .nd-styled .card-body { padding: 15px 17px; }
+                .nd-ai-card .nd-summary, .nd-styled .nd-summary { margin: 0 0 10px; line-height: 1.6; }
+                .nd-ai-card .nd-hint, .nd-styled .nd-hint { font-size: 12px; }
                 .nd-ai-card .nd-ai-issue { background: var(--panel2, #1d212e); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; line-height: 1.6; }
                 .nd-ai-card .nd-ai-row { margin: 10px 0 6px; }
+                /* 键值行式对齐 hm-row（左标签右值 + dashed 底线，网卡卡/IP 冲突检测对象等全 nd 生效） */
+                .nd-kv { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; font-size: 12.5px; margin: 0; border-bottom: 1px dashed rgba(42,47,69,.6); }
+                .nd-kv:last-child { border-bottom: none; }
+                .nd-kv .k { color: var(--text-secondary, #8a93a5); flex-shrink: 0; }
+                /* 表格对齐口径：表头 secondary 小字 + 行分隔细线 + 斑马底纹 */
+                .nd-table th { color: var(--text-secondary, #8a93a5); font-weight: 600; background: rgba(255,255,255,.02); border-bottom: 1px solid var(--border-color, #262b3a); }
+                .nd-table tbody tr:nth-child(even) { background: rgba(255,255,255,.015); }
+                .nd-table td { border: none; border-bottom: 1px solid rgba(42,47,69,.55); }
+                /* 中心平台状态条对齐卡头语言（标题青色 13.5px + 内边距 17px，对齐五卡卡体） */
+                .nd-statusbar > b { font-size: 13.5px; font-weight: 600; color: var(--accent-cyan, #4fc3f7); letter-spacing: .5px; }
                 .nd-summary { font-size: 12px; color: var(--text-secondary, #8a93a5); margin-top: 8px; min-height: 16px; word-break: break-all; }
                 .nd-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 6px 0; }
                 .nd-table th, .nd-table td { border: 1px solid var(--border-color, #262b3a); padding: 5px 9px; text-align: left; }
                 .nd-table th { background: var(--bg-hover, #1d212e); color: var(--text-secondary, #8a93a5); font-weight: 600; white-space: nowrap; }
                 .nd-num { font-variant-numeric: tabular-nums; }
-                .nd-statusbar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--bg-card, #171a23); border: 1px solid var(--border-color, #262b3a); border-radius: var(--radius, 10px); margin-bottom: 14px; flex-wrap: wrap; }
+                .nd-statusbar { display: flex; align-items: center; gap: 10px; padding: 10px 17px; background: var(--bg-card, #171a23); border: 1px solid var(--border-color, #262b3a); border-radius: var(--radius, 10px); margin-bottom: 14px; flex-wrap: wrap; }
                 .nd-adapter { border: 1px solid var(--border-color, #262b3a); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; background: rgba(255,255,255,.02); }
                 .nd-adapter.nd-dim { opacity: .6; }
                 .nd-adapter-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
@@ -860,7 +871,7 @@
                 .nd-set-card > b { display: block; font-size: 13px; margin-bottom: 8px; }
             </style>
             <div class="page-header">
-                <h2>网络监测配置</h2>
+                <h2>网络排障</h2>
                 <p class="page-subtitle">配置核查 · IP 冲突 · 连通性测试 · 路由追踪 · 网络压测</p>
                 <button class="btn btn-ghost" onclick="toggleAllCards(this)">📁 收纳全部</button>
             </div>
@@ -872,7 +883,7 @@
             </div>
 
             <!-- ① 配置核查 -->
-            <div class="section-card" data-collapse>
+            <div class="section-card nd-styled" data-collapse>
                 <div class="card-header">
                     <h3>① 配置核查</h3>
                     <span id="ndConfBadge"></span>
@@ -888,7 +899,7 @@
             </div>
 
             <!-- ② IP 冲突检测 -->
-            <div class="section-card" data-collapse>
+            <div class="section-card nd-styled" data-collapse>
                 <div class="card-header">
                     <h3>② IP 冲突检测</h3>
                     <div class="disk-toolbar">
@@ -903,7 +914,7 @@
             </div>
 
             <!-- ③ 连通性测试 -->
-            <div class="section-card" data-collapse>
+            <div class="section-card nd-styled" data-collapse>
                 <div class="card-header">
                     <h3>③ 连通性测试</h3>
                     <div class="disk-toolbar">
@@ -922,7 +933,7 @@
             </div>
 
             <!-- ④ 路由追踪 -->
-            <div class="section-card" data-collapse>
+            <div class="section-card nd-styled" data-collapse>
                 <div class="card-header">
                     <h3>④ 路由追踪</h3>
                     <div class="disk-toolbar">
@@ -937,7 +948,7 @@
             </div>
 
             <!-- ⑤ 网络压测 -->
-            <div class="section-card" data-collapse>
+            <div class="section-card nd-styled" data-collapse>
                 <div class="card-header">
                     <h3>⑤ 网络压测</h3>
                     <div class="disk-toolbar">
@@ -983,7 +994,7 @@
         </div>
     </main>
 
-    <!-- 设置（中心平台接入 / 性能分析 / 网络监测配置挂载点） -->
+    <!-- 设置（中心平台接入 / 性能分析 / 网络排障挂载点） -->
     <style>
         .app-settings-overlay { display: none; position: fixed; inset: 0; background: rgba(6,8,12,.72); z-index: 998; align-items: center; justify-content: center; }
         .app-settings-panel { width: min(760px, 92vw); max-height: 84vh; overflow: auto; background: var(--bg-card, #171a23); border: 1px solid var(--border-color, #262b3a); border-radius: 12px; box-shadow: 0 12px 44px rgba(0,0,0,.55); }
@@ -1042,7 +1053,7 @@
                         <button class="btn btn-primary" id="perfSaveAppConfigBtn" onclick="saveTempsInterval()">保存</button>
                     </div>
                 </div>
-                <!-- 网络监测配置（net-doctor：渲染于 web/netdoctor.js ndRenderSettings） -->
+                <!-- 网络排障（net-doctor：渲染于 web/netdoctor.js ndRenderSettings） -->
                 <div class="settings-card" id="ndSettingsHost"></div>
             </div>
         </div>

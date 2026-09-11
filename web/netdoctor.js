@@ -309,7 +309,7 @@ function ndRenderNodes() {
     if (tip) {
         tip.textContent = ndState.expectedDns.length
             ? ("DNS 基线：" + ndState.expectedDns.join("，"))
-            : "DNS 基线未配置（app_config.netdoctor.expected_dns 为空），核查仅展示实测值";
+            : "未配置 DNS 基线，当前展示实测值（可在设置中配置基线比对）";
     }
 }
 
@@ -1279,7 +1279,7 @@ function ndRenderSettings() {
     /* 2026-09-10 UX 重构：两卡独立（settings-card 样式与 perf 端统一）；文案去实现细节 */
     host.innerHTML =
         '<div class="nd-set-card">'
-        + '<b>网络监测配置</b>'
+        + '<b>网络排障</b>'
         + '<div class="nd-params" style="margin:8px 0 6px"><label>DNS 基线（逗号分隔，空=仅提示未配置）</label>'
         + '<input class="nd-input" id="ndSetDns" value="' + ndEscapeHtml(dnsVal) + '" style="width:240px"></div>'
         + '<table class="nd-table"><tr><th>节点名称</th><th>方式</th><th>目标</th><th>探测参数</th><th>操作</th></tr>'

@@ -1305,7 +1305,7 @@ def stress_report_html(r):
     dt = datetime.fromtimestamp(r.get("ts") or time.time()).strftime("%Y-%m-%d %H:%M:%S")
     return ("<!DOCTYPE html><html lang='zh-CN'><head><meta charset='utf-8'>"
             "<title>NetStress 压测报告</title><style>%s</style></head><body><div class='wrap'>"
-            "<header><div class='brand'>观枢终端平台｜EyeTerm · 网络监测配置</div>"
+            "<header><div class='brand'>观枢终端平台｜EyeTerm · 网络排障</div>"
             "<h1>网络压测报告</h1><div class='meta'>目标 %s ｜ 生成时间 %s</div></header>"
             "<h2>综合结论</h2><div><span class='badge %s'>%s</span>"
             "<span style='margin-left:10px;font-size:13px'>%s</span></div>"
