@@ -790,6 +790,9 @@
                 .nd-ai-card .nd-hint, .nd-styled .nd-hint { font-size: 12px; }
                 .nd-ai-card .nd-ai-issue { background: var(--panel2, #1d212e); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; line-height: 1.6; }
                 .nd-ai-card .nd-ai-row { margin: 10px 0 6px; }
+                /* 提交诊断按钮贴右缘（2026-09-11 用户点名）：分段保持现位，toolbar 弹性占满后按钮 margin-left:auto */
+                .nd-ai-card .card-header .disk-toolbar { flex: 1 1 auto; }
+                .nd-ai-card .card-header #ndAiBtn { margin-left: auto; }
                 /* 键值行式对齐 hm-row（左标签右值 + dashed 底线，网卡卡/IP 冲突检测对象等全 nd 生效） */
                 .nd-kv { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; font-size: 12.5px; margin: 0; border-bottom: 1px dashed rgba(42,47,69,.6); }
                 .nd-kv:last-child { border-bottom: none; }
