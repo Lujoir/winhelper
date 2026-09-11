@@ -102,6 +102,7 @@ function initNetDoctorTab() {
         ndState.aiMode = localStorage.getItem("nd_ai_mode") === "personal" ? "personal" : "enterprise";
     } catch (e) { ndState.aiMode = "enterprise"; }
     ndAiRenderMode();
+    ndInitCollapsible();   /* 独立页折叠注入（主应用由 app.js 提供；五卡默认收起见 HTML collapsed 类） */
     ndSizesEcho();   /* 压测包长档位回显（localStorage 逗号串，2026-09-10 分档重构） */
     ndDurEcho();     /* iperf3 每轮时长回显（自定义档=custom:秒，2026-09-10 档位扩充） */
     ndLoadConfig();
@@ -352,7 +353,42 @@ function ndStopPoller(taskId) {
 
 /* ===================== ① 配置核查 ===================== */
 
+function ndExpandCard(anchorId) {
+    /* 收起卡的开始按钮点击 → 先展开再启动（2026-09-11 用户要求：五卡默认收起；
+       已展开卡无操作，不重复展开）。轮询/渲染与 DOM 显隐无耦合，收起不中断任务。 */
+    var btn = document.getElementById(anchorId);
+    var card = btn ? btn.closest(".section-card") : null;
+    if (card && card.classList.contains("collapsed")) {
+        card.classList.remove("collapsed");
+    }
+}
+
+function ndInitCollapsible() {
+    /* 独立页折叠机制（主应用由 app.js initCollapsibleCards 提供，此处等效补充；
+       主应用环境检测到宿主函数则跳过，避免双重注入） */
+    if (typeof initCollapsibleCards === "function") { return; }
+    var cards = document.querySelectorAll(".section-card[data-collapse]");
+    for (var i = 0; i < cards.length; i++) {
+        var card = cards[i];
+        var header = card.querySelector(".card-header");
+        if (!header || header.dataset.collapseInit) { continue; }
+        header.dataset.collapseInit = "1";
+        header.style.cursor = "pointer";
+        var chev = document.createElement("span");
+        chev.className = "nd-chevron";
+        chev.textContent = "▾";
+        header.appendChild(chev);
+        (function (c, h) {
+            h.addEventListener("click", function (e) {
+                if (e.target.closest("button, select, input, a, label")) { return; }
+                c.classList.toggle("collapsed");
+            });
+        })(card, header);
+    }
+}
+
 function ndStartConfigCheck() {
+    ndExpandCard("ndConfBtn");
     var btn = document.getElementById("ndConfBtn");
     if (btn) { btn.disabled = true; }
     ndSetTip("ndConfSummary", "采集中（ipconfig /all）…");
@@ -454,6 +490,7 @@ function ndRenderConfig(r) {
 /* ===================== ② IP 冲突检测 ===================== */
 
 function ndStartConflict() {
+    ndExpandCard("ndConflictBtn");
     var btn = document.getElementById("ndConflictBtn");
     if (btn) { btn.disabled = true; }
     ndSetTip("ndConflictSummary", "向中心查询中…");
@@ -807,6 +844,7 @@ function ndRenderDeep(t, running) {
 /* ===================== ③ 连通性测试 ===================== */
 
 function ndStartPing() {
+    ndExpandCard("ndPingBtn");
     var btn = document.getElementById("ndPingBtn");
     if (btn) { btn.disabled = true; }
     ndRenderNodes();   /* 重置为待检测 */
@@ -894,6 +932,7 @@ function ndRenderHistory(d) {
 /* ===================== ④ 路由追踪 ===================== */
 
 function ndStartTracert() {
+    ndExpandCard("ndTracertBtn");
     var input = document.getElementById("ndTracertTarget");
     var target = (input && input.value || "").trim();
     if (!target) { ndSetTip("ndTracertSummary", "请输入目的 IP 或域名"); return; }
@@ -1079,6 +1118,7 @@ function ndDurEcho() {
 }
 
 function ndStartStress() {
+    ndExpandCard("ndStressBtn");
     var btn = document.getElementById("ndStressBtn");
     var cancelBtn = document.getElementById("ndStressCancelBtn");
     var sr = ndReadSizes();
