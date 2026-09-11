@@ -1,0 +1,14 @@
+ERROR: The system cannot find the file specified.
+ Volume in drive C is Windows
+ Volume Serial Number is DAF9-5944
+
+ Directory of C:\Users\10604\AppData\Local\Programs
+
+File Not Found
+
+ Directory of c:\Users\10604\CodeBuddy\20260522083146
+
+
+ Directory of c:\Users\10604\CodeBuddy\20260522083146
+
+File Not Found

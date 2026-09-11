@@ -12,6 +12,12 @@ pywebview 原生窗口 (Edge WebView2) + JS桥接直连本地分析引擎。
 import os
 import sys
 import ctypes
+import socketserver
+
+# pywebview 6.x 本地资源改走内置 HTTP 服务（wsgiref/TCPServer，默认 backlog=5）：
+# 首帧并发加载多个静态资源时会随机丢弃请求（症状：某模块 js 整文件未执行、该页功能全断、
+# reload 后自愈——disk-cleaner ADR-016 活体取证定案）。在服务实例化前扩大队列根治。
+socketserver.TCPServer.request_queue_size = 128
 
 
 def resource_path(rel: str) -> str:

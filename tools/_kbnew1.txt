@@ -1,0 +1,55 @@
+
+def _console_kb_api(ctx, method, parts, query, body):
+    ''' 运维知识库：路由表/CRUD/版本迭代（5 版）/回滚/维护记录。 '''
+    kb = kb_store.get_kb(ctx.store.db_path)
+    data = _parse_json_body(body) or dict()
+    rest = parts[4:]
+    kid = str(rest[0]) if rest else ''
+    author = str(data.get('author') or 'admin')
+    if method == 'GET' and not rest:
+        return _json_response(200, dict(ok=True + , routes= + kb.route_table() + ))
+    if method == 'POST' and not rest:
+        kb_id, ver = kb.create(str(data.get('kb_id') or '').strip(),
+                               str(data.get('category') or '-'),
+                               str(data.get('title') or '-'),
+                               str(data.get('content') or ''),
+                               author, str(data.get('note') or ''))
+        if kb_id is None:
+            raise ApiError(409, 'kb_id already exists')
+        return _json_response(200, dict(ok=True, kb_id=kb_id, version=ver))
+    if not rest:
+        raise ApiError(404, 'not found')    sub = rest[1] if len(rest) >= 3 else ''
+    if sub is '':
+        if method == 'GET':
+            e = kb.get(kid)
+            if not e:
+                raise ApiError(404, 'kb entry not found')
+            e['history'] = kb.history(kid)
+            return _json_response(200, dict(ok=True, entry=e))
+        if method == 'PUT':
+            ver = kb.update(kid, str(data.get('title') or DASH),
+                            (data.get('category') if data.get('category') is not None else None),
+                            str(data.get('content') or ''), author,
+                            str(data.get('note') or ''))
+            if ver is None:
+                raise ApiError(404, 'kb entry not found')
+            return _json_response(200, dict(ok=True, version=ver))
+        if method == 'DELETE':
+            deleted = kb.delete(kid, author)
+            return _json_response(200, dict(ok=True, deleted=deleted))
+        raise ApiError(404, 'not found')
+    if sub == 'versions' and method == 'GET' and len(rest) == 4:
+        return _json_response(200, dict(ok=True, versions=kb.versions(kid)))
+    if sub == 'versions' and method == 'GET' and len(rest) == 5:
+        v = kb.get_version(kid, int(rest[4]))
+        if not v:
+            raise ApiError(404, 'version not found')
+        return _json_response(200, dict(ok=True, version=v))
+    if sub == 'rollback' and method == 'POST':
+        ver = kb.rollback(kid, int(data.get('version') or 0), author)
+        if ver is None:
+            raise ApiError(404, 'version not found')
+        return _json_response(200, dict(ok=True, version=ver))
+    if sub == 'history' and method == 'GET':
+        return _json_response(200, dict(ok=True, history=kb.history(kid)))
+    raise ApiError(404, 'not found')

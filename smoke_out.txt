@@ -1,0 +1,10 @@
+PASS create_ok
+PASS dup_409
+PASS versions_3
+PASS versions_capped_5
+PASS get_latest
+PASS rollback_ok
+HACTS: ['update', 'update', 'update', 'update', 'update', 'update', 'update', 'update', 'create']
+FAIL history_ok
+PASS route_ok
+RESULT: 7/8

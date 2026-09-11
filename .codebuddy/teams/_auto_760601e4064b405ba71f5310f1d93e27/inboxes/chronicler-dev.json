@@ -1,0 +1,137 @@
+[
+  {
+    "id": "msg-1789005116193-6ps22h",
+    "from": "team-lead",
+    "to": "chronicler-dev",
+    "type": "message",
+    "content": "转办给接口登记官的委托（你当前团队内有 api-registrar-dev 的完整定义 .codebuddy/agents/api-registrar-dev.md，但该成员不在团队中——请你按其体例代为执行本次登记，或告知 main 需重新拉起。若代执行：产出写入 docs/API-REGISTRY.md 并以「来源：main 下发（代登记）」标注）：\n\n登记任务：net-doctor AI 诊断批次（net-doctor a892f62 / 主应用 bd965ae，代码已入库、exe 待用户窗口重启生效）。\n1. 新增 BRG 条目：GET /api/netdoctor/ai-personal-test（个人版第三方 LLM 连通性测试，bridge.py +1 路由）\n2. BRG ai-diagnose 条目追加更新行：handle_net_ai_diagnose 扩展 mode 参数（enterprise=中心转发原逻辑 / personal=本机 urllib 直连 OpenAI 兼容 /v1/chat/completions 120s；三段提示词常量 _ND_AI_PROMPT_SYSTEM 单份沉淀于 net_service）；个人版配置存 app_config netdoctor.ai_personal（url/api_key/model，key 留空保持）；双模式切换与 gate 仅限企业版属页面集成不入账\n3. 核对 EXT-006/BRG-042 无回归\n完成后简短确认（总条目数与 commit）。",
+    "timestamp": "2026-09-10T01:51:56.193Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789005155215-7qkd44",
+    "from": "team-lead",
+    "to": "chronicler-dev",
+    "type": "message",
+    "content": "更正：刚才那条接口登记委托作废——跨岗代执行不符合职责边界（接口登记归 api-registrar-dev，main 已重新拉起该成员承接）。你只需继续编年史官本职：本次补记任务已完成验收（5594b0e），转入待命等下一批里程碑。抱歉造成困扰。",
+    "timestamp": "2026-09-10T01:52:35.215Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789023540570-lsluwo",
+    "from": "team-lead",
+    "to": "chronicler-dev",
+    "type": "message",
+    "content": "新一批编年史任务（2026-09-09~09-10，按你的体例 git 实证后记入，全部发生在 #29 之后）：\n\n1. **画方准入 HTTP API 接入**（服务端+数据源打通）：main 解析厂商 PDF→确认 HMAC-SHA256 签名+term/get 接口（实测 1588 台资产含 MAC→IP→接入交换机端口链路）→nad_client.py+ipconflict verdict 注入（admission_log=connected，同 IP 异 MAC 升级判定，3 处文档-实际差异适配：list dict 形态/macs 条目对象/单页上限 1000 翻页）。考证：server-platform a5156cc、主仓库 611245e（spawn_server 补录 721afb1 也在本批）\n2. **服务端「交换机管理」上线**：默认 SSH 只读凭据（SecretsBox 加密）+ 交换机台账 CRUD + 审计四类事件。考证：server-platform f031152（ADR-026）\n3. **AI 智能诊断九项优化**：连接判定 Bug 根因修复（一次性守卫+首帧 connecting 误判）+ 8 项 UX（置顶/时间段引导/留白/日志默认收起+网络类子选项/结果三段渲染/探测按钮移位/时间范围勾选/数据源新鲜度）+ **双模式**（企业版中心链/个人版本地直连第三方 LLM 不依赖中心）。考证：net-doctor a892f62（E2E 153/153）、主应用 bd965ae；新 exe 18:00→09:51 构建待重启生效（如实标注）\n4. **AI 诊断 GUI 上线确认**：09-10 08:55 终端启动运行 18:00 版（含第六模块），服务端 analysis_id=12 真实链路已验证\n\n完成后照常汇报总条目数与 commit 号。",
+    "timestamp": "2026-09-10T06:59:00.570Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789023866685-t99oay",
+    "from": "team-lead",
+    "to": "chronicler-dev",
+    "type": "message",
+    "content": "第二批验收通过（#30~#33 四条全部哈希实证、时间线正序处理正确、#32 无 git 变更如实标注）。\n\n裁定：**ETag 协商缓存（25d48e2）批准补记**——它解决的是用户实测踩中的「页面缓存旧版」实际故障（2026-09-09 控制台旧页面问题），符合里程碑标准，且已部署生产并 304 实测验证。下批入史条目要点供参考：\n- 2026-09-10 · 静态资源 ETag/Last-Modified 协商缓存上线：_static 支持 If-None-Match 304 revalidate（弱验证器 W/\"mtime-size\"），no-cache 语义保持；根治 09-09 控制台 index.html 更新后浏览器启发式缓存旧页面问题；实测 first 200 + revalidate 304。考证：server-platform 25d48e2、主仓库 b4c7964（gitlink 前进）、部署备份 api.py/app.py.bak.20260910_etag\n其余照常待命。",
+    "timestamp": "2026-09-10T07:04:26.685Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789027345627-yxdizy",
+    "from": "team-lead",
+    "to": "chronicler-dev",
+    "type": "message",
+    "content": "补记一条里程碑（追加到你当前批次）：\n\n【2026-09-10 ~16:05】AI 智能诊断卡宿主迁移主页上线\n- 需求：用户要求将网络排障页「AI 智能诊断」卡移动到主页「终端概览」上方（移动非复制）\n- 交付：net-doctor commit 4e579a0（netdoctor.js boot/visibilitychange 覆盖 home 激活 + E2E 宿主断言 + ADR-010）+ 主应用 commit 0289ca4（index.html 卡片迁移、app.js switchTab home 分支联动 initNetDoctorTab）\n- 验证：E2E 155/155 双场景 pageerror=0；main 验收后 PyInstaller 重建 exe，替换 dist_new 并重启运行（PID 53108），用户可见\n- 同步：主仓库 GitLab 远程推送成功（b69725d..0289ca4，git.wzeye.cn/zlj/eyeterm 内网 GitLab 首批正式启用）\n- 意义：主页成为终端状态+AI 诊断一体化入口；网络排障聚焦 5 大探测模块",
+    "timestamp": "2026-09-10T08:02:25.627Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789028150301-wn2b89",
+    "from": "team-lead",
+    "to": "chronicler-dev",
+    "type": "message",
+    "content": "补记一条里程碑（追加）：\n\n【2026-09-10 ~16:18】主页 AI 卡门控陈旧缺陷修复上线\n- 缺陷：用户实测反馈主页 AI 智能诊断卡显示「未连接中心平台」，同屏平台接入徽章=已连接。根因：boot 期 home 默认激活即查中心状态，此时 uplink 尚在注册期 → 门控误判；ndState.uplink 为缓存值仅 switchTab/visibilitychange 才重查，常驻主页无补救路径\n- 修复：net-doctor f603838 + 主应用 4330047（同步副本 MD5 一致）——netdoctor.js 自包含常驻轻量轮询 10s（ND_UPLINK_POLL_MS），可见+宿主页（tab-home/tab-netdoctor）激活才请求、busy 防重叠、已连接后保持低频轮询覆盖停驻期断连反向陈旧；零 home.js 改动，standalone 页天然生效\n- 验证：E2E 160/160 双场景 pageerror=0（+5 断言：connecting→connected 不切 tab 自动翻转、error 反向翻转）；main 验收后 exe 重建替换 dist_new 并重启（PID 51800）\n- 同步：GitLab 推送 0289ca4..4330047\n- 意义：主页 AI 诊断卡从「激活时快照」升级为「常驻自愈」，与主页冻结修复（15s 超时自愈）同属终端 UI 可信性防线",
+    "timestamp": "2026-09-10T08:15:50.301Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789031658409-p35s1t",
+    "from": "team-lead",
+    "to": "chronicler-dev",
+    "type": "message",
+    "content": "补记里程碑（可并入当前批次）：\n\n【2026-09-10 17:15】AI 诊断「证据饥饿+虚构引用」缺陷全链路修复上线（用户实测报告驱动）\n- 取证：main SSH 直查生产 ai_analyses id=16——system_log 存证恰 4000 字符截断且内层 JSON 损坏、24h 窗口最新优先仅 ~6 条进 prompt、描述占位符、os_info 乱码；模型虚构 WHEA-Logger 17 等日志依据\n- 终端侧（net-doctor 672e3ff / 主应用 34a8794，ADR-011）：提示词三条硬约束、事件瘦身（占位符→(描述缺失)、描述 200 字截断）、渲染剥离 Markdown、折叠态体量汇总+未采集源提交确认、E2E 桩对齐真实事件结构；E2E 166/166、冒烟 65/65\n- 服务端（server-platform 47de462 + 91b2fe6，ADR-027，已部署生产）：prompt 每类 16KB/存证 32KB/总预算 32KB、system_log 恒优先+关键词优先分配、truncate_text 结构感知（恒可 json.loads）、logs_stats 如实存证+控制台徽章、企业版提示词同款硬约束、双向乱码探测；单测 62/62、生产冒烟 10/10、analysis_id=19 实证「未提供类显式声明证据不足」不再虚构\n- 乱码根因交叉结论：服务端三环节自证清白，指向终端采集子进程代码页错位（待真实链路复测 logs_stats.suspect_mojibake 逐类定位）\n- 部署：终端新 exe 全量重建上线（过程踩坑：PyInstaller 增量检查未纳入变更需 --clean；dist_new 文件锁竞争后以 dist_v3 收敛单实例）；v2 安装包 16:55 重生成；GitLab 推送 34a8794..d6e05e0（含子仓库指针前进）\n- 状态：真实链路复测由用户发起，main 验证新 analysis_id",
+    "timestamp": "2026-09-10T09:14:18.409Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789036838527-cwwzal",
+    "from": "team-lead",
+    "to": "chronicler-dev",
+    "type": "message",
+    "content": "批量补记（2026-09-10 17:50~18:39 五个交付 + 一次数据维护，全部已上线）：\n\n1.【c7219c7/a500302】个人版 Key 测试语义缺陷：连通性测试留空 Key 时裸请求必 401 误判 → 后端回退已保存 Key（used_key 三态）、none 不发请求、401 hint 精确化、诊断 401 附指引、placeholder 消除 dots 错觉；E2E 177/177、冒烟 68/68\n2.【ae02400/87bdfd9】AI 诊断两尾巴：结构感知预算裁剪 ndAiPackLogs（存证恒可 json.loads）+ 提交防重入（aiSubmitting + 全链路按钮禁用，消除 id=21/22 双击双提交）；E2E 170/170\n3.【2c43354/7420a0e】AI 结果区/历史列表文本可选复制（容器级 user-select:text 覆盖，根因为 WebView2 环境默认差异，全局不扩大化）；E2E 174/174\n4.【e5b55c8/7ec49cb，ADR-012】模块更名「网络排障」→「网络监测配置」（仅 6 处用户可见文案，内部标识零改动）+ 默认表保障（DEFAULT_NODES 本体已正确，补全新环境/恢复默认防回归断言 + 旧 app_config.json 残留运维口径）；E2E 179/179、冒烟 72/72\n5. 数据维护：服务端知识库路由表 route_nodes v1→v2（用户提供 9 节点基线，全部 /32 精确匹配——核心与汇聚同 /24、四防火墙同 /24 避免网段误标；控制台回读+终端端点双链路 PASS），tracert 区域标注即时生效，旧版本可回滚\n6. 发布：v5 安装包 18:29:33；GitLab 推送至 95f23b9（含子仓库指针）；过程中踩坑定型为运维惯例——管理员权限运行过的 winhelper 实例锁文件需用户手动关闭，Stop-Process 静默失败须轮询清零+重试复制\n- 状态：ADR-027 终验待用户下次提交诊断（存证 json.loads 转 PASS + items 出数即全绿闭环）",
+    "timestamp": "2026-09-10T10:40:38.527Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789042799381-rhsj5h",
+    "from": "team-lead",
+    "to": "chronicler-dev",
+    "type": "message",
+    "content": "补记里程碑（重要级）：\n\n【2026-09-10 19:33~20:19】IP 冲突深度检测引擎 Phase A/B 全程闭环上线（用户提供网工级业务规格）\n- Phase A 盘点（纯盘点未改码）：paramiko 5.0 与 Comware V7 老算法不兼容→锁定 3.5.1 实测通过；NAD term/get macports 字段实测（1348/1594 有值）直出接入交换机+管理IP+端口，「顺藤摸瓜」成立；switches 台账空+reader 认证失败→列为用户侧前置\n- Phase B（9e604a7+cc34bae 部署生产，备份 pre_20260910_201100/202130）：deep_engine.py 五步编排 resolve（kb route_nodes 最长前缀+gw_ip）→arp（display arp | include，≥2 不同 MAC=冲突实锤）→nad（macports.manip 接入交换机）→macaddr（display mac-address 多端口=漂移信号）→conclude（四态结论+证据链）；命令只读白名单+逐命令审计+SSH 凭据零回显；异步端点 POST/GET ipconflict-deep（Semaphore(2) 满 429）；管理端点 NAD 设备清单导出辅助台账补录；单测 40/40\n- 生产实测三连：真实终端三任务全链——降级链路实证（ARP 认证失败如实标注不阻断）；知识库 route_nodes v4 补录 172.17.90.0/24→gw_ip 映射实证「网段→网关」维护能力；NAD 步骤命中真实准入证据（赵吕骏的办公电脑，双 IP 登记）\n- 外部前置待用户：交换机 reader 开户（开户后 ARP/MAC 步骤代码零改动自动激活）；接入交换机管理网 192.168.254.0/24 可达性待确认\n- ADR-029 落档 + ADR-002 修订例外清单制（paramiko 仅 engine 模块）\n- 配套：ipconflict 污染清洗+判定精化（257ed21，ADR-028）、SRV-078/079 已登记（台账 151 条）",
+    "timestamp": "2026-09-10T12:19:59.381Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789044543429-chro7z",
+    "from": "team-lead",
+    "to": "chronicler-dev",
+    "type": "message",
+    "content": "补记（#41 的收尾条目，可并入或相邻）：\n\n【2026-09-10 20:48】深度检测终端 UI 交付上线（net-doctor edbbbbe / 主应用 3a09a77，ADR-014）\n- 后端纯转发双路由 /api/netdoctor/conflict-deep-{start,poll}（错误映射 400/404/429，秒级返回不占本地任务引擎）\n- 前端：IP 冲突结果卡「深度检测」入口 + 2.5s×60 轮询渐进渲染五步时间线（语义色徽章/multi 漂移信号标注/commands 折叠/evidence 等宽）+ 防重入统一复位\n- 门禁：E2E 210/210、冒烟 87/87\n- 至此深度检测全链闭合：终端 UI → 服务端五步编排 → 交换机/准入取证；唯余用户侧交换机 reader 开户后 ARP/MAC 步骤自动全通\n- 发布：v7 安装包 20:48:24；GitLab 推送至 a83e246；子代理遗留临时文件已清理",
+    "timestamp": "2026-09-10T12:49:03.429Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789044698344-6vjrc6",
+    "from": "team-lead",
+    "to": "chronicler-dev",
+    "type": "message",
+    "content": "ADR-013 补记要点下发（建议与 perf 端 ADR-019 合并为一条「设置弹窗卡片化重构」，两半一次记全，消除缺环）：\n\n【2026-09-10 19:47~20:00】设置弹窗卡片化重构（用户四点要求：文字清理/配置类型直观区分/每类保存按钮独立/排版不贴边）\n- perf 半场（01b85c2，ADR-019）：app-settings-body 内边距 ≥16px、settings-card 卡片规格（圆角 10px/1px 边框/卡片间距 12px）、「中心平台接入」「性能分析」两卡归位（savePerfUplink/saveTempsInterval 逻辑零改动）、#ndSettingsHost 挂载锚点；E2E 107/107\n- net-doctor 半场（1f60f95，ADR-013）：「网络监测配置」「AI 诊断·个人版」两卡经 ndSettingsMountPoint() 挂载（优先 #ndSettingsHost 回退动态创建）；ndSettingsSaveBtn id 沿用兼容 + AI 卡独立保存 ndSetAiSaveBtn（ndSaveAiPersonal 仅提交 ai_personal_json，零后端新增）；用户点名冗余说明整行删除（「配置保存在本机 app_config.json…」「网关与中心服务器目标为动态获取」降级 title）\n- 补采模态：原生 confirm 废除→自绘「完善诊断数据源」；可补采三类（tracert 目标取 center 动态值/stress 需连中心禁勾/perf_stress 前端直调 /api/perf/stress-start 跨模块零后端新增）+ 不可补采行内重采；「采集并提交（失败不阻断降级）/直接提交/取消」三按钮；aiSubmitting 防重入覆盖补采全程\n- AI 头部按钮组：ndAi 作用域限定 CSS（贴右缘/等宽等高/激活实心青底深色字/禁用灰化），不波及共用样式\n- URL 归一化防假阳性：_personal_norm_url 折叠连续斜杠（实证 //v1 落入 New API 站点兜底页返回 200+HTML 的假阳性）；200 响应体校验（HTML→「该地址不是 API 接口」）；placeholder 标准化\n- IP 冲突路由解析：Find-NetRoute 锁定中心通信网卡（回退活动网卡如实标注）+ suspect_reasons/nic_history 消费渲染\n- 门禁：E2E 190/190、冒烟 72/72；v6 安装包 20:00:02；GitLab 3069ea7\n- 关联：interface 台账 SRV-070/078/079、BRG-050/051 更新（d5fc4fa）\n\n补记完成回报 commit，我推送。",
+    "timestamp": "2026-09-10T12:51:38.344Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789044919129-bq89om",
+    "from": "team-lead",
+    "to": "chronicler-dev",
+    "type": "message",
+    "content": "勘误澄清：01b85c2 不是口述错误，而是**主仓库（workspace 根）提交**——perf-analyzer-dev 汇报的是双仓库两哈希（perf-analyzer 仓 011f086 + 主应用仓 01b85c2），你考证时在 perf-analyzer 仓里查 01b85c2 自然 unknown revision。实证路径：主仓库 `git log --oneline` 可见 `01b85c2 feat: 设置弹窗卡片化重构 — settings-card 布局(中心平台接入/性能分析/网络监测挂载点)+文案清理+独立保存按钮 (perf-analyzer ADR-019)`（main 于 19:52 验收时已实证）。\n\n请小改：#43 考证段改为「perf-analyzer 011f086 + 主仓库 01b85c2 双仓库实证」，删除「unknown revision 勘误」表述（保留双仓库对应关系说明即可）。改完回报 commit，我推送。今后多仓库哈希考证请先核对仓库归属再判存在性。",
+    "timestamp": "2026-09-10T12:55:19.129Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789046621056-46jfqy",
+    "from": "team-lead",
+    "to": "chronicler-dev",
+    "type": "message",
+    "content": "补记批次（晚间第二波，按语义归并）：\n\n【#44 AI 辅助分析修复与升级（net-doctor acee817+5974d81 / 主应用 b344bbc，ADR-015）】字段错位根除（平台返回 response vs 旧提取链 analysis/content/result 永落空——「（无内容）」根因）+ 手动重跑按钮（新路由 /api/netdoctor/conflict-ai-reanalyze，bridge+NET_ROUTES 双挂载）+ model/analysis_id 透传；E2E 222/222、冒烟 103/103\n【#45 bridge 漏挂载热修复（主应用 40abd3f / net-doctor aa57c1b）】api-registrar 代码实证 NET_ROUTES 新增未同步 bridge.py ROUTES → v8 主应用深度检测按钮断链；热修复+真实 bridge 链路冒烟+「ROUTES 覆盖 NET_ROUTES 全键」自动化门禁固化（桩 E2E 不覆盖 bridge 分发层的教训入 ADR-014 检查单）；冒烟 91/91\n【#46 ADR-030 IP 冲突聚合分支（server-platform a8a6b95 部署生产）】/ai/analyze 四源聚合（冲突上报窗口/准入资产/深度检测证据链/数据源状态位），结构感知预算+证据硬约束同款；真实 LLM 实证 analysis_id=27 零编造；识别兼容实证（终端 issue 前缀命中，终端零改动）；单测 29/29\n【台账对齐】接口登记四批 149→154（75f7784/d5fc4fa/0dfda0c/1fa7fb2，BRG-052/053/054+SRV-078/079 归属修正+冲突 ai-reanalyze）；编年史 #43 勘误（011f086+01b85c2 双仓实证）自纠内化流程\n- 状态：IP 冲突完整闭环全链上线（轻量筛查→深度检测取证→平台算力综合研判）；ADR-027 终验与 reader 开户待用户",
+    "timestamp": "2026-09-10T13:23:41.056Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789094375189-2dqogb",
+    "from": "team-lead",
+    "to": "chronicler-dev",
+    "type": "message",
+    "content": "补记批次（2026-09-10 21:31~2026-09-11 08:32，按语义归并）：\n\n【#47 网络压测配置与可视化重塑（net-doctor 3d78935/1bc97d4/8b0daa0 / 主应用 d04ecf1/66cffed/650cd1e）】①包长档位单逗号框→4 个独立文本框（包长 1~4 字节，校验/去重/行内红字，存储格式不变零后端）②iperf3 时长档位 10/15/30→10/15/30/60/120/180/300+自定义输入（后端 clamp 120→300 对齐，hard 标志区分硬错误/截断提示）③压测分阶段进度条动画（六段加权/accent 流动动画/终态三色，纯前端零后端）；E2E 234→252\n【#48 IP 脱敏清扫（net-doctor 88e784d / 主应用 67db905）】路由追踪 placeholder 等真实业务 IP 全量清换中性示例；双层断言固化（文件级 grep+渲染级 placeholder/title 检查）；E2E 226/226\n【#49 AI 聚合分析 60s 通道热修复（net-doctor b4ec338 / 主应用 16ad87f）】conflict-ai-reanalyze 被通用 15s 层掐断（LLM 实测 30.3s）→专用 60s 长超时通道（对齐 ndAiPostDiagnose 先例）；精确注入验证（__apiFetchTimeout 400ms+慢桩 900ms）；E2E 254/254\n【#50 route_nodes v5 基线勘误与扩充（数据维护，无代码）】172.17.90.0/24 zone 勘误「核心交换机」→「终端区」（网关设备=核心交换机，gw_ip 保留）+新增 115.236.74.73/32 互联网出口（杭州）；控制台+终端端点双链路校验；v4→v5\n- 状态：以上均已 v8.x 安装包换装上线，GitLab 推送至 ff4a16a",
+    "timestamp": "2026-09-11T02:39:35.189Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789094696148-7waanr",
+    "from": "team-lead",
+    "to": "chronicler-dev",
+    "type": "message",
+    "content": "两处任务外提交补记要点下发（均达里程碑级）：\n\n【#51 AI 智能诊断卡排版对齐终端概览（2026-09-11 08:46，net-doctor 00e7a06 / 主应用 5d8af64）】\n- 背景：用户反馈 AI 卡字体排版与概览三卡不统一\n- 落地：卡头 h3 13.5px/600/accent-cyan 对齐 hm-card 卡头；卡体 padding 15px 17px；说明句 nd-summary 规格；问题概述行改 hm-row 左标签右值式（字数计数移右）；辅助 12px；textarea 对齐 settings-input；nd-empty 全局统一；全部作用域限 .nd-ai-card 不波及其它卡；独立页等效同步（无 hm 家族，补充定义等效类）\n- 意义：首次将概览卡设计语言跨卡复用，暴露「样式无成文规范」问题，直接催生 #52 的 STYLE.md\n- 门禁：E2E 259/259（含 computed style 实测比对：AI 卡标题字号===概览卡标题）\n\n【#52 定名回退「网络排障」+ 五模块卡排版对齐 + STYLE.md 设计规格诞生（2026-09-11 10:25，net-doctor 52c06cd / 主应用 823caf4，主仓库同步 1a000f3）】\n- 定名回退：「网络监测配置」→「网络排障」（9 处用户可见文案反向回退，内部标识零改动）；ADR-012 增补：网络排障为最终定名（用户 2026-09-11 定），监测配置命名废弃——与 #39 更名构成反转闭环\n- 五模块卡（①配置核查②IP冲突③连通性④路由追踪⑤网络压测）+ 中心平台状态条加 nd-styled 作用域类对齐 AI 卡基线；nd-kv 键值行式化；nd-table 统一；实现细节句清理（expected_dns 句改通俗语）\n- **STYLE.md 设计规格诞生**（net-doctor/docs/STYLE.md）：结构/字号/间距/行式/按钮/空态/表格/徽章八类规格登记，「新建任何卡片必须遵循，交付检查单含样式符合性自检，不合规=门禁红」——设计治理从口头约定升级为成文规格+自动化门禁，为全部后续 UI 的统一基线\n- 门禁：E2E 262/262（五卡卡头字号/卡体 padding===AI 卡 + 实现细节零残留断言）\n\n补记完成回报 commit，我推送。",
+    "timestamp": "2026-09-11T02:44:56.148Z",
+    "read": true
+  }
+]

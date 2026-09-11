@@ -43,5 +43,104 @@
     "content": "新增要求完成（commit 921bb1c，2 files changed, +144）。\n\n【1. ADR-010 已入档 docs/DECISIONS.md，核心内容】\n- esprima 只能查语法，抓不住运行时错误（ReferenceError / undefined 属性读取 / DOM 元素缺失）——主应用 treemap ratio 缺陷即教训，独立项目 ADR-009 同源 bug 同理\n- 标准流程（tools/e2e_dashboard.py 固化，可重复执行）：起 :5010 服务（--with-server 自动起停）→ Playwright 无头 Chromium 打开页面监听 pageerror → 断言 initDiskTab 自动触发 / spinner 出现 / 实时进度刷新 / 色块自动渲染（≥10）/ pageerror=none → 退出码反映结果\n- 约定：前端任何 JS 改动，commit 前必须跑通本脚本；依赖 pip install playwright + playwright install chromium（本机无 node，走 Python API）\n\n【2. tools/e2e_dashboard.py 固化要点】\n- 两种用法：服务已启动时直接跑；或 --with-server 自动起停 app.py（Windows 下 taskkill /T /F 清理 Flask reloader 进程树）\n- 参数化：--url（默认 127.0.0.1:5010）、--timeout（默认 300s，覆盖 C 盘全量扫描 1-3 分钟）\n- 服务就绪轮询（/api/disk/overview 200）替代固定 sleep\n- 4 项分阶段断言（spinner/进度/色块/pageerror），E2E_DASHBOARD_OK/FAILED + 退出码 0/1\n- 注明：每次执行会做一次 C 盘全量树扫描（约1-3分钟）\n\n【3. 固化脚本实跑验证（--with-server 模式，退出码 0）】\n[1/4] SPINNER: 正在扫描目录树（全盘约需1-3分钟）… | TM_START_HIDDEN: True | _treeRunning: True\n[2/4] PROGRESS: 正在扫描: C:\\Users\\… · 已 263,999 文件 · 5.1s\n[3/4] BLOCKS: 16 | SPINNER_GONE: True | _treeDone: True\n[4/4] PAGE_ERRORS: none\nE2E_DASHBOARD_OK（服务已自动停止，无残留进程）\n\n【git 链】921bb1c (test: E2E固化) → 61bed66 (fix 仪表盘) → a29b0fb (fix 契约) → 9fd2a27 (refactor 技术债) → 3cdeb9b (v1.0)\n\n无其他待办，继续待命。",
     "timestamp": "2026-09-05T08:31:58.918Z",
     "read": true
+  },
+  {
+    "id": "msg-1788598476927-gzrh93",
+    "from": "disk-cleaner-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "上游变更通报已收到并沉淀为项目记忆（commit dbd78da，docs 2文件 +14/-5）：\n\n1. **ADR-011 追加至 docs/DECISIONS.md**：与 winhelper 的同步契约（2026-09-05）\n   - 本项目 Flask 保留（独立运行时 + E2E 载体，ADR-010），不受影响\n   - 发布同步契约：只同步 disk_cleanup.py / appdata_scan.py / web/disk.js / web/appdata.js，不涉及任何 app.py/Flask 内容\n   - 分叉点：index.html 两边结构不同；style.css / app-lite.js（主应用 app.js）修改需双向人工比对，禁止盲目复制\n2. **docs/ARCHITECTURE.md「与 winhelper 主应用的关系」节同步更新**（即你提到的可选项，已顺带完成）：记录 ea5fada 移除 B/S 模式、4 文件同步契约、分叉点提示\n\n后续所有向 winhelper 的发布将按 ADR-011 契约执行。继续待命。",
+    "timestamp": "2026-09-05T08:54:36.927Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788600794608-nheisy",
+    "from": "disk-cleaner-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "事故通报已沉淀为验证门禁（commit 4b8d4b1，3 files +254/-12）：\n\n【1. 新增 tools/js_decl_check.py — AST 重复声明扫描（双保险之一）】\n- esprima AST 作用域感知遍历：检出同作用域重复 const/let/class、switch case 共享块重复、函数声明与词法声明冲突；var 重复（合法）不误报，块级/for 各自作用域不误报\n- `--selftest` 自检 9 用例全过（含你提供的事故最小用例 `function f(){const a=1;const a=2;}` 与事故形态 `函数内两处 const atRoot`）\n- web/ 三文件实测 JS_DECL_CHECK_OK\n- 透明化说明：开发中 selftest 曾抓到我自己的 walk 分支拦截 bug（FunctionDeclaration 被 FUNC_NODES 分支提前拦截跳过名字登记），已修复并在代码中注释——工具自检机制证明有效\n\n【2. tools/e2e_dashboard.py 扩展 — 关键函数 typeof 断言（双保险之二）】\n- 新增 [1/5] 断言：12 个关键入口函数（initDiskTab/startLargeScan/pollLargeScan/renderTreemap/squarifyLayout/tmShowError/startJunkScan/cleanSelected/scanInstallers/startAppdataScan/adMigrateSelected/startTreeForTreemap）typeof=function——SyntaxError 使整个 JS 不执行时此处立即暴露，比 pageerror 更早\n- 完整实跑 5/5 断言通过：KEY_FUNCTIONS all defined → SPINNER → PROGRESS(257,748文件/5.5s) → BLOCKS 16 → PAGE_ERRORS none → E2E_DASHBOARD_OK\n\n【3. ADR-012 / ADR-013 已入档 DECISIONS.md】\n- ADR-012：esprima 检不出同作用域重复 const/let（含事故根因链：SyntaxError→initDiskTab 未定义→switchTab typeof 静默跳过）；双保险门禁；结论重申\"esprima 只做语法初筛，最终门禁是真实浏览器断言（ADR-010）\"\n- ADR-013：winhelper.exe 重建流程（--distpath dist_new → 停进程 → 替换 → 重启）+ 主应用侧 pywebview 桩验证手段（add_init_script stub api.call + file:// 加载）记录备查\n\n【后续门禁约定】web/ JS 同步或修改后必跑：esprima 语法 → js_decl_check.py → e2e_dashboard.py（三连）。继续待命。",
+    "timestamp": "2026-09-05T09:33:14.608Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788603013747-nespg6",
+    "from": "perf-analyzer-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "Performance Analyzer 建设与集成全部完成，汇报如下。\n\n## 一、功能清单（perf-analyzer v1）\n\n1. 实时指标（/api/perf/snapshot）：CPU 总占用（自维护 cpu_times delta，避免 psutil.cpu_percent 全局基准被多调用方干扰）、频率、核心数；内存 total/used/available/percent；swap；各物理盘（PhysicalDrive* 过滤）读/写 MB/s、IOPS、活跃度 busy%（Windows 无 busy_time，按 (Δread_ms+Δwrite_ms)/Δt/10 夹取 0-100）；各卷容量（跳过光驱/无权限）。首帧速率字段为 null，前端显示 \"--\"。\n2. 长时间记录：开始（间隔 1/2/5/10s，默认 2s）立即返回 record_id，daemon 线程 JSONL 增量落盘至 %LOCALAPPDATA%\\winhelper\\perf_records（环境变量组装，无硬编码盘符），每行 flush；重复开始幂等复用；状态轮询显示时长/样本数/瞬时值；窗口关闭不丢已落盘数据。\n3. 停止即分析：逐行流式分析（坏行跳过计数不中断）；avg/p95（排序插值）/max/min；饱和持续时长（CPU>85%、内存可用<10%、磁盘 busy>80%，时间隙 >max(3×interval,15s) 判中断）；瓶颈排序（饱和时长占比）；硬件优化评估（ok/watch/upgrade 三级 + 分部件建议，磁盘建议双分支覆盖 SSD/机械盘）；UI 报告卡片 + 导出 Markdown 到记录目录 + \"打开位置\"（复用 /api/disk/open-location）；analysis.json 落盘 + record-report 接口支持刷新后恢复报告。\n\n## 二、验证结果（门禁全绿）\n\n- 后端冒烟：snapshot 双帧正常（首帧速率 None→次帧有值）、记录 3.5s 采 4 样本、stop 分析 assessment 输出正常、Markdown 导出成功，全程 success=true。期间修复 2 个缺陷：CPU/IO 采样共用时间戳键导致 disks 恒空；mem_avail 统计列收集遗漏。\n- Playwright E2E（tools/e2e_perf.py，pywebview 桩注入）：**50 项全部 PASS**\n  - 场景 1 standalone（23 项）：7 个关键函数 typeof=function、实时数据填充、图表实例、磁盘/卷表填充、记录开始→状态轮询→停止→报告渲染（结论/3 条建议/瓶颈排序）→导出按钮，pageerror=none\n  - 场景 2 主应用（27 项）：file:// 加载 web/index.html，14 个关键函数（app.js/disk.js/appdata.js/perf.js）全部可用，6 菜单依次切换激活，perf 实时数据填充，磁盘概览填充，**离开 perf 菜单轮询自动暂停**，pageerror=none\n  - 门禁依据 ADR-006：esprima 检不出重复 const，全部以真实浏览器断言为准\n\n## 三、commit 号\n\n- perf-analyzer（git init，user=Lujoir/10604@github.com）：4192b95（v1 全功能）、dea1a5c（.gitignore）\n- winhelper 主应用：4264c72（集成提交，消息格式参照 5f4eaad）\n\n## 四、集成点 diff 摘要（最小增量，未触碰任何禁止文件）\n\n- bridge.py：+11 行（from perf_service import 6 个 handle_perf_*；ROUTES 追加 6 条 /api/perf/*；未改 service.py）\n- web/app.js：+1 行（switchTab 末尾守卫调用 initPerfTab）\n- web/index.html：+4 行导航按钮（磁盘清理之后）+ 约 90 行 tab-perf section（perf 特有样式在 section 内部 <style>，未改 style.css；复用 section-card/card-header/btn/disk-toolbar/event-table 等现有 class）+ 1 行 perf.js 引入\n- requirements.txt：+1 行 psutil>=5.9（本机已装 7.2.2）\n- 新增文件：perf_service.py（约 700 行）、web/perf.js（约 430 行）\n- 未触碰：disk_cleanup.py / appdata_scan.py / web/disk.js / web/appdata.js / web/style.css / disk-cleaner/\n\n## 五、exe 重建\n\npython -m PyInstaller winhelper.spec --noconfirm --distpath dist_new 成功 → 停止 winhelper 进程 → 替换 dist\\winhelper.exe → Start-Process 重启成功（进程确认 RUNNING）。psutil 经 import 分析自动收录。\n\n## 六、已知限制\n\n1. dist_new\\ 目录未清理（清理命令被拒，保留由您处置）\n2. 记录元数据（status/report）在内存，进程重启后 JSONL 数据仍在但无法继续轮询；analysis.json 持久化在记录目录可离线查看\n3. Windows 专属实现（PhysicalDrive* 过滤、busy% 依赖 read/write_time）；perf-analyzer 仓库首个 commit 含 __pycache__（git rm --cached 操作被拒，已加 .gitignore 防新增）\n4. 磁盘 SSD/机械判定不做（唯一依赖 psutil 的约束），建议文案双分支覆盖",
+    "timestamp": "2026-09-05T10:10:13.747Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788603404384-hviro5",
+    "from": "perf-analyzer-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "收到，验收结论与 dist_new 保留要求已知悉，后续不再触碰该目录。perf-analyzer 侧当前无遗留工作。\n\n一条补充供备案：本会话中 perf_service 修复过两个缺陷（CPU/IO 采样共用时间戳键导致 disks 恒空、mem_avail 统计列收集遗漏），均已在 perf-analyzer commit 4192b95 内包含，ADR-002/003 已沉淀相应设计约束，后续演进可参考。\n\n继续待命，随时接收性能分析相关演进任务。",
+    "timestamp": "2026-09-05T10:16:44.384Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788656793591-c79y96",
+    "from": "perf-analyzer-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "性能检测（压测）+ 硬件规格两项演进任务全部完成，汇报如下。\n\n## 一、功能清单\n\n### 1. 性能检测（压测）—— 性能分析首行新 section\n- 按钮：🚀全面检测（编排）+ 磁盘读写上限 / CPU稳定性 / 内存稳定性 / GPU稳定性 四个单项；开始前 **confirm 弹窗**（\"压测约 XX 秒，期间系统可能短暂卡顿，请提前保存工作\"）\n- 实时进度：当前阶段 / 剩余秒 / 实时速率或占用 / 桥接响应延迟（ms，前端 performance.now 实测）；进度条 + 取消按钮\n- 结果卡片：各部件实测峰值表 + 结论徽章（ok/stable·edge·bad/unstable·skip）+ 建议文案 + 导出 Markdown（复用记录目录 + 打开位置模式）\n- **编排总时长 58s ≤ 60s 硬上限**：磁盘 25s（写12+读12）→ CPU 15s → 内存 10s → GPU 8s（核显自动跳过）；服务端 worker 逐阶段执行，cancel Event + 阶段时长双条件退出，全程可取消（立即停负载并释放，磁盘临时文件 finally 必删）；running 时再次 start 明确拒绝（不幂等，压测禁止隐式复用）\n\n### 2. 硬件配置卡片 —— 压测之后、实时指标之前\n- CPU 型号/物理核/逻辑核/频率；内存总容量 + 逐条（插槽/容量/DDR 类型/频率）；物理盘逐块（型号/容量/总线/SSD-HDD 介质徽章/**系统盘徽章**/挂载卷）；GPU 列表（独显/核显徽章）\n- 数据来自 /api/perf/hwinfo（静态，进程内缓存）：一次性 PowerShell Get-CimInstance 子进程（15s 超时），失败降级 winreg ProcessorNameString + psutil；字段缺失显示 \"--\" 不报错\n- **直接解决 v1 已知限制 4**：SSD/HDD 判定链 = Get-PhysicalDisk.MediaType → BusType=NVMe → 模型名启发式；系统盘 = DiskDrive→Partition→LogicalDisk(C:) 映射。压测文案可引用介质类型\n\n## 二、关键技术决策（ADR-008/009/010 已沉淀）\n\n1. **CPU 满载不用 multiprocessing**：desktop.py 入口无 freeze_support()，PyInstaller onefile 下 spawn 会递归执行 GUI 入口（致命）。改用 **hashlib.sha256(256KB) 忙循环线程 ×(N-1)**——hashlib 对 >2047 字节输入在 C 层释放 GIL，多线程真满载（本机 19 线程实测平均 95.3% ✓），且无子进程崩溃风险\n2. **内存红线（不可妥协）**：预判 available−step < max(1.5GB, 总量8%) 即停分配；watchdog 线程 0.15s 轮询 available<800MB 立即全部释放；MemoryError 捕获后仍走 finally 释放——**冒烟时真实触发过一次 MemoryError，被安全捕获、峰值 87.8%、释放后回落 82.8%，系统无损**\n3. **GPU 负载选前端 WebGL 片元着色器**（WebView2 GPU 加速，唯一免依赖可行方案）：服务端 need_webgl 标志驱动前端启动/停止渲染循环；指标 nvidia-smi → typeperf GPU Engine 计数器降级 → 标注\"指标不可用\"仍跑负载；压测后扫 System 日志 TDR 事件（win32evtlog 容错 import）\n4. 磁盘读测为顺序回读+随机偏移交替，报告注明\"受 OS 文件缓存影响，为上限乐观值\"\n\n## 三、验证结果\n\n- **真实冒烟（tools/smoke_stress.py，短时单项）**：hwinfo 完美（本机检出 i7-255HX 20核 / 2×24GB DDR5-5600 / ST4000NM0035 HDD + YMTC NVMe SSD 系统盘 / RTX 5060 Ti 独显）；磁盘 NVMe 写 1712/读 1839 MB/s → ok；CPU 满载 95.3% stable；内存安全底线验证通过；GPU nvidia-smi 采样正常；cancel 后临时文件清理确认。全程 PASS\n- **E2E 双场景 77 项全绿**（桩路由假数据，绝不真实压测）：压测 confirm→进度→四阶段结果卡片→导出按钮、GPU 单项 need_webgl 驱动 WebGL 启停断言、硬件规格 4 组+系统盘徽章+DDR5 展示、主应用 6 菜单回归 + 19 个关键函数 typeof + pageerror=none\n- 过程中修复 1 个真实运行时缺陷：_stressStageCard 将字符串误作数组调用 push（esprima 无法检出，E2E 抓住——门禁价值的再次验证）\n\n## 四、commit\n\n- perf-analyzer：**2506c6b**（v2 压测+硬件规格）\n- winhelper 主应用：**2d7f3ad**\n\n## 五、集成点 diff（最小增量）\n\n- bridge.py：+4 行 import（5 个新 handler）+ 5 行 ROUTES\n- web/index.html：tab-perf 首行插入 2 个 section（压测 + 硬件配置），样式仍在 section 内部 <style>，未改 style.css\n- perf_service.py / web/perf.js：同步契约文件整体更新\n- exe：已重建（dist_new 流程）、替换、重启成功（进程 RUNNING）；dist_new 继续保留不动（遵前次指示）\n\n## 六、已知限制\n\n1. 内存压测在 commit limit 紧张的机器上可能先于 90% 触达系统上限（MemoryError 安全停止，判定为 unstable 并明确标注\"保护性停止，系统未崩溃\"）\n2. 非 NVIDIA 独显的 GPU 指标依赖 GPU Engine 计数器（多实例求和夹取 100），个别驱动环境可能显示\"指标不可用\"（负载与稳定性判定仍有效）\n3. 磁盘读测含缓存乐观偏差（已注明）；硬件规格 PowerShell 不可用且 psutil 降级时磁盘型号/介质显示 \"--\"\n4. E2E 中 GPU WebGL 仅断言启停标志与 canvas 存活，未断言真实 GPU 占用率（无头环境指标失真）",
+    "timestamp": "2026-09-06T01:06:33.591Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788657608604-atilwl",
+    "from": "disk-cleaner-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "格式规范已沉淀（commit 97794d3，ADR-014 入档 docs/DECISIONS.md）：\n\n1. **核查结论**：disk-cleaner 当前无任何导出功能（已 grep 核查 export/download/CSV/Blob 等关键字，全部为无关命中——下载目录路径、扩展名分类规则、扫描选项等），功能以界面展示为主，无需整改。\n2. **ADR-014 已记录**：报告一律 HTML 格式；未来新增导出默认要求——单文件自包含（内联 CSS、零外部依赖）、深色专业风格与主应用一致、文件名含模块与时间戳（如 DiskCleaner_容量分析_20260906_1530.html）、导出后调用 /api/disk/open-location 打开位置。\n3. 后续若新增导出功能（如容量分析报告、扫描结果清单），将在发布汇报中按 ADR-014 说明。\n\n规范知悉完毕，继续待命。",
+    "timestamp": "2026-09-06T01:20:08.604Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788658755273-ip7mmb",
+    "from": "disk-cleaner-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "命名规范已备案（commit fd87cda，2 files +13）：\n\n1. **ADR-015 入档**：系统正式名称「观枢终端平台｜EyeTerm」\n   - 适用：文档提及系统全称时用新名；未来 ADR-014 HTML 报告头部标题统一「观枢终端平台｜EyeTerm」\n   - 不改动：\"winhelper\" 作为工程/exe 代号继续沿用（指代主应用代码库与 winhelper.exe，避免指代歧义）；界面代码不动；\"Disk Cleaner\" 为子系统/模块名继续使用\n2. **README.md** 已补归属行：「观枢终端平台（EyeTerm）· 磁盘清理子系统」\n3. 已核查 DECISIONS/ARCHITECTURE：现有 \"winhelper\" 提法均为工程代号性质（同步契约/exe 重建流程上下文），无需改动\n\n继续待命。",
+    "timestamp": "2026-09-06T01:39:15.273Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788658938015-sea8yd",
+    "from": "perf-analyzer-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "HTML 导出先行交付已完成，且温度任务同步收尾，两批内容一并汇报。\n\n## 一、HTML 导出（插队任务，独立 commit）\n\n- perf-analyzer **46c2e5f**：_report_html/_stress_html 替代 markdown 生成器——单文件自包含 HTML，内联 CSS 深色风格（与主应用一致），结论徽章 + 指标表格 + 建议卡片 + 瓶颈排序，浏览器可直接打开/打印；文件名 perf_report_<rid>.html / perf_stress_<sid>.html；接口返回 html_size 不再返回全文；按钮文案统一「导出 HTML 报告」；E2E 桩与断言同步\n- 报告头部已按新命名实现：「观枢终端平台｜EyeTerm · 性能分析报告 / 性能检测报告」（standalone 测试页 title 同步；ARCHITECTURE.md 已加正式名；nav 大标题未动，留给你统一处理）\n- 验证：HTML 导出真实冒烟通过（DOCTYPE/中文名/闭合/长度校验）；E2E 77→84 项全绿\n\n## 二、温度任务（完整收尾，commit 3d35f37 + 主应用 558276f/a16da6b）\n\n1. handle_perf_temps（独立接口，2s 轮询）：GPU 温度 nvidia-smi 全员可读；CPU 温度需 IsAdmin + LibreHardwareMonitorLib（v0.9.4 net472 + HidSharp v2.1.0 入 libs/，pythonnet 加载，Computer 单例防句柄泄漏，MSR 开销轮询≥2s）；任何失败 success=true + 分项 available，不报 error\n2. 以管理员重启：前端占位区按钮 → confirm（含 WinRing0 杀软误报说明话术）→ ShellExecuteW runas（frozen 直启/开发态带参）→ exit hook 销毁当前窗口防双实例（desktop.py 最小增量 3 行：接收 window + register_exit_hook）；UAC 取消（ret 5/1223）→ 提示未提权；重启前自动停记录落盘\n3. 增强项已做：记录 JSONL 加 cpu_temp/gpu_temp（取温度轮询缓存），分析报告温度统计行，CPU 压测阶段温度峰值（cpu_temp_max）\n4. 界面：实时指标网格新增 GPU 温度 / CPU 温度两项；need_admin 占位「需管理员模式」+ 按钮；管理员后显示温度 + 「管理员模式」徽章；manifest 保持 asInvoker\n\n## 三、验证\n\n- 非 admin 真实冒烟：success=true 优雅降级（GPU 31°C 本机实测可读，CPU need_admin）不崩\n- LHM 链路实测（tools/test_lhm.py）：非 admin AddReference/Open/Close 全通，CPU 枚举正常无温度读数（MSR 需驱动，符合预期）\n- E2E 双场景 **84 项全绿**（温度两态：need_admin 占位+按钮 → confirm 重启 → admin 温度值+徽章；桩驱动绝不真提权）\n- exe：已重建替换重启（dist_new 保留不动）；期间修复 spec libs 相对路径（libs 在 perf-analyzer 子仓库，a16da6b）\n\n## 四、commit\n\n- perf-analyzer：3d35f37（温度）→ 46c2e5f（HTML 导出）\n- 主应用：558276f（温度+HTML）→ a16da6b（spec 路径修正）\n\n## 五、待用户人工验证（唯一不可自动验证项）\n\n管理员路径真实 CPU 温度：请用户在性能分析页点「以管理员重启」→ UAC 确认 → 界面出现「管理员模式」徽章 + CPU 温度实时读数（此前是「需管理员模式」占位）。若杀软拦截 WinRing0 驱动请选允许。",
+    "timestamp": "2026-09-06T01:42:18.015Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788659197500-45eqal",
+    "from": "perf-analyzer-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "收到验收结论。界面更名由你侧统一处理（2800966）已知悉，我不动任何标题。\n\n补充一条用户验证指引（若用户反馈异常时的排查路径）：\n1. 点「以管理员重启」后若无 UAC 弹窗且按钮无响应 → 查 bridge 返回 error（uac_cancelled / shell_error_*），uac_cancelled 属用户在 UAC 点了取消，前端已有提示\n2. 管理员模式下 CPU 温度若显示「温度组件不可用」→ 大概率杀软拦截 WinRing0 驱动（confirm 弹窗话术已提示选允许），或 LHM 传感器无读数（部分平台 Package/Core 命名差异，我在 _lhm_cpu_temp 已做 package/core_max/max 三级取值兜底）\n3. 验证通过后 GPU/CPU 温度将以 2s 节奏刷新，长时记录 JSONL 与压测 CPU 阶段报告会自动带温度数据\n\n我方 perf-analyzer 侧无遗留工作，继续待命。",
+    "timestamp": "2026-09-06T01:46:37.500Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788660437300-a9ur98",
+    "from": "perf-analyzer-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "沉淀完成，perf-analyzer commit **c2a0f4b**。\n\n## 1. ADR-013 已入档（docs/DECISIONS.md）\n- 事故：windowed exe（console=False）中 subprocess 调用控制台程序每次生成可见 cmd 窗口，温度 2s 轮询 = 循环弹窗；热修 819e806/0db7c48（模块级 _NO_WINDOW，5 处调用点全补）\n- 铁律：**GUI 无控制台程序中一切子进程必须 CREATE_NO_WINDOW**（有意开窗的 explorer 类除外，白名单按调用源码片段含 \"explorer\" 豁免）\n- 为什么门禁没拦住 + 对策：smoke 在控制台跑、E2E 用桩，两种动态验证都看不到弹窗 → 必须静态兜底\n\n## 2. 门禁第四道已落地\n- 新增 `tools/check_subprocess_window.py`：AST 扫描 subprocess.run/Popen/call/check_output/check_call（含 from-import 裸名），必须携带 creationflags=_NO_WINDOW；explorer 白名单；`--selftest` 自检（正例不误报 / 缺失必检出，实测 OK）\n- 已内置进 `tools/e2e_perf.py` main 入口：每次 E2E 先跑第四道，失败退出码 3——一条 E2E 命令即覆盖\"静态窗口检查 + 真实浏览器断言\"\n- **发布四连**定稿（ADR-013）：esprima 语法初筛 → js_decl_check 重复声明 → e2e_perf（84 项真实浏览器断言）→ check_subprocess_window（子进程窗口）\n\n## 3. 项目内调用点盘点\n- perf_service.py 全部 5 处（_detect_gpus/_gpu_metrics×2/_ps_cim_dump/_nvidia_temp）已被热修覆盖，静态检查 PASS，无 Popen/call/check_output 遗漏\n- LHM 走 pythonnet 进程内加载（非子进程），不受影响；disk_cleanup 的 explorer Popen 属有意开窗（白名单），不受影响\n- 未来约束：任何新增子进程调用必须落笔即带 creationflags=_NO_WINDOW（ADR-013）\n\n## 4. 双仓库一致性\n- 主应用 perf_service.py 与 perf-analyzer MD5 一致（78437c09），热修同步确认无分叉\n- E2E 复跑 84 项全绿（首行 SUBPROC-PASS）\n\n待命，等待用户管理员 CPU 温度验证反馈。",
+    "timestamp": "2026-09-06T02:07:17.300Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788662082578-neaa88",
+    "from": "perf-analyzer-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "hwinfo 终端基础信息扩展完成：perf-analyzer **baaf965**、主应用 **b490713**（perf_service.py 已同步，路由 /api/perf/hwinfo 不变）。\n\n## 新增字段结构（log-inspector 消费用）\n\n```json\n{\n  \"os\": {\"caption\": \"Microsoft Windows 11 专业工作站版\", \"version\": \"10.0.26200\",\n         \"build\": \"26200\", \"text\": \"Microsoft Windows 11 专业工作站版 10.0.26200\"},\n  \"hostname\": \"Jun-office-PC\",\n  \"network\": [\n    {\"name\": \"Realtek PCIe GbE Family Controller\", \"mac\": \"F4:F1:9E:...\",\n     \"ipv4\": \"172.17.90.215\", \"ipv6\": \"fe80::...\", \"gateway\": \"172.17.90.1\",\n     \"dns\": \"172.17.7.107/172.17.1.109\", \"status\": \"up\"}\n  ]\n}\n```\n\n- os.text 为拼好的一行文案可直接展示；network 为数组（多网卡），gateway/dns 可能是 \"--\"（psutil 降级路径无此数据）\n- 静态信息，与硬件规格同一次缓存；PowerShell CIM 15s 超时降级链沿用（os→winreg、network→psutil net_if_addrs）\n- 排除规则（ADR-014）：环回排除；无任何 IP 的适配器排除（蓝牙等虚拟适配器自然过滤）\n- 旧硬件卡片兼容：前端不渲染新字段即自然忽略\n- 本机真实冒烟全字段通过；E2E 84 项全绿\n- exe 未重建（按指示留给你统一构建）",
+    "timestamp": "2026-09-06T02:34:42.578Z",
+    "read": true
   }
 ]

@@ -1,0 +1,180 @@
+﻿python : 106 INFO: PyInstaller: 6.22.2, contrib hooks: 2026.7
+所在位置 行:1 字符: 208
++ ... 0522083146; python -m PyInstaller winhelper.spec --noconfirm --distpa ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (106 INFO: PyIns...b hooks: 2026.7:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+106 INFO: Python: 3.12.8
+144 INFO: Platform: Windows-11-10.0.26200-SP0
+144 INFO: Python environment: C:\Users\10604\AppData\Local\Programs\Python\Python312
+147 INFO: Module search paths (PYTHONPATH):
+['C:\\Users\\10604\\CodeBuddy\\20260522083146',
+ 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\\Python312\\python312.zip',
+ 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\\Python312\\DLLs',
+ 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\\Python312\\Lib',
+ 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\\Python312',
+ 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages',
+ 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\win32',
+ 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\win32\\lib',
+ 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\Pythonwin',
+ 'C:\\Users\\10604\\CodeBuddy\\20260522083146']
+462 INFO: Appending 'datas' from .spec
+464 INFO: checking Analysis
+464 INFO: Building Analysis because Analysis-00.toc is non existent
+464 INFO: Looking for Python shared library...
+464 INFO: Using Python shared library: C:\Users\10604\AppData\Local\Programs\Python\Python312\python312.dll
+464 INFO: Running Analysis Analysis-00.toc
+464 INFO: Target bytecode optimization level: 0
+464 INFO: Initializing module dependency graph...
+465 INFO: Initializing module graph hook caches...
+474 INFO: Analyzing modules for base_library.zip ...
+1393 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python
+\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+1685 INFO: Processing standard module hook 'hook-math.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\\Pyt
+hon312\\Lib\\site-packages\\PyInstaller\\hooks'
+1784 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\\Py
+thon312\\Lib\\site-packages\\PyInstaller\\hooks'
+2224 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\\P
+ython312\\Lib\\site-packages\\PyInstaller\\hooks'
+2884 INFO: Caching module dependency graph...
+2920 INFO: Analyzing C:\Users\10604\CodeBuddy\20260522083146\desktop.py
+2930 INFO: Processing standard module hook 'hook-_ctypes.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\\
+Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+2943 INFO: Processing standard module hook 'hook-webview.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\\
+Python312\\Lib\\site-packages\\webview\\__pyinstaller'
+3011 INFO: Processing standard module hook 'hook-platform.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\
+\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+3244 INFO: Processing standard module hook 'hook-webbrowser.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Pytho
+n\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+3456 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'C:\\Users\\10604\\AppData\\Local\\Progr
+ams\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+3530 INFO: Processing standard module hook 'hook-xml.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\\Pyth
+on312\\Lib\\site-packages\\PyInstaller\\hooks'
+4360 INFO: Processing standard module hook 'hook-difflib.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\\
+Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+4510 INFO: Processing standard module hook 'hook-clr.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\\Pyth
+on312\\Lib\\site-packages\\pythonnet\\_pyinstaller'
+4620 INFO: Processing standard module hook 'hook-clr_loader.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Pytho
+n\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+4701 INFO: Processing standard module hook 'hook-pycparser.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python
+\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+4797 INFO: Processing standard module hook 'hook-setuptools.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Pytho
+n\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+4799 INFO: SetuptoolsInfo: initializing cached setuptools info...
+5222 INFO: Processing pre-safe-import-module hook 'hook-distutils.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\
+\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+5255 INFO: Processing standard module hook 'hook-sysconfig.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python
+\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+5261 INFO: Processing pre-safe-import-module hook 'hook-jaraco.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Py
+thon\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+5262 INFO: Setuptools: 'jaraco' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.j
+araco'!
+5268 INFO: Processing pre-safe-import-module hook 'hook-more_itertools.py' from 'C:\\Users\\10604\\AppData\\Local\\Prog
+rams\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+5268 INFO: Setuptools: 'more_itertools' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendo
+r.more_itertools'!
+5352 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from 'C:\\Users\\10604\\AppData\\Local\\P
+rograms\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+5478 INFO: Processing pre-safe-import-module hook 'hook-packaging.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\
+\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+5591 INFO: Processing standard module hook 'hook-setuptools._vendor.jaraco.text.py' from 'C:\\Users\\10604\\AppData\\Lo
+cal\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+5593 INFO: Processing pre-safe-import-module hook 'hook-importlib_resources.py' from 'C:\\Users\\10604\\AppData\\Local\
+\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+5698 INFO: Processing pre-safe-import-module hook 'hook-backports.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\
+\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+5698 INFO: Setuptools: 'backports' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendo
+r.backports'!
+5808 INFO: Processing pre-safe-import-module hook 'hook-importlib_metadata.py' from 'C:\\Users\\10604\\AppData\\Local\\
+Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+5808 INFO: Setuptools: 'importlib_metadata' appears to be a setuptools-vendored copy - creating alias to 'setuptools._v
+endor.importlib_metadata'!
+5822 INFO: Processing standard module hook 'hook-setuptools._vendor.importlib_metadata.py' from 'C:\\Users\\10604\\AppD
+ata\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+5837 INFO: Processing pre-safe-import-module hook 'hook-zipp.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Pyth
+on\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+5838 INFO: Setuptools: 'zipp' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.zipp'!
+5972 INFO: Processing pre-safe-import-module hook 'hook-tomli.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Pyt
+hon\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+5972 INFO: Setuptools: 'tomli' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.tomli'!
+6349 INFO: Processing pre-safe-import-module hook 'hook-wheel.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Pyt
+hon\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+6349 INFO: Setuptools: 'wheel' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.wheel'!
+6774 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from 'C:\\Users\\10604\\AppData\\Local\\Pro
+grams\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+7194 INFO: Processing standard module hook 'hook-jinja2.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\\P
+ython312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+7656 INFO: Processing pre-safe-import-module hook 'hook-gi.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python
+\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+7781 INFO: Processing standard module hook 'hook-cryptography.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Pyt
+hon\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+8716 INFO: hook-cryptography: cryptography does not seem to be using dynamically linked OpenSSL.
+8931 INFO: Processing standard module hook 'hook-bcrypt.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\\P
+ython312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+9080 INFO: Processing standard module hook 'hook-psutil.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\\P
+ython312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+C:\Users\10604\AppData\Local\Programs\Python\Python312\Lib\site-packages\wmi.py:2: SyntaxWarning: invalid escape sequen
+ce '\_'
+  """Windows Management Instrumentation (WMI) is Microsoft's answer to
+C:\Users\10604\AppData\Local\Programs\Python\Python312\Lib\site-packages\wmi.py:917: SyntaxWarning: invalid escape sequ
+ence '\_'
+  """This is the equivalent to the raw-WMI SpawnInstance\_
+9143 INFO: Processing pre-safe-import-module hook 'hook-win32com.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\
+Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\pre_safe_import_module'
+9212 INFO: Processing standard module hook 'hook-win32com.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\
+\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+9215 INFO: Processing standard module hook 'hook-pythoncom.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python
+\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+9282 INFO: Processing standard module hook 'hook-pywintypes.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Pytho
+n\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+9589 INFO: Analyzing hidden import 'win32timezone'
+9603 INFO: Processing module hooks (post-graph stage)...
+9604 WARNING: Hidden import "pycparser.lextab" not found!
+9604 WARNING: Hidden import "pycparser.yacctab" not found!
+9694 INFO: Performing binary vs. data reclassification (147 entries)
+9759 INFO: Looking for ctypes DLLs
+9808 INFO: Analyzing run-time hooks ...
+9812 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\\Pytho
+n312\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+9816 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\\Pytho
+n312\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+9820 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Pytho
+n\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+9824 INFO: Including run-time hook 'pyi_rth_setuptools.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\\Py
+thon312\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+9825 INFO: Including run-time hook 'pyi_rth_pywintypes.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\\Py
+thon312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\rthooks'
+9826 INFO: Including run-time hook 'pyi_rth_pythoncom.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\Python\\Pyt
+hon312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\rthooks'
+9826 INFO: Including run-time hook 'pyi_rth_cryptography_openssl.py' from 'C:\\Users\\10604\\AppData\\Local\\Programs\\
+Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\rthooks'
+9835 INFO: Creating base_library.zip...
+9851 INFO: Looking for dynamic libraries
+10282 INFO: Extra DLL search directories (AddDllDirectory): []
+10283 INFO: Extra DLL search directories (PATH): []
+11029 INFO: Warnings written to C:\Users\10604\CodeBuddy\20260522083146\build_new\winhelper\warn-winhelper.txt
+11087 INFO: Graph cross-reference written to C:\Users\10604\CodeBuddy\20260522083146\build_new\winhelper\xref-winhelper
+.html
+11109 INFO: checking PYZ
+11110 INFO: Building PYZ because PYZ-00.toc is non existent
+11110 INFO: Building PYZ (ZlibArchive) C:\Users\10604\CodeBuddy\20260522083146\build_new\winhelper\PYZ-00.pyz
+11707 INFO: Building PYZ (ZlibArchive) C:\Users\10604\CodeBuddy\20260522083146\build_new\winhelper\PYZ-00.pyz completed
+ successfully.
+11720 INFO: checking PKG
+11720 INFO: Building PKG because PKG-00.toc is non existent
+11720 INFO: Building PKG (CArchive) winhelper.pkg
+17345 INFO: Building PKG (CArchive) winhelper.pkg completed successfully.
+17349 INFO: Bootloader C:\Users\10604\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\bootloader\
+Windows-64bit-intel\runw.exe
+17349 INFO: checking EXE
+17349 INFO: Building EXE because EXE-00.toc is non existent
+17349 INFO: Building EXE from EXE-00.toc
+17352 INFO: Copying bootloader EXE to C:\Users\10604\CodeBuddy\20260522083146\dist_new\winhelper.exe
+17364 INFO: Copying icon to EXE
+17374 INFO: Copying 0 resources to EXE
+17374 INFO: Embedding manifest in EXE
+17382 INFO: Appending PKG archive to EXE
+17401 INFO: Fixing EXE headers
+17515 INFO: Building EXE from EXE-00.toc completed successfully.
+17519 INFO: Build complete! The results are available in: C:\Users\10604\CodeBuddy\20260522083146\dist_new

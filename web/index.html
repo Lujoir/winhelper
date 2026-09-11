@@ -1072,5 +1072,34 @@
     <script src="appdata.js"></script>
     <script src="perf.js"></script>
     <script src="netdoctor.js"></script>
+    <script>
+    /* 首帧资源丢失自愈（pywebview 内置 HTTP 服务首帧并发竞态，disk-cleaner ADR-016）：
+       任一模块 init 函数缺失说明其 js 整文件未加载（加载层丢请求，非代码缺陷），
+       自动重载一次即可恢复；最多重试 2 次，成功加载后计数归零。 */
+    (function () {
+        var INITS = ["initHomeTab", "initLogInspectorTab", "initDiskTab",
+                     "initPerfTab", "initNetDoctorTab"];
+        function __selfHeal() {
+            var missing = [];
+            for (var i = 0; i < INITS.length; i++) {
+                if (typeof window[INITS[i]] !== "function") { missing.push(INITS[i]); }
+            }
+            if (!missing.length) {
+                try { sessionStorage.setItem("ndSelfHealReloads", "0"); } catch (e) {}
+                return;
+            }
+            var n = 0;
+            try { n = parseInt(sessionStorage.getItem("ndSelfHealReloads") || "0", 10); } catch (e) {}
+            if (n >= 2) {
+                if (window.console && console.error) { console.error("首帧资源丢失自愈失败：", missing.join(",")); }
+                return;
+            }
+            try { sessionStorage.setItem("ndSelfHealReloads", String(n + 1)); } catch (e) {}
+            location.reload();
+        }
+        if (document.readyState === "complete") { setTimeout(__selfHeal, 300); }
+        else { window.addEventListener("load", function () { setTimeout(__selfHeal, 300); }); }
+    })();
+    </script>
 </body>
 </html>

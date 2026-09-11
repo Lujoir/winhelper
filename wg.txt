@@ -1,0 +1,8 @@
+C:\Users\10604\AppData\Local\Temp\WinGet\JRSoftware.InnoSetup.6.7.3
+C:\Users\10604\AppData\Local\Temp\WinGet\cache\V2_M\Microsoft.Winget.Source_8wekyb3d8bbwe\manifests\j\JRSoftware\InnoSetup
+C:\Users\10604\AppData\Local\Temp\WinGet\cache\V2_M\Microsoft.Winget.Source_8wekyb3d8bbwe\manifests\j\JRSoftware\InnoSetup\6.7.3
+C:\Users\10604\AppData\Local\Temp\WinGet\cache\V2_M\Microsoft.Winget.Source_8wekyb3d8bbwe\manifests\j\JRSoftware\InnoSetup\6.7.3\dddf
+C:\Users\10604\AppData\Local\Temp\WinGet\cache\V2_PVD\Microsoft.Winget.Source_8wekyb3d8bbwe\packages\JRSoftware.InnoSetup
+C:\Users\10604\AppData\Local\Temp\WinGet\cache\V2_PVD\Microsoft.Winget.Source_8wekyb3d8bbwe\packages\JRSoftware.InnoSetup\7ca39675
+C:\Users\10604\AppData\Local\Temp\WinGet\cache\V2_PVD\Microsoft.Winget.Source_8wekyb3d8bbwe\packages\JRSoftware.InnoSetup\7ca39675\versionData.mszyml
+C:\Users\10604\AppData\Local\Temp\WinGet\JRSoftware.InnoSetup.6.7.3\innosetup-6.7.3.exe

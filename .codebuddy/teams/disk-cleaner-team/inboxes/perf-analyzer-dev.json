@@ -1,0 +1,92 @@
+[
+  {
+    "id": "msg-1788603394616-otyh9y",
+    "from": "team-lead",
+    "to": "perf-analyzer-dev",
+    "type": "message",
+    "content": "验收通过 ✅。我方复核：bridge 直接冒烟 /api/perf/snapshot 返回真实指标正常（首帧速率 null 符合设计）；tools/e2e_perf.py 双场景 50 项亲测全绿；git 提交核实（winhelper 4264c72 / perf-analyzer 4192b95+dea1a5c）；新版 exe 18:04 已在运行。\n\ndist_new 临时构建目录的清理指令被用户拒绝，**保留不动**，后续由用户自行处置（你无需再尝试清理，也不影响交付）。\n\n已知限制已记录（记录元数据内存态、Windows 专属 busy%、SSD/机械不做判定）。继续待命，后续性能分析相关演进任务会下发给你。",
+    "timestamp": "2026-09-05T10:16:34.616Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788654929471-xoxicp",
+    "from": "team-lead",
+    "to": "perf-analyzer-dev",
+    "type": "message",
+    "content": "新演进任务：性能分析菜单**首行**新增「性能检测（压测）」模块（置于实时指标卡片之前）。\n\n# 用户需求原话\n首行补充一个模块，加个\"性能检测\"按钮，通过全面检测，确认CPU、GPU、内存、磁盘读写性能是否满足使用需求。可进行适当的压测，**压测时间不能超过1分钟**。主要是检测电脑实际物理磁盘的读写上限；确认CPU、GPU（仅在独享/独立显卡的情况下生效）、内存在90%使用率以上时操作系统的稳定性。\n\n# 功能规格\n\n## UI（web/perf.js + index.html tab-perf 首行）\n- 新 section-card「性能检测（压测）」：按钮组 = 🚀全面检测（编排全部阶段）+ 单项按钮（磁盘读写上限 / CPU稳定性 / 内存稳定性 / GPU稳定性）；间隔选择不必提供（服务端编排）\n- 压测开始前 **confirm 弹窗**：「压测约XX秒，期间系统可能短暂卡顿，请提前保存工作」（破坏性体验保护）\n- 实时进度：当前阶段/剩余秒数/实时速率或占用率；完成后渲染结果卡片：各部件实测峰值表 + 是否满足使用需求结论（满足/边缘/不满足 或 稳定/不稳定）+ 建议文案；结果可导出（沿用现有导出模式）\n\n## 后端（perf_service.py 新增 handle_perf_stress_*，沿用任务管理器模式：立即返回 stress_id + 轮询 status）\n\n### 1. 磁盘读写上限（重点，默认系统盘，可选物理盘）\n- 顺序写：大缓冲（如64MB块）写临时文件至目标盘 temp 目录，实测写入 MB/s；顺序读：回读测 MB/s（注明OS缓存影响，尽量用随机偏移读或超出缓存规模削弱失真）\n- **临时文件 finally 必删**；测试目录用 tempfile/环境变量组装，禁止碰用户数据；记录峰值/均值\n- 结论参考：seq写≥200MB/s 且读≥300MB/s → SSD级满足日常；机械盘水平（<150MB/s）→ 建议升级SSD（阈值可斟酌，写入ADR）\n\n### 2. CPU 稳定性（目标占用>90%）\n- multiprocessing 起 N-1 个死循环子进程（可强杀），持续压测期间每秒采样：cpu_percent、**主进程桥接响应延迟**（稳定性核心指标：压测中 status 轮询仍须秒级响应）、子进程异常\n- 稳定判定：全程可采样、无子进程崩溃、响应延迟未失控（阈值写入ADR）；压测后可选扫一次系统事件日志 WHEA/Kernel-Power 错误（有 log_reader 可复用思路）\n\n### 3. 内存稳定性（目标占用>90%）\n- 渐进分配大块（如256MB/步）并触摸页面（真实提交），目标系统占用≥90%\n- **安全底线（红线）**：可用内存硬下限 max(1.5GB, 总量8%)——达到即停；watchdog 线程监测 available 低于临界值（如800MB）立即全部释放；任何异常 finally 释放全部；绝不把系统推入OOM\n- 稳定判定：>90% 维持期间桥接响应正常、无 MemoryError 崩溃、释放后占用回落\n\n### 4. GPU 稳定性（仅独显生效）\n- WMI Win32_VideoController 检测：命名含 GTX/RTX/Radeon RX/Arc 等 or 独立显存特征 → 判定独显；核显机器直接返回「未检测到独立显卡，GPU检测跳过」\n- 负载生成：建议前端 WebGL 压测 canvas（WebView2 GPU加速，JS 片元着色器满载循环，阶段结束自动停）——或你评估更可靠的免依赖方案，写入ADR\n- 指标：NVIDIA 优先 nvidia-smi（utilization/memory/temp）；非NVIDIA 用 GPU Engine 性能计数器（PowerShell Get-Counter 或PDH）；指标不可用则标注「指标不可用」仍可跑负载\n- 稳定判定：满载期间无驱动重置（事件日志 Display/nvlddmkm TDR）、指标采样连续\n\n## 硬约束（违反即返工）\n1. **任何压测阶段 ≤60s 硬上限**：服务端 timer 强制终止；全面检测编排总时长≤60s（如 磁盘25s/CPU15s/内存10s/GPU8s，你定编排写ADR）\n2. 全程可取消：cancel 立即停所有负载并释放（子进程kill、内存释放、WebGL停止标志、临时文件删除）\n3. 压测模块异常绝不影响主应用其他功能（try/except 完整，崩溃返回 success=false+error）\n4. Windows 路径全部环境变量组装，禁止硬编码盘符\n\n## 流程要求（与 v1 相同，勿省）\n- perf-analyzer 与 winhelper 两仓库各自 commit；ADR 记录编排时长/安全阈值/判定标准/技术选型\n- E2E（tools/e2e_perf.py）扩展：压测按钮存在、confirm 流程、结果卡片渲染断言——**桩路由返回假结果，E2E 绝不真实压测**；关键新函数（如 startPerfStress）加入 typeof 断言清单；主应用 6 菜单回归 pageerror=none\n- 后端冒烟真实跑一次（单项短时验证），但注意内存压测在本机跑时的安全底线验证\n- exe 重建（dist_new 流程）→ 主应用重启 → send_message 汇报：功能清单/验证结果/两仓库commit/ADR要点/已知限制",
+    "timestamp": "2026-09-06T00:35:29.471Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788655046147-san2nc",
+    "from": "team-lead",
+    "to": "perf-analyzer-dev",
+    "type": "message",
+    "content": "追加任务（可与压测任务同批交付，也可紧随其后，你按工程节奏定）：性能分析主界面补充**硬件规格信息**。用户原话：主界面看不到CPU型号规格、内存的规格、硬盘的规格，也不确定系统盘是否为SSD，这些信息需要补充确认。\n\n# 规格\n\n## API：handle_perf_hwinfo（静态信息，首次获取后进程内缓存；一次性 PowerShell Get-CimInstance 子进程（带超时+失败降级），解析输出）\n\n1. **CPU**：型号名（Win32_Processor.Name 或 winreg CentralProcessor\\0 ProcessorNameString 降级）、物理核/逻辑核、基础/最大频率\n2. **内存**：总容量 + 按条列出（Win32_PhysicalMemory：单条容量、类型 DDR3/DDR4/DDR5（SMBIOSMemoryType 数字映射）、额定时钟速度、插槽 DeviceLocator）\n3. **磁盘（物理盘维度）**：每块 PhysicalDrive 的型号（Win32_DiskDrive.Model）、容量、总线类型（NVMe/SATA/USB）、**介质类型判定 SSD/HDD**——优先 Get-PhysicalDisk 的 MediaType；降级用模型名启发式（含 SSD/NVMe 关键字→SSD，BusType=NVMe→必SSD）；标注哪块是**系统盘**（挂载C:的物理盘，用 DiskDrive→Partition→LogicalDisk 关联查询或 psutil 分区映射降级）——这直接解决 v1 已知限制4\n4. **GPU**：显卡列表（Name + 独显/核显标识，复用压测任务的独显判定逻辑）\n\n## UI\n- 性能分析首行（压测模块之后、实时指标之前）新增「硬件配置」卡片：紧凑布局展示 CPU/内存/磁盘/GPU 四组规格，系统盘加「系统盘·SSD/HDD」徽章；数据来自 /api/perf/hwinfo，进入菜单随 initPerfTab 一次性加载\n- 压测结果文案可直接引用介质类型（如「系统盘为 HDD，建议升级SSD」）与硬件规格，两任务打通\n\n## 流程要求\n- E2E 桩路由加 /api/perf/hwinfo 假数据，断言规格卡片填充；新增关键函数进 typeof 清单；主应用 6 菜单回归 pageerror=none\n- PowerShell 子进程必须带超时与降级（CIM不可用时 winreg/psutil 兜底，字段缺失显示\"--\"不报错）\n- 两仓库 commit + ADR（数据源选型/SSD判定链/降级策略）；exe 重建重启后汇报",
+    "timestamp": "2026-09-06T00:37:26.147Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788657284429-adqyqo",
+    "from": "team-lead",
+    "to": "perf-analyzer-dev",
+    "type": "message",
+    "content": "新任务（方案C——折中，用户已确认）：exe 保持普通权限不变，温度显示按能力分级。\n\n# 规格\n\n## 1. 温度接口 handle_perf_temps（独立接口，建议 2s 轮询，不并入 1s snapshot）\n- **GPU 温度**：nvidia-smi --query-gpu=temperature.gpu（本机实测可读，RTX 5060 Ti 31°C；已有 nvidia-smi→typeperf 降级链可复用，加 temperature 字段）\n- **CPU 温度**：\n  - IsAdmin（ctypes.windll.shell32.IsUserAnAdmin）+ LibreHardwareMonitorLib 可用 → 读 CPU Package/Core 最高温度（真实核心温度）\n  - 非 admin 或 LHM 失败 → 返回 {available: false, reason: \"need_admin\"}，前端显示「CPU温度 · 需管理员模式」占位\n- 降级必须优雅：任何失败返回 success=true + 分项 available 标志，不报 error\n\n## 2. LibreHardwareMonitorLib 集成（本任务核心）\n- 下载 LibreHardwareMonitorLib（GitHub releases 或 NuGet，netstandard2.0/net472）及其依赖（如 HidSharp），放 perf-analyzer/libs/ 随 exe 打包；记录版本号入 ADR\n- pythonnet clr.AddReference 加载（主应用已有 pythonnet 依赖）；Computer{ IsCpuEnabled=true, IsGpuEnabled=true } Open → SubHardware+Sensors 查 Temperature\n- 注意：MSR 读取有开销，轮询别高于 2s；Computer 用完 Close/复用单例，防句柄泄漏；异常全捕获降级\n- Defender 可能对内嵌 WinRing0 驱动误报——ADR 记录风险与说明话术\n\n## 3. 「以管理员重启」按钮（前端，CPU 温度占位区）\n- 点击 → confirm 说明 → ShellExecuteW(None,\"runas\",sys.executable, args, ...) 重启自身（打包态 exe 直启；开发态 python desktop.py 带参）；启动新实例前销毁当前窗口防双实例；用户在 UAC 点取消（ERROR_CANCELLED）→ toast 提示未提权\n- 管理员实例启动后：bridge 返回 admin_mode 标识，界面徽章「管理员模式」，CPU 温度实时显示；manifest 保持 asInvoker 不改\n- 主应用 desktop.py 允许加 IsAdmin 检测辅助函数（最小增量）；bridge.py 允许新增 handler\n\n## 4. 增强项（可选，工作量允许就做）\n- 长时记录 JSONL 增加温度字段（有值时），压测 CPU/GPU 阶段记录温度峰值并在报告展示（管理员模式下才有意义）\n\n## 5. 流程要求（照旧）\n- E2E 桩路由：/api/perf/temps（含 available false 与 true 两态）、admin-mode 徽章、重启按钮存在断言——E2E 绝不真提权\n- 冒烟：非 admin 下全链路降级不崩；LHM 管理员路径本机无法自动验证（UAC 需人工确认），代码写完后交由用户点一次「以管理员重启」实测，汇报中注明「待用户真实验证」\n- 两仓库 commit + ADR（LHM 选型/版本/权限策略/降级链/Defender 风险）；exe 重建重启；dist_new 继续保留不动\n- 完成后 send_message 汇报",
+    "timestamp": "2026-09-06T01:14:44.429Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788657536559-ny4d2u",
+    "from": "team-lead",
+    "to": "perf-analyzer-dev",
+    "type": "message",
+    "content": "格式规范变更（用户明确要求，已入全局记忆）：**所有可导出的报告一律 HTML 格式，不再用 Markdown**。\n\n对你当前工作的影响：\n1. **存量整改**（与温度任务同批交付）：「长时记录分析报告导出」和「压测报告导出」从 Markdown 改为 HTML\n2. HTML 规范：单文件自包含（内联 CSS、零外部依赖、可直接双击打开）；专业深色风格与主应用一致（配色可参照主应用 style.css 的深色变量）；表格+结论徽章+建议区块结构化展示；文件名含模块与时间戳（如 PerfReport_20260906_0912.html）；导出后沿用「打开位置」模式\n3. 温度任务的压测增强项（温度峰值入报告）直接按 HTML 报告实现\n4. 后续新增任何导出功能默认 HTML，此规则已入你的项目 ADR 要求范围（建议追加一条 ADR）\n\nE2E 断言相应调整：导出文件扩展名 .html、文件内容含关键 HTML 结构标记。汇报时说明改动点。",
+    "timestamp": "2026-09-06T01:18:56.559Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788658343729-44k1it",
+    "from": "team-lead",
+    "to": "perf-analyzer-dev",
+    "type": "message",
+    "content": "优先级调整：用户正在等 HTML 导出整改，请把**两个导出接口的 HTML 化**作为独立小提交先行交付（不必等温度任务全部完成）：\n\n范围（最小改动）：\n1. perf_service.py：_report_markdown / _stress_markdown 改为生成单文件自包含 HTML（内联 CSS 深色风格、表格+结论徽章+建议区块）；文件名 perf_report_XXX.html / perf_stress_XXX.html；接口返回值去掉 markdown 字段（或改为 html 长度，避免报文过大）\n2. web/perf.js：按钮文案「导出 Markdown 报告」→「导出 HTML 报告」（压测按钮同理核对）\n3. tools/e2e_perf.py：桩路径 .md→.html，按钮断言文案同步\n4. 主应用同步 perf_service.py + web/perf.js（契约4文件中的2个，注意只动 perf 相关）+ exe 重建重启（dist_new 流程）\n5. 独立 commit 后 send_message 简短汇报，然后继续温度任务\n\n注意：修改后必须过 E2E（含主应用 6 菜单回归 pageerror=none）再提交。",
+    "timestamp": "2026-09-06T01:32:23.729Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788658678083-tnyzyo",
+    "from": "team-lead",
+    "to": "perf-analyzer-dev",
+    "type": "message",
+    "content": "命名规范（用户定名，已入全局记忆）：系统正式名称为 **观枢终端平台｜EyeTerm**（Eye=洞察终端故障，Term=Terminal；定位 Windows+安卓统一管理、故障观测定位）。\n\n对你的影响：\n1. 你手上进行中的 **HTML 导出报告**，页面头部标题统一用「观枢终端平台｜EyeTerm」（副标题可写\"性能分析报告\"），交付时直接按新名称实现\n2. perf-standalone 测试页与文档（ARCHITECTURE.md 等）提及系统名时用新名称\n3. 界面大标题的正式更换由 main 统一处理（你正改 index.html，避免编辑冲突，nav 标题不要动）\n\n其余不变，继续当前任务。",
+    "timestamp": "2026-09-06T01:37:58.083Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788659177796-101ggb",
+    "from": "team-lead",
+    "to": "perf-analyzer-dev",
+    "type": "message",
+    "content": "验收通过 ✅。我方复核：smoke_stress 真实冒烟全绿（磁盘写1817/读2101 MB/s SSD级+tmp清理、CPU 19线程满载91.8%稳定、内存MemoryError保护性停止且释放回落81.6%、GPU无TDR、cancel立即清理）；温度接口降级精确（GPU 31°C/ CPU need_admin）；HTML生成器直接验证 DOCTYPE/「观枢终端平台｜EyeTerm」/闭合全对；E2E 复跑全部通过。\n\n主应用侧我已完成界面更名（2800966）：窗口标题+导航栏+错误弹窗 →「观枢终端平台｜EyeTerm」，exe 已重建重启（09:45），你不用再动标题。\n\n当前唯一待办：用户人工验证管理员 CPU 温度（点「以管理员重启」→ UAC → 管理员模式徽章+CPU温度读数）。等待用户反馈即可，继续待命。",
+    "timestamp": "2026-09-06T01:46:17.796Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788660200963-iqxnli",
+    "from": "team-lead",
+    "to": "perf-analyzer-dev",
+    "type": "message",
+    "content": "线上事故+热修复通报（已修复，双仓库已提交，你需补沉淀）：\n\n**现象**：exe 运行中不断循环弹出 cmd 窗口。**根因**：perf_service 的温度 2s 轮询调 nvidia-smi（及 powershell/typeperf 共 5 处 subprocess.run）均未加 CREATE_NO_WINDOW——windowed exe（console=False）里每次调用控制台子进程都会生成可见 cmd 窗口。\n\n**修复**（main 0db7c48 / perf-analyzer 819e806，我直接热修并已同步到你仓库）：模块级 `_NO_WINDOW = getattr(subprocess, \"CREATE_NO_WINDOW\", 0)`，5 处调用点（_detect_gpus/_gpu_metrics×2/_ps_cim_dump/_nvidia_temp）全部补 creationflags。disk_cleanup 的 explorer Popen 是有意开窗口，不受影响。\n\n**需要你沉淀（关键教训）**：\n1. ADR 入档：**GUI 无控制台程序中一切子进程必须 CREATE_NO_WINDOW**（有意弹窗的除外，如 explorer 打开位置）\n2. **为什么门禁没拦住**：smoke 在控制台跑、E2E 用桩——两种验证都看不到弹窗。请在门禁加一条**静态检查**：grep perf_service.py（及同步文件）中所有 subprocess.run/Popen，必须携带 creationflags=_NO_WINDOW（白名单：explorer 等有意开窗调用），纳入发布前三连（esprima→js_decl_check→e2e）之后的第四道检查\n3. 检查你项目里是否还有其他遗漏的子进程调用（含未来 LHM/驱动相关）\n\n继续待命。",
+    "timestamp": "2026-09-06T02:03:20.963Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788661863701-7k5udr",
+    "from": "team-lead",
+    "to": "perf-analyzer-dev",
+    "type": "message",
+    "content": "小任务（与 log-inspector 的界面改造配套）：**扩展 handle_perf_hwinfo**，增加终端基础信息字段（保持路由 /api/perf/hwinfo 不变，前端旧硬件卡片兼容——多余字段它自然忽略）：\n\n1. `os`：操作系统版本（Win32_OperatingSystem：Caption + Version + BuildNumber，如「Windows 11 专业版 10.0.26200」；降级 winreg CurrentBuild/ProductName）\n2. `hostname`：计算机名（socket.gethostname 或 %COMPUTERNAME%）\n3. `network`：本地网络配置列表——每网卡 {名称, IPv4, IPv6, MAC, 状态(up/down), 网关/DNS（尽量，WMI Win32_NetworkAdapterConfiguration IPEnabled=True 优先，psutil net_if_addrs 降级）}；排除环回与虚拟蓝牙类无 IP 适配器可自行斟酌（写入 ADR）\n\n要求：与现有 hwinfo 同一次缓存一次性获取（静态信息）；PowerShell 已有 15s 超时降级链沿用；真实冒烟输出本机数据；perf-analyzer + 主应用两仓库 commit；**exe 重建不用你做**——log-inspector 的界面改造交付后 main 会统一构建一次，你只需确保代码就位并汇报。\n\nUI 侧（徽章点击弹出信息面板）由 log-inspector-dev 实现，会直接消费你扩展后的字段。",
+    "timestamp": "2026-09-06T02:31:03.701Z",
+    "read": true
+  }
+]

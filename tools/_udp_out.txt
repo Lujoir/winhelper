@@ -1,0 +1,7 @@
+terminals: ['WIN-Jun-office-PC', 'WIN-SMOKE-1788838577']
+launch: 200 {"ok": true, "task_id": "IT-db6369e6f0", "port": 18200, "command_id": 22, "command": "iperf_client"}
+polling task IT-db6369e6f0 (max 180s) ...
+       6s status=running result={}
+      54s status=timeout result={"log": ""}
+FINAL: timeout
+LOG: 

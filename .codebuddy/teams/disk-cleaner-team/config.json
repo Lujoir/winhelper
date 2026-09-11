@@ -17,6 +17,16 @@
       "memberId": "disk-cleaner-dev@disk-cleaner-team",
       "name": "disk-cleaner-dev",
       "role": "Disk Cleaner项目开发负责人"
+    },
+    {
+      "memberId": "perf-analyzer-dev@disk-cleaner-team",
+      "name": "perf-analyzer-dev",
+      "role": "性能分析模块全栈开发"
+    },
+    {
+      "memberId": "log-inspector-dev@disk-cleaner-team",
+      "name": "log-inspector-dev",
+      "role": "日志诊断模块建设与菜单合并"
     }
   ],
   "isAutoTeam": false

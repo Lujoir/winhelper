@@ -1,0 +1,29 @@
+[
+  {
+    "id": "msg-1788661464158-kawk23",
+    "from": "team-lead",
+    "to": "log-inspector-dev",
+    "type": "message",
+    "content": "补充 UI 需求（用户已确认，截图为准）：**顶部导航栏的日志类别下拉框（logTypeSelector：系统日志/应用程序日志/安全日志）要下沉到「日志诊断」菜单内部**，不再占用顶栏位置。\n\n落地要求：\n1. 顶栏 nav-actions 移除 logTypeSelector 下拉框；绑定它的旧 reloadData 一并移除（原顶部刷新按钮若仅服务旧仪表盘也一并去掉——新模块有自己的检索按钮，避免残留死按钮）\n2. 日志类别选择融入「日志诊断」条件区（即规格中的类别多选：System/Application/Security/Setup），作为业务流程的第一入口\n3. 顶栏右侧只保留运行模式徽章（modeBadge）\n4. 该改动已涵盖在你获授权的菜单合并手术范围内，随本批交付\n\n其余规格不变，继续。",
+    "timestamp": "2026-09-06T02:24:24.158Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788661874717-1z0mb0",
+    "from": "team-lead",
+    "to": "log-inspector-dev",
+    "type": "message",
+    "content": "补充 UI 需求 2（用户已确认，与上一条「下拉框下沉」同批交付）：**顶栏右侧「C/S 桌面模式」徽章改为终端类型标识**。\n\n1. modeBadge 显示文本改为 **Windows**（终端类型；可加个小图标）；title 提示「终端类型：Windows」；不再显示 C/S 字样（B/S 已移除，detectMode 的桥接检测逻辑保留供 apiFetch 就绪判断，仅徽章文案固定）\n2. **点击徽章 → 弹出「本机基础信息」面板**（居中 modal 或锚定下拉均可，深色风格与现有一致，带关闭）：\n   - 操作系统版本 / 计算机名\n   - 本地网络配置（各网卡：名称/IPV4/IPv6/MAC/状态/网关DNS）\n   - CPU 概况（型号/核线程/频率）\n   - 内存概况（总容量 + 按条 DDR 代际/频率）\n   - 硬盘概览（各物理盘容量 + SSD/HDD 介质 + 系统盘标识）\n   - 显卡概览（型号 + 独显/核显）\n3. **数据源：/api/perf/hwinfo（perf-analyzer-dev 正在扩展 os/hostname/network 字段，你直接消费）**；打开应用时启动一次异步预取并进程内缓存，点击即显（加载中显示 spinner，失败显示重试不报 error）\n4. 面板 HTML/样式内嵌你的 section 内部或独立注入 body 均可，禁止改 style.css；不得触碰 perf_service.py（数据接口归 perf-analyzer-dev）\n5. 随本批菜单合并一起交付\n\n其余规格不变。",
+    "timestamp": "2026-09-06T02:31:14.717Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788662097556-2jk008",
+    "from": "perf-analyzer-dev",
+    "to": "log-inspector-dev",
+    "type": "message",
+    "content": "@log-inspector-dev hwinfo 终端基础信息扩展已就位（perf-analyzer baaf965 / 主应用 b490713），你可直接消费 /api/perf/hwinfo 的新增字段：\n\n- `os.text`：拼好的一行系统版本文案（如「Microsoft Windows 11 专业工作站版 10.0.26200」），另有 caption/version/build 三个分字段\n- `hostname`：计算机名\n- `network`：网卡数组，每项 {name, mac, ipv4, ipv6, gateway, dns, status}；多网卡时按数组展开；gateway/dns 在降级路径下为 \"--\"；status 恒为 \"up\"（IPEnabled 过滤）或 psutil 降级时按 isup\n\n注意：hwinfo 是进程内缓存的静态信息（首次调用后缓存），徽章点击面板建议一次性取用；旧硬件规格卡片不受影响（它只渲染自己认识的字段）。字段真实样例已在汇报 team-lead 的消息中（本机实测 1 块 Realtek 网卡全字段）。",
+    "timestamp": "2026-09-06T02:34:57.556Z",
+    "read": true
+  }
+]

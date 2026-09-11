@@ -52,5 +52,50 @@
     "content": "任务 #3 验收通过 ✅\n- commit 61bed66 已核查落地（_treeRunning/_treeDone/tmShowError/tmSpinText 共14处引用确认）\n- E2E 验证（Playwright 无头浏览器真实流程 + pageerror=none 断言）是本项目迄今质量最高的验证手段，予以表扬\n\n【新增要求】将 Playwright E2E 纳入标准验证手段：\n1. 追加 ADR-010 到 docs/DECISIONS.md：记录\"前端改动必须 Playwright E2E 验证（esprima 只能查语法，抓不住运行时 ReferenceError——本次主应用 ratio 缺陷即教训）\"，包含你的 E2E 脚本要点（起服务→打开页面→断言 spinner/进度/色块渲染/pageerror=none）\n2. 将 E2E 验证脚本固化到项目 tools/e2e_dashboard.py（可重复执行），git commit（前缀 test:）\n3. 完成后回报即可，无其他任务",
     "timestamp": "2026-09-05T08:29:33.696Z",
     "read": true
+  },
+  {
+    "id": "msg-1788598413517-xjy12m",
+    "from": "team-lead",
+    "to": "disk-cleaner-dev",
+    "type": "message",
+    "content": "上游变更通报（影响同步契约）：\n\nwinhelper 主应用已移除 B/S Web 模式（commit ea5fada）：\n- app.py 已删除；服务层 handle_* 抽至 service.py（desktop 模式 bridge.py 从 service 导入）\n- Flask 从主应用依赖/spec 中移除；desktop.py 不再有浏览器回退（WebView2 失败=原生弹窗）\n\n【对你（disk-cleaner 项目）的影响与约定更新】\n1. disk-cleaner 的 Flask 保留——它是独立项目的运行时与 E2E 验证载体，不受影响\n2. 同步契约变更：今后向 winhelper 发布时，只同步「disk_cleanup.py / appdata_scan.py / web/disk.js / web/appdata.js」，不再涉及任何 app.py/Flask 内容\n3. 注意分叉点：web/index.html 两边已不同（主应用是多Tab故障分析+磁盘清理；disk-cleaner是纯磁盘清理单页），style.css/app.js(app-lite.js) 修改时需双向人工比对，不能盲目复制\n4. docs/ARCHITECTURE.md 可补一行说明与 winhelper 的关系变化（可选，下次改动时顺带）\n\n无待办任务，继续待命。",
+    "timestamp": "2026-09-05T08:53:33.517Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788598603930-bu3c3d",
+    "from": "team-lead",
+    "to": "disk-cleaner-dev",
+    "type": "message",
+    "content": "收到，ADR-011 同步契约已确认归档（同步范围4文件、index.html分叉、style.css/app.js双向人工比对）。契约有效，后续 winhelper 发布一律按 ADR-011 执行。继续待命。",
+    "timestamp": "2026-09-05T08:56:43.930Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788600279810-e2h5r9",
+    "from": "team-lead",
+    "to": "disk-cleaner-dev",
+    "type": "message",
+    "content": "事故通报（主应用侧已修复，commit 5f4eaad）：\n\n**故障**：winhelper 磁盘清理菜单数据全部无法加载。根因：主应用 web/disk.js 的 renderTreemap 中 `const atRoot` 重复声明（846/870两处）→ 整个 disk.js SyntaxError → initDiskTab 未定义 → switchTab 的 typeof 保护静默跳过初始化。disk-cleaner 上游副本是干净的（仅一处 atRoot，守恒逻辑用 const loose），重复系同步合并到主应用时引入。\n\n**两个教训需要你沉淀（建议记入 DECISIONS.md 或 ADR-011 补充）**：\n\n1. **esprima-python 检不出同作用域重复 const/let 声明**（已用最小用例验证：`function f(){const a=1;const a=2;}` 解析通过）。因此 web/ 同步后仅跑 esprima 语法校验是不够的，必须跑真实浏览器断言（pageerror=none + 关键函数 typeof=function + 数据实际填充），与 921bb1c 的 E2E 固化结论一致。请把「重复声明检测」加入你的验证门禁：可以扩展 e2e_dashboard.py 的断言，或在同步检查中加一个 esprima AST 作用域扫描脚本。\n\n2. **主应用 exe 重建注意**：winhelper.exe 运行中时 PyInstaller 最后一步会 PermissionError（文件被锁）。流程应为：构建到 --distpath dist_new → 停止运行中的 winhelper 进程 → 替换 dist\\winhelper.exe → 重启。本次已按此流程完成（新版 19,539,005B @ 17:20）。\n\n验证手段（可复用）：Playwright + add_init_script 注入 pywebview 桩（stub window.pywebview.api.call 按路由返回假数据）→ file:// 加载 web/index.html → 点击磁盘菜单 → 断言 5 个关键函数已定义 + diskTotal 已填充 + 垃圾扫描进度出现 + pageerror 为空。本次已用该手段验证通过。\n\n无需回包，继续待命。",
+    "timestamp": "2026-09-05T09:24:39.810Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788657541956-6a8cdj",
+    "from": "team-lead",
+    "to": "disk-cleaner-dev",
+    "type": "message",
+    "content": "格式规范变更（用户明确要求，已入全局记忆，对两项目统一生效）：**所有可导出的报告一律 HTML 格式，不再用 Markdown/CSV 等纯文本**。\n\n- disk-cleaner 项目当前如有任何导出功能（报表/清单/日志类），按此规范整改；经查现有功能以界面展示为主，若确认无导出功能则只需知晓规则\n- 未来新增任何导出功能默认 HTML：单文件自包含（内联 CSS、零外部依赖）、深色专业风格与主应用一致、文件名含模块与时间戳、导出后「打开位置」\n- 建议将此规范追加为一条 ADR 并 commit，防止后续遗忘\n\n无需回包确认执行情况，规范知悉即可；下次发布时如有导出相关变更，在汇报中说明。",
+    "timestamp": "2026-09-06T01:19:01.956Z",
+    "read": true
+  },
+  {
+    "id": "msg-1788658681434-z3f1bb",
+    "from": "team-lead",
+    "to": "disk-cleaner-dev",
+    "type": "message",
+    "content": "命名规范（用户定名，已入全局记忆）：系统正式名称为 **观枢终端平台｜EyeTerm**（Eye=洞察终端故障，Term=Terminal；定位 Windows+安卓统一管理、故障观测定位）。\n\n影响：disk-cleaner 项目文档（DECISIONS/ARCHITECTURE/README）提及系统名时用新名称；未来若新增导出报告（ADR-014 HTML 规范），报告头部标题统一「观枢终端平台｜EyeTerm」。界面代码无需改动（主应用 nav 标题由 main 统一处理，避免与你无关的编辑冲突）。建议追加一条 ADR 备案。",
+    "timestamp": "2026-09-06T01:38:01.434Z",
+    "read": true
   }
 ]
