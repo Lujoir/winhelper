@@ -6,11 +6,11 @@
 - **事实来源**：代码实证（server-platform/server/api.py、bridge.py、uplink.py、net-doctor/net_service.py 等），每条注明文件+函数
 - **登记统计**：
   - 一、服务端 REST API（SRV）：79 条（2026-09-10 晚新增 ADR-029 IP 冲突深度检测 2 条）
-  - 二、终端本地桥接 API（BRG）：54 条（netdoctor 15 条：10 条 2026-09-09 合入主应用转「在用」commit 628c210；AI 诊断 2 条 2026-09-10 登记 commit a892f62/bd965ae；冲突检测本地转发 3 条 2026-09-10 晚登记，bridge.py:102-104 已挂载）
+  - 二、终端本地桥接 API（BRG）：58 条（netdoctor 19 条：10 条 2026-09-09 合入转「在用」commit 628c210；AI 诊断 2 条 commit a892f62/bd965ae；冲突检测本地转发 3 条 commit b344bbc/40abd3f；路由追踪 AI 分析 + AI 诊断历史持久化 4 条 2026-09-11 登记，commit c4495bc/916e791）
   - 三、终端↔平台协议（UPL）：10 条
   - 四、外部依赖接口（EXT）：6 条
   - 五、废弃/规划接口（DEP）：5 条
-  - **合计 154 条**
+  - **合计 158 条**
 - **通用约定**：
   - 服务端监听：ThreadingHTTPServer，`0.0.0.0:{port}`，默认 18090（app.py `_load_config` / `main`）；配置经 `$ETP_CONFIG` → `server/config.local.json` → dev 默认三级加载
   - 终端上行鉴权：请求头 `X-ETP-Token`（对照 config.json `terminal_token`）> 更新 2026-09-09：收敛为**多 token 模型**——config token 或 SQLite `terminal_tokens` 表 status='active' 命中均放行（详见 UPL-010，commit 4d2924b）
@@ -619,7 +619,7 @@
 - **调用方式**：`curl -X POST http://<server>/api/v1/ai/analyze -H "X-ETP-Token: <token>" -d '{"terminal_id":"WIN-HOST","issue_description":"..."}'`
 - **代码出处**：api.py `dispatch`（独立分支）→ `run_ai_analysis`
 - **状态**：在用
-- **登记记录**：2026-09-09，代码实证
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-11：新增 **kind 聚合分支机制**（dispatch api.py:268-281）——①payload `kind` 字段（小写）或 issue 前缀启发：`ipconflict|ip_conflict|ip冲突` 前缀 → kind=ipconflict（**ADR-030** 四源聚合，commit a8a6b95，此前未单列登记）；`路由追踪分析` 前缀 → kind=routetrace（**ADR-031**，commit 2cb39d2）；②routetrace 分支：`route_ctx=data.get("context")`（需含 hops）→ `_aggregate_routetrace_context`（api.py:1405+，hops 非法/空返回 None → **回退一般性分析**；pkg={target,hops,route_nodes(kb 全量，sources 标注 kb/empty),terminal,sources:{hops:"terminal_upload"}}）→ `ROUTETRACE_SYSTEM_PROMPT`（ai.py:543，路径研判/异常识别/结论三段 + 证据硬约束四条：只引用实际 hops/知识库内容、引用必附跳数序号、缺证据显式声明、**禁止按 IP 段推测区域归属**）+ `build_routetrace_context`（ai.py:586）三源预算分配（hops 16KB / route_nodes 8KB / terminal 4KB，总 32KB，`_allocate_budgets` 优先级贪心）；context_record={kind,target,hops_count,sources,sections,stats}；ipconflict 分支不受下述不一致影响（kind 由 issue 前缀推断，无需 route_ctx）；③**⚠️ 契约不一致（对账发现，待修）**：终端本地转发 BRG-055 payload 附加键为 `data` 而非 `context`（net_service.py:1745 vs api.py:279-281）→ routetrace 聚合 route_ctx 恒 None、全部走回退
 
 #### SRV-070 终端 AI 智能诊断 `POST /api/v1/terminals/{tid}/ai/diagnose`
 - **用途**：终端推送六类日志包 + 问题概述 → LLM 主备降级链出结论（同步接口，等待 ≤120s，实测约 11s；与 SRV-055 差异：上下文来自终端上报而非服务端聚合）
@@ -1331,7 +1331,44 @@
 - **提取链热修复（2026-09-10）**：平台实证返回字段为 **`response`**，旧提取链 analysis/content/result 永远落空致「（无内容）」；`analysis_id` 透传供 UI 追溯（net_service.py:685-699）
 - **代码出处**：net_service.py `handle_net_conflict_ai_reanalyze`(1610) / `_ai_analyze_issue`(685)；bridge.py ROUTES（bridge.py:104）+ net_service `NET_ROUTES`(1954)；调用方 net-doctor/web/netdoctor.js:580
 - **状态**：在用（bridge.py 与 NET_ROUTES 均已挂载，bridge 挂载 commit b344bbc「AI辅助分析修复与手动重跑，net-doctor acee817 同步」）
-- **登记记录**：2026-09-10（晚 2），代码实证（team-lead 下发追加，与上批 4 条一并入账）
+- **登记记录**：2026-09-10（晚 2），代码实证（team-lead 下发追加，与上批 4 条一并入账）> 更新 2026-09-11：`_ai_analyze_issue` 签名扩展 `extra` 参数（payload.update(extra)，net_service.py:765-772）——供 routetrace 分支附加 {kind,data}（见 BRG-055）；本条请求/响应结构不变
+
+#### BRG-055 路由追踪 AI 分析（本地转发）`GET|POST /api/netdoctor/trace-ai-analyze`
+- **用途**：路由追踪结果 AI 研判（平台 routetrace 聚合分支，ADR-031；LLM 真实耗时 30~60s，本地 45s 超时转发，平台侧继续跑完落库）；前端显隐门控=tracert 完成渲染 且 中心已连接 才显示入口（未连接不发起）+ 防重入
+- **鉴权**：无（本机进程内）；平台侧 X-ETP-Token 由 uplink 后端注入
+- **请求参数**：query/params `target`（必填 → missing_target）、`hops_json`（可选，前端结果区全量 JSON 数组字符串，元素 {hop,delays,ip,host,zone}；解析失败/非数组按 []）
+- **issue 构造**：逐跳格式化（前 30 跳，`#<hop> <ip>（<zone>）`，非 dict 元素截 80 字）→「路由追踪分析：终端 {tid} 目标 {target}；逐跳：#1 … → #2 …」
+- **转发**：`_ai_analyze_issue(tid, issue, extra={"kind": "routetrace", "data": hops})` → SRV-055（45s 超时）
+- **响应**：`{"success":true,"ai":{ok,analysis,model,analysis_id}}`；本地失败 `{"success":false,"error":"not_connected|missing_target"}`；业务失败在 ai.ok（ai_http_<code>）
+- **⚠️ 契约不一致（2026-09-11 对账发现，待修）**：本端 payload 附加键为 `data`（net_service.py:1745），平台 dispatch routetrace 分支读 `context`（api.py:279-281）→ route_ctx 恒 None → `_aggregate_routetrace_context` 返回 None → **routetrace 三源聚合分支实际永不生效，全部回退一般性分析**；修复方向二选一（终端改键 context / 平台兼容 data），定责修复后本条与 SRV-055 补更新行
+- **代码出处**：net_service.py `handle_net_trace_ai_analyze`(1719)；bridge.py:106 + `NET_ROUTES`:2143；调用方 net-doctor/web/netdoctor.js
+- **状态**：在用（双端挂载就绪；聚合分支受上述不一致影响走回退）
+- **登记记录**：2026-09-11，代码实证（net-doctor a8aa49e / server-platform 2cb39d2 ADR-031 / 主应用 bridge 挂载 c4495bc）
+
+#### BRG-056 AI 诊断历史读取 `GET /api/netdoctor/ai-history`
+- **用途**：AI 诊断历史读取（**JSONL 文件持久化主存储**，2026-09-11 用户要求重启可见，替代内存/localStorage 方案）
+- **请求参数**：无
+- **响应**：`{"success":true,"history":[{ts,...}]}`（按 ts 倒序，**上限 200 条滚动**；坏行静默跳过）
+- **存储**：`%LOCALAPPDATA%\winhelper\netdoctor_records\ai_history.jsonl`（`_ai_history_path` → `_records_dir`）；写经 `.tmp` + `os.replace` 原子替换（`_write_ai_history`）
+- **代码出处**：net_service.py `handle_net_ai_history`(1783) / `_read_ai_history`(1753) / `_ai_history_path`(1749)；bridge.py:107 + `NET_ROUTES`:2144
+- **状态**：在用
+- **登记记录**：2026-09-11，代码实证（net-doctor f22e2bf / 主应用 916e791）
+
+#### BRG-057 AI 诊断历史追加 `GET|POST /api/netdoctor/ai-history-append`
+- **用途**：追加历史记录（records_json 兼容单对象/数组——数组用于 localStorage 一次性迁移）；合并后超 200 条滚动淘汰最旧
+- **请求参数**：query/params `records_json`（JSON 字符串；元素须为含 `ts` 的 dict；解析失败或无有效记录 → invalid_records）
+- **响应**：`{"success":true,"total":N}`（≤200）；失败 `{"success":false,"error":"invalid_records"}`
+- **代码出处**：net_service.py `handle_net_ai_history_append`(1788)；bridge.py:108 + `NET_ROUTES`:2145
+- **状态**：在用
+- **登记记录**：2026-09-11，代码实证（f22e2bf / 916e791）
+
+#### BRG-058 AI 诊断历史删除 `GET|POST /api/netdoctor/ai-history-delete`
+- **用途**：删除历史记录：`all=1` 清空文件（removed=清除总数）或 `ts=<时间戳>` 单条剔除（重写文件；无命中 removed=0）
+- **请求参数**：query/params `all`（="1" 清空）或 `ts`（整数；两者皆缺 → missing_ts）
+- **响应**：`{"success":true,"removed":N}`；失败 `{"success":false,"error":"missing_ts"}`
+- **代码出处**：net_service.py `handle_net_ai_history_delete`(1806)；bridge.py:109 + `NET_ROUTES`:2146
+- **状态**：在用
+- **登记记录**：2026-09-11，代码实证（f22e2bf / 916e791）
 
 ---
 
@@ -1553,6 +1590,6 @@
 
 ## 附：对账约定
 
-- 本台账对账基线 commit：工作区当前版本（bridge.py / uplink.py 有未提交修改，以台账登记时点代码为准）> 更新 2026-09-09：net-doctor 合入基线 commit 628c210（bridge.py ROUTES 含 /api/netdoctor/* 10 条）> 更新 2026-09-09：系统管理模块基线 commit 4d2924b（sysadmin 13 路由 + 多 token 模型 UPL-010 + session-info，代码实证 api.py:88-104/243-248/764-773/829+）> 更新 2026-09-09：知识库模块语义修正基线 commit 31f8e1d（KB 9 端点 ADR-022 语义 + route-nodes source 字段，代码实证 api.py:1396-1461/1369-1377/383-397、kb_store.py:43/59/157）> 更新 2026-09-09：终端 AI 智能诊断基线 commit 8aaa64e（SRV-070 diagnose + SRV-071 单条详情 + trigger=terminal_diagnose，代码实证 api.py:419-445/784-790/1160+，ADR-023）> 更新 2026-09-09：画方 admission_log 接入基线 commit a5156cc（nad_client.py + _enrich_ipconflict_admission，EXT-006 补代码实证与 3 处文档-实际差异，ADR-024）> 更新 2026-09-09：交换机管理基线 commit f031152（SRV-072~077 sysadmin 组，ADR-026，代码实证 api.py:1059-1133、settings.py:15/31、store.py:170-177）> 更新 2026-09-10：AI 诊断批次基线 net-doctor a892f62 / 主应用 bd965ae（BRG-050 补登+mode 双模式扩展、BRG-051 新增、BRG-040 ai_personal_json 写配置；bridge.py `call` body 双参透传仅 ai-diagnose 一条，bridge.py:128-133；EXT-006/BRG-042 回归核对无变化）> 更新 2026-09-10（晚）：AI 诊断收尾批次基线——server-platform 子仓 47de462/91b2fe6（ADR-027 截断重做+证据硬约束，SRV-070）、257ed21（ADR-028 判定精化 SRV-051 + ADR-029 深度检测 SRV-078/079）、25d48e2（静态资源 ETag 协商缓存，SRV-042/043）；net-doctor 子仓 c7219c7/1f60f95（BRG-051 used_key 三态+防假阳性、BRG-050 URL 归一化+提示词加固、BRG-042 Find-NetRoute 路由解析）；主仓同步 a81bd1c/3069ea7（net-doctor 指针前进 1f60f95）> 更新 2026-09-10（晚 2）：server-platform 9e604a7+cc34bae（deep-engine ADR-029 双端点归属修正 + verdict.sources ARP 失败同步）；net-doctor 深度检测本地转发 2 条 BRG-052/053（conflict-deep-start/poll，query 传参非 body；NET_ROUTES 已定义、主应用 bridge.py ROUTES 挂载待同步——待办移交主应用集成）> 更新 2026-09-10（晚 2）：BRG-054 conflict-ai-reanalyze 入账（主应用 b344bbc / net-doctor acee817）；BRG-052/053 撤「挂载待同步」（主应用 40abd3f hotfix 挂载 bridge.py:102-103，v8 内按钮不可用根因即漏挂载）——主应用内 netdoctor 冲突检测三路由双端就绪
+- 本台账对账基线 commit：工作区当前版本（bridge.py / uplink.py 有未提交修改，以台账登记时点代码为准）> 更新 2026-09-09：net-doctor 合入基线 commit 628c210（bridge.py ROUTES 含 /api/netdoctor/* 10 条）> 更新 2026-09-09：系统管理模块基线 commit 4d2924b（sysadmin 13 路由 + 多 token 模型 UPL-010 + session-info，代码实证 api.py:88-104/243-248/764-773/829+）> 更新 2026-09-09：知识库模块语义修正基线 commit 31f8e1d（KB 9 端点 ADR-022 语义 + route-nodes source 字段，代码实证 api.py:1396-1461/1369-1377/383-397、kb_store.py:43/59/157）> 更新 2026-09-09：终端 AI 智能诊断基线 commit 8aaa64e（SRV-070 diagnose + SRV-071 单条详情 + trigger=terminal_diagnose，代码实证 api.py:419-445/784-790/1160+，ADR-023）> 更新 2026-09-09：画方 admission_log 接入基线 commit a5156cc（nad_client.py + _enrich_ipconflict_admission，EXT-006 补代码实证与 3 处文档-实际差异，ADR-024）> 更新 2026-09-09：交换机管理基线 commit f031152（SRV-072~077 sysadmin 组，ADR-026，代码实证 api.py:1059-1133、settings.py:15/31、store.py:170-177）> 更新 2026-09-10：AI 诊断批次基线 net-doctor a892f62 / 主应用 bd965ae（BRG-050 补登+mode 双模式扩展、BRG-051 新增、BRG-040 ai_personal_json 写配置；bridge.py `call` body 双参透传仅 ai-diagnose 一条，bridge.py:128-133；EXT-006/BRG-042 回归核对无变化）> 更新 2026-09-10（晚）：AI 诊断收尾批次基线——server-platform 子仓 47de462/91b2fe6（ADR-027 截断重做+证据硬约束，SRV-070）、257ed21（ADR-028 判定精化 SRV-051 + ADR-029 深度检测 SRV-078/079）、25d48e2（静态资源 ETag 协商缓存，SRV-042/043）；net-doctor 子仓 c7219c7/1f60f95（BRG-051 used_key 三态+防假阳性、BRG-050 URL 归一化+提示词加固、BRG-042 Find-NetRoute 路由解析）；主仓同步 a81bd1c/3069ea7（net-doctor 指针前进 1f60f95）> 更新 2026-09-10（晚 2）：server-platform 9e604a7+cc34bae（deep-engine ADR-029 双端点归属修正 + verdict.sources ARP 失败同步）；net-doctor 深度检测本地转发 2 条 BRG-052/053（conflict-deep-start/poll，query 传参非 body；NET_ROUTES 已定义、主应用 bridge.py ROUTES 挂载待同步——待办移交主应用集成）> 更新 2026-09-10（晚 2）：BRG-054 conflict-ai-reanalyze 入账（主应用 b344bbc / net-doctor acee817）；BRG-052/053 撤「挂载待同步」（主应用 40abd3f hotfix 挂载 bridge.py:102-103，v8 内按钮不可用根因即漏挂载）——主应用内 netdoctor 冲突检测三路由双端就绪> 更新 2026-09-11：路由追踪 AI 分析批次基线——net-doctor a8aa49e（trace-ai-analyze 对接）+ f22e2bf（AI 诊断历史 JSONL 持久化三路由）；server-platform 2cb39d2（ADR-031 routetrace 分支）+ a8a6b95（ADR-030 ipconflict 聚合分支补登记）；主仓 c4495bc/916e791（bridge 挂载 4 条，bridge.py:106-109）；**遗留缺陷：BRG-055↔SRV-055 键名不一致（data vs context），routetrace 聚合走回退，待 net-doctor-dev/server-platform-dev 定责修复**
 - 对账方法：grep api.py `_terminal_api`/`_console_api`/`_console_kb_api`/`_console_nettest` 分支 + bridge.py `ROUTES`，与台账逐条比对，输出差异清单（新增未登记/已废弃仍登记/字段不符）
 - 维护规则：接口变更（改参数/改路径/废弃）必须同步更新台账，条目内追加 `> 更新 YYYY-MM-DD：变更点（出处）`，保留历史痕迹
