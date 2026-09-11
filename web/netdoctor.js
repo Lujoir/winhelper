@@ -1936,26 +1936,82 @@ function ndAiCountIssue() {
 }
 
 function ndAiInitHistory() {
+    /* 历史主存储 = 服务端 JSONL 文件（2026-09-11 用户要求：重启可见、可手动删除）；
+       一次性迁移：检测到 localStorage 旧记录则导入文件并清除，避免双源漂移 */
     try {
         var raw = localStorage.getItem("nd_ai_history");
-        ndState.aiHistory = raw ? JSON.parse(raw) : [];
-        if (!ndState.aiHistory.length) { ndState.aiHistory = []; }
-    } catch (e) { ndState.aiHistory = []; }
-    ndAiRenderHistory();
+        if (raw) {
+            var legacy = JSON.parse(raw) || [];
+            localStorage.removeItem("nd_ai_history");
+            if (legacy.length) {
+                ndApiFetch("/api/netdoctor/ai-history-append?records_json=" +
+                    encodeURIComponent(JSON.stringify(legacy)))
+                    .then(function () { ndAiLoadHistory(); })
+                    .catch(function () { ndState.aiHistory = legacy; ndAiRenderHistory(); });
+                return;
+            }
+        }
+    } catch (e) { /* 存储禁用：直接走文件加载 */ }
+    ndAiLoadHistory();
+}
+
+function ndAiLoadHistory() {
+    ndApiFetch("/api/netdoctor/ai-history").then(function (d) {
+        ndState.aiHistory = (d && d.history) || [];
+        ndAiRenderHistory();
+    }).catch(function () {
+        ndState.aiHistory = ndState.aiHistory || [];
+        ndAiRenderHistory();
+    });
 }
 
 function ndAiSaveHistory(d, issue) {
-    try {
-        var h = ndState.aiHistory || [];
-        h.unshift({ ts: Date.now(), issue: String(issue || "").slice(0, 60),
-                    analysis_id: d.analysis_id, model: d.model,
-                    duration_ms: d.duration_ms,
-                    text: String(d.response_text || "").slice(0, 20000) });
-        ndState.aiHistory = h.slice(0, 20);
-        try { localStorage.setItem("nd_ai_history", JSON.stringify(ndState.aiHistory)); }
-        catch (e) { /* file:// 或存储禁用：内存态即可 */ }
-    } catch (e) { /* 存储失败不影响诊断结果展示 */ }
+    /* 提交成功（企业/个人两模式共用）→ 内存 unshift + 服务端 JSONL 追加（200 条滚动） */
+    var rec = { ts: Date.now(), issue: String(issue || "").slice(0, 60),
+                analysis_id: d.analysis_id, model: d.model,
+                duration_ms: d.duration_ms,
+                text: String(d.response_text || "").slice(0, 20000) };
+    ndState.aiHistory = [rec].concat(ndState.aiHistory || []).slice(0, 200);
+    ndApiFetch("/api/netdoctor/ai-history-append?records_json=" +
+        encodeURIComponent(JSON.stringify(rec))).catch(function () {});
     ndAiRenderHistory();
+}
+
+function ndAiDeleteHistory(ts, armed) {
+    /* 行内两段确认：首次点变「确认删除」，再点执行——删除后文件与列表同步刷新 */
+    if (!armed) {
+        var btns = document.querySelectorAll('#ndAiHistoryBody button[data-ts="' + ts + '"]');
+        for (var i = 0; i < btns.length; i++) {
+            btns[i].textContent = "确认删除";
+            btns[i].setAttribute("onclick", "event.stopPropagation(); ndAiDeleteHistory(" + ts + ", true)");
+        }
+        return;
+    }
+    ndApiFetch("/api/netdoctor/ai-history-delete?ts=" + ts).then(function () {
+        ndState.aiHistory = (ndState.aiHistory || []).filter(function (r) {
+            return Number(r.ts) !== Number(ts);
+        });
+        ndAiRenderHistory();
+    }).catch(function () {});
+}
+
+function ndAiClearHistory() {
+    /* 清空全部：两段确认（4s 未确认自动复位），重写文件为空 */
+    if (window.__ndAiClearArmed) {
+        window.__ndAiClearArmed = false;
+        ndApiFetch("/api/netdoctor/ai-history-delete?all=1").then(function () {
+            ndAiLoadHistory();
+        }).catch(function () {});
+        return;
+    }
+    window.__ndAiClearArmed = true;
+    var b = document.getElementById("ndAiClearBtn");
+    if (b) { b.textContent = "确认清空？"; }
+    window.setTimeout(function () {
+        window.__ndAiClearArmed = false;
+        var b2 = document.getElementById("ndAiClearBtn");
+        if (b2) { b2.textContent = "清空全部"; }
+    }, 4000);
 }
 
 function ndAiRenderHistory() {
@@ -1968,9 +2024,14 @@ function ndAiRenderHistory() {
         rows += '<tr style="cursor:pointer" onclick="ndAiShowHistory(' + i + ')">'
             + '<td>' + ndEscapeHtml(h[i].issue || "--") + '</td>'
             + '<td class="nd-num">' + ndEscapeHtml(new Date(h[i].ts).toLocaleString()) + '</td>'
-            + '<td>' + ndEscapeHtml(h[i].analysis_id || "本地") + '</td></tr>';
+            + '<td>' + ndEscapeHtml(h[i].analysis_id || "本地") + '</td>'
+            + '<td><button class="nd-btn" data-ts="' + h[i].ts
+            + '" onclick="event.stopPropagation(); ndAiDeleteHistory(' + h[i].ts + ')">删除</button></td></tr>';
     }
-    el.innerHTML = '<table class="nd-table"><tr><th>问题摘要</th><th>时间</th><th>analysis_id</th></tr>' + rows + '</table>';
+    el.innerHTML = '<div style="display:flex;justify-content:flex-end;margin:2px 0 4px">'
+        + '<button class="nd-btn" id="ndAiClearBtn" onclick="ndAiClearHistory()">清空全部</button></div>'
+        + '<table class="nd-table"><tr><th>问题摘要</th><th>时间</th><th>analysis_id</th><th>操作</th></tr>'
+        + rows + '</table>';
 }
 
 function ndAiShowHistory(i) {
@@ -2028,7 +2089,6 @@ function ndAiRenderResult(d) {
     var meta = '<div class="nd-ai-meta">'
         + '<span class="nd-badge nd-info">'
         + (d.analysis_id ? ("analysis_id " + ndEscapeHtml(d.analysis_id)) : "本地诊断") + '</span>'
-        + '<span class="nd-badge nd-muted">模型 ' + ndEscapeHtml(d.model || "--") + '</span>'
         + '<span class="nd-badge nd-muted">耗时 '
         + ndEscapeHtml(d.duration_ms !== null && d.duration_ms !== undefined
             ? d.duration_ms + " ms" : "--") + '</span></div>';

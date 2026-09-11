@@ -1666,6 +1666,81 @@ def handle_net_trace_ai_analyze(params=None):
     return {"success": True, "ai": ai}
 
 
+def _ai_history_path():
+    return os.path.join(_records_dir(), "ai_history.jsonl")
+
+
+def _read_ai_history():
+    """读 AI 诊断历史 JSONL（按 ts 倒序，上限 200 条滚动）。"""
+    out = []
+    try:
+        with open(_ai_history_path(), "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                    if isinstance(rec, dict) and rec.get("ts"):
+                        out.append(rec)
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    out.sort(key=lambda r: r.get("ts") or 0, reverse=True)
+    return out[:200]
+
+
+def _write_ai_history(records):
+    path = _ai_history_path()
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        for r in records:
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    os.replace(tmp, path)
+
+
+def handle_net_ai_history(params=None):
+    """AI 诊断历史读取（文件持久化主存储，2026-09-11 用户要求重启可见）。"""
+    return {"success": True, "history": _read_ai_history()}
+
+
+def handle_net_ai_history_append(params=None):
+    """追加历史（records_json 兼容单对象/数组——数组用于 localStorage 一次性迁移）；
+    超 200 条滚动淘汰最旧。"""
+    try:
+        data = json.loads((params or {}).get("records_json") or "[]")
+    except Exception:
+        return {"success": False, "error": "invalid_records"}
+    items = data if isinstance(data, list) else [data]
+    valid = [r for r in items if isinstance(r, dict) and r.get("ts")]
+    if not valid:
+        return {"success": False, "error": "invalid_records"}
+    recs = _read_ai_history()
+    for r in valid:
+        recs.insert(0, r)
+    _write_ai_history(recs[:200])
+    return {"success": True, "total": min(len(recs), 200)}
+
+
+def handle_net_ai_history_delete(params=None):
+    """删除历史：{ts}单条（行内确认）或 {all:"1"}清空——重写文件剔除。"""
+    p = params or {}
+    recs = _read_ai_history()
+    if str(p.get("all") or "") == "1":
+        _write_ai_history([])
+        return {"success": True, "removed": len(recs)}
+    try:
+        ts = int(p.get("ts") or 0)
+    except (TypeError, ValueError):
+        return {"success": False, "error": "missing_ts"}
+    keep = [r for r in recs if int(r.get("ts") or 0) != ts]
+    removed = len(recs) - len(keep)
+    if removed:
+        _write_ai_history(keep)
+    return {"success": True, "removed": removed}
+
+
 def handle_net_ping_start(params=None):
     """启动连通性全量检测任务。"""
     task_id, reused = _start_task("ping", run_ping_suite, {})
@@ -1986,6 +2061,9 @@ NET_ROUTES = {
     "/api/netdoctor/conflict-deep-poll": handle_net_conflict_deep_poll,
     "/api/netdoctor/conflict-ai-reanalyze": handle_net_conflict_ai_reanalyze,
     "/api/netdoctor/trace-ai-analyze": handle_net_trace_ai_analyze,
+    "/api/netdoctor/ai-history": handle_net_ai_history,
+    "/api/netdoctor/ai-history-append": handle_net_ai_history_append,
+    "/api/netdoctor/ai-history-delete": handle_net_ai_history_delete,
     "/api/netdoctor/ping-start": handle_net_ping_start,
     "/api/netdoctor/ping-history": handle_net_ping_history,
     "/api/netdoctor/tracert-start": handle_net_tracert_start,
