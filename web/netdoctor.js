@@ -568,6 +568,25 @@ function ndAiReBtnReset() {
     if (b) { b.disabled = false; }
 }
 
+function ndConflictPostReanalyze(q) {
+    /* 平台多方证据聚合分析为长请求（服务端 45s，LLM 真实耗时 30~60s，2026-09-11 热修复）：
+       绕过 ndApiFetch 15s 通用保护层（否则 30s+ 响应被提前掐断 api_timeout_15000ms），
+       独立 60s 客户端超时（略大于服务端 45s，留网络余量），对齐 ndAiPostDiagnose 先例。 */
+    var call;
+    if (window.pywebview && window.pywebview.api) {
+        call = window.pywebview.api.call("/api/netdoctor/conflict-ai-reanalyze" + q);
+        call.catch(function () {});
+    } else {
+        call = fetch("/api/netdoctor/conflict-ai-reanalyze" + q).then(function (r) { return r.json(); });
+    }
+    return Promise.race([
+        call,
+        new Promise(function (_, rej) {
+            setTimeout(function () { rej(new Error("客户端超时（60s），聚合分析可能仍在处理，可重试")); }, 60000);
+        })
+    ]);
+}
+
 function ndReanalyzeAi() {
     var last = ndState.conflictLast;
     if (!last || !last.ip || !last.mac) { return; }
@@ -575,11 +594,11 @@ function ndReanalyzeAi() {
     if (btn) { btn.disabled = true; }
     var body = document.getElementById("ndAiReBody");
     if (body) { body.innerHTML = ""; }
-    ndSetTip("ndAiReTip", "分析中…（最长约 45s）");
+    ndSetTip("ndAiReTip", "平台多方证据聚合分析中（约 30~60 秒）…");
     var ev = (last.verdict && last.verdict.evidence) || [];
     var q = "?ip=" + encodeURIComponent(last.ip) + "&mac=" + encodeURIComponent(last.mac)
         + "&evidence_json=" + encodeURIComponent(JSON.stringify(ev.slice(0, 12)));
-    ndApiFetch("/api/netdoctor/conflict-ai-reanalyze" + q).then(function (d) {
+    ndConflictPostReanalyze(q).then(function (d) {
         if (!d || d.success === false) {
             ndSetTip("ndAiReTip", "分析失败：" + ((d && d.error) || "未知") + "（可重试）");
             ndAiReBtnReset();
