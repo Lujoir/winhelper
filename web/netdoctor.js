@@ -1778,6 +1778,10 @@ function ndAiCollectOne(key) {
     var route = key === "hwinfo" ? "/api/perf/hwinfo"
         : key === "perf_analysis" ? "/api/perf/record-report"
         : "/api/perf/stress-status";
+    if (key === "perf_stress" && ndState.perfStressLastId) {
+        /* 补采/最近一次压测的记录按 stress_id 精确回查（此前无参调用恒失败） */
+        route += "?stress_id=" + encodeURIComponent(ndState.perfStressLastId);
+    }
     return ndApiFetch(route).then(function (d) {
         var data = null, note = "已采集";
         if (key === "hwinfo") {
@@ -2265,21 +2269,41 @@ function ndAiRecollectOne(k) {
     });
 }
 
-/* 可补采任务执行（全部走现有任务引擎，零后端新增）；onDone(ok) */
+function ndTraceDefaultTarget() {
+    /* 补采 tracert 默认目标：中心 IP（uplink server_url host）优先，无则回退节点表 center 动态目标 */
+    if (ndState.uplink && ndState.uplink.server_url) {
+        var u = ndState.uplink.server_url.split("://");
+        var host = (u[1] || "").split("/")[0].split(":")[0];
+        if (host) { return host; }
+    }
+    for (var i = 0; i < ndState.nodes.length; i++) {
+        if (ndState.nodes[i].key === "center") { return ndState.nodes[i].target || "127.0.0.1"; }
+    }
+    return "127.0.0.1";
+}
+
+/* 可补采任务执行（全部走现有任务引擎，零后端新增）；onDone(ok)。
+   2026-09-11 全链修复：任务 result 回填采集源变量（此前 tracert/stress 补采完成但
+   lastTracert/lastStressResult 未更新，回采仍报「尚未追踪」→ 用户所见「排队不动」）；
+   进度逐行实时（排队→运行→完成）。 */
 function ndAiBackfillTask(key, stEl, onDone) {
     var setSt = function (t) { if (stEl) { stEl.textContent = t; } };
-    var pollNd = function (taskId) {
-        ndPollTask(taskId, null, function (err) {
+    var pollNd = function (taskId, onResult, onProg) {
+        ndPollTask(taskId, function (t) { if (onProg) { onProg(t.progress || {}); } }, function (err, result) {
             if (err) { setSt("失败"); onDone(false); return; }
             setSt("完成");
+            if (onResult) { onResult(result); }
             onDone(true);
         });
     };
     if (key === "net_tracert") {
-        setSt("运行中…");
-        var center = "";
-        for (var i = 0; i < ndState.nodes.length; i++) {
-            if (ndState.nodes[i].key === "center") { center = ndState.nodes[i].target || ""; break; }
+        setSt("发起中…");
+        var tgtEl = document.getElementById("ndAiBfTarget");
+        var center = (tgtEl && tgtEl.value.trim()) || "";
+        if (!center) {
+            for (var i = 0; i < ndState.nodes.length; i++) {
+                if (ndState.nodes[i].key === "center") { center = ndState.nodes[i].target || ""; break; }
+            }
         }
         if (!center && ndState.uplink && ndState.uplink.server_url) {
             var u = ndState.uplink.server_url.split("://");
@@ -2288,30 +2312,41 @@ function ndAiBackfillTask(key, stEl, onDone) {
         ndApiFetch("/api/netdoctor/tracert-start?target=" + encodeURIComponent(center || "127.0.0.1"))
             .then(function (d) {
                 if (!d || d.success === false) { setSt("失败：" + ((d && d.error) || "未知")); onDone(false); return; }
-                pollNd(d.task_id);
+                pollNd(d.task_id, function (res) {
+                    /* 关键回填：补采结果写入 lastTracert，回采 ndAiCollectOne 才能取到数据 */
+                    if (res && res.hops) { ndState.lastTracert = res; }
+                }, function (p) {
+                    setSt("追踪中…" + (p.kb !== undefined ? " 知识库 " + p.kb + " 条" : ""));
+                });
             }).catch(function () { setSt("失败"); onDone(false); });
         return;
     }
     if (key === "net_stress") {
-        setSt("运行中…");
+        setSt("发起中…");
         ndApiFetch("/api/netdoctor/stress-start?duration_sec=10&sizes=64,256&udp_mbps=100")
             .then(function (d) {
                 if (!d || d.success === false) { setSt("失败：" + ((d && d.error) || "未知")); onDone(false); return; }
-                pollNd(d.task_id);
+                pollNd(d.task_id, function (res) {
+                    if (res && res.center) { ndState.lastStressResult = res; }
+                }, function (p) {
+                    setSt("压测中 " + (p.stage || "") + "（" + (p.done || 0) + "/" + (p.total || "?") + "）");
+                });
             }).catch(function () { setSt("失败"); onDone(false); });
         return;
     }
     if (key === "perf_stress") {
-        setSt("运行中…");
+        setSt("发起中…");
         ndApiFetch("/api/perf/stress-start?mode=full")
             .then(function (d) {
                 if (!d || !d.success || !d.stress_id) {
                     setSt("失败：" + ((d && d.error) || "未知")); onDone(false); return;
                 }
                 var sid = d.stress_id;
+                ndState.perfStressLastId = sid;   /* 回采 stress-status 需带 stress_id（此前无参调用恒失败） */
                 var ticks = 0;
                 var t = setInterval(function () {
                     ticks++;
+                    setSt("性能压测中 " + ticks + "s");
                     ndApiFetch("/api/perf/stress-status?stress_id=" + encodeURIComponent(sid))
                         .then(function (s) {
                             var task = s && s.task;
@@ -2361,6 +2396,10 @@ function ndAiShowCompleteModal(issue, prep, done) {
             + '<input type="checkbox" class="nd-bf-chk" data-key="' + backfill[j] + '"'
             + (needCenter ? " disabled" : " checked") + '>'
             + '<span>' + ndEscapeHtml(bf.label) + '</span>'
+            + (backfill[j] === "net_tracert"
+                ? '<input class="nd-input" id="ndAiBfTarget" style="width:150px" value="'
+                    + ndEscapeHtml(ndTraceDefaultTarget()) + '" title="路由追踪目标（可编辑）">'
+                : "")
             + '<span class="nd-hint">' + (needCenter ? "需连接中心，本次不可补采" : bf.hint) + '</span>'
             + '<span class="nd-hint nd-bf-status">排队</span></div>';
     }
