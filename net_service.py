@@ -201,8 +201,9 @@ def _uplink_ca_path():
     if base:
         cands.append(os.path.join(base, "assets", "platform_ca.pem"))
         cands.append(os.path.join(base, "platform_ca.pem"))
-    cands.append(os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                              "assets", "platform_ca.pem"))
+    here = os.path.dirname(os.path.abspath(__file__))
+    cands.append(os.path.join(here, "assets", "platform_ca.pem"))
+    cands.append(os.path.join(os.path.dirname(here), "assets", "platform_ca.pem"))   # 仓库根布局（net-doctor 开发态）
     for c in cands:
         if os.path.isfile(c):
             return c
