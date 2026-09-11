@@ -31,6 +31,9 @@ Name: autostart; Description: '开机自动启动（静默运行）'; Flags: unc
 [Files]
 Source: ..\dist\winhelper.exe; DestDir: {app}; Flags: ignoreversion
 Source: MicrosoftEdgeWebView2RuntimeInstallerX64.exe; DestDir: {tmp}; Flags: deleteafterinstall
+; EyeTerm 平台自建根证书（公开文件，私钥在服务器）：安装时自动导入系统"受信任的根证书颁发机构"，
+; 使本机浏览器可直接信任 https 管理端（8443）。卸载不移除该信任（保留平台访问能力）。
+Source: ..\assets\platform_ca.pem; DestDir: {app}\assets; DestName: eyeterm_root_ca.crt; Flags: ignoreversion
 
 [Icons]
 Name: {group}\EyeTerm; Filename: {app}\{#MyAppExeName}
@@ -40,6 +43,7 @@ Name: {autodesktop}\EyeTerm; Filename: {app}\{#MyAppExeName}; Tasks: desktopicon
 Root: HKCU; Subkey: Software\Microsoft\Windows\CurrentVersion\Run; ValueType: string; ValueName: EyeTerm; ValueData: "{app}\{#MyAppExeName}"; Tasks: autostart; Flags: uninsdeletevalue
 
 [Run]
+Filename: certutil; Parameters: "-addstore -f Root ""{app}\assets\eyeterm_root_ca.crt"""; Flags: runhidden; StatusMsg: "信任 EyeTerm 平台根证书..."
 Filename: {app}\{#MyAppExeName}; Description: {cm:LaunchProgram,EyeTerm}; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
