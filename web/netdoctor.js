@@ -173,9 +173,11 @@ function ndLoadUplink() {
     ndApiFetch("/api/perf/uplink/status").then(function (d) {
         ndState.uplink = d && d.uplink ? d.uplink : null;
         ndRenderUplink();
+        ndApplyTraceAiGate();   /* 中心状态翻转 → 路由 AI 分析入口显隐同步（2026-09-11） */
     }).catch(function () {
         /* 2026-09-09 冻结缺陷修复：失败如实显示（apiFetch 层 15s 超时保证此处可达） */
         ndRenderUplinkFail();
+        ndApplyTraceAiGate();
     });
 }
 
@@ -227,9 +229,11 @@ function ndUplinkPollTick() {
         settle();
         ndState.uplink = d && d.uplink ? d.uplink : null;
         ndRenderUplink();
+        ndApplyTraceAiGate();   /* 中心状态翻转 → 路由 AI 分析入口显隐同步 */
     }).catch(function () {
         settle();
         ndRenderUplinkFail();
+        ndApplyTraceAiGate();
     });
 }
 
@@ -568,23 +572,31 @@ function ndAiReBtnReset() {
     if (b) { b.disabled = false; }
 }
 
-function ndConflictPostReanalyze(q) {
-    /* 平台多方证据聚合分析为长请求（服务端 45s，LLM 真实耗时 30~60s，2026-09-11 热修复）：
-       绕过 ndApiFetch 15s 通用保护层（否则 30s+ 响应被提前掐断 api_timeout_15000ms），
-       独立 60s 客户端超时（略大于服务端 45s，留网络余量），对齐 ndAiPostDiagnose 先例。 */
+function ndLongPost(path, timeoutMs, timeoutText) {
+    /* 长请求专用通道（LLM 30~60s，2026-09-11 热修复）：绕过 ndApiFetch 15s 通用保护层，
+       独立客户端超时（默认 60s），对齐 ndAiPostDiagnose 先例。 */
     var call;
     if (window.pywebview && window.pywebview.api) {
-        call = window.pywebview.api.call("/api/netdoctor/conflict-ai-reanalyze" + q);
+        call = window.pywebview.api.call(path);
         call.catch(function () {});
     } else {
-        call = fetch("/api/netdoctor/conflict-ai-reanalyze" + q).then(function (r) { return r.json(); });
+        call = fetch(path).then(function (r) { return r.json(); });
     }
+    var tmo = timeoutMs || 60000;
     return Promise.race([
         call,
         new Promise(function (_, rej) {
-            setTimeout(function () { rej(new Error("客户端超时（60s），聚合分析可能仍在处理，可重试")); }, 60000);
+            setTimeout(function () {
+                rej(new Error(timeoutText || ("客户端超时（" + Math.round(tmo / 1000) + "s），分析可能仍在处理，可重试")));
+            }, tmo);
         })
     ]);
+}
+
+function ndConflictPostReanalyze(q) {
+    /* 平台多方证据聚合分析（服务端 45s，LLM 真实耗时 30~60s）：走 60s 长通道（ndLongPost） */
+    return ndLongPost("/api/netdoctor/conflict-ai-reanalyze" + q, 60000,
+        "客户端超时（60s），聚合分析可能仍在处理，可重试");
 }
 
 function ndReanalyzeAi() {
@@ -885,6 +897,12 @@ function ndStartTracert() {
     var input = document.getElementById("ndTracertTarget");
     var target = (input && input.value || "").trim();
     if (!target) { ndSetTip("ndTracertSummary", "请输入目的 IP 或域名"); return; }
+    ndState.traceTarget = target;
+    ndState.lastTracert = null;   /* 重新追踪/切换目标：旧 AI 分析结果失效，按钮随新结果重显 */
+    ndApplyTraceAiGate();
+    var taBody = document.getElementById("ndTraceAiBody");
+    if (taBody) { taBody.innerHTML = ""; }
+    ndSetTip("ndTraceAiTip", "");
     var btn = document.getElementById("ndTracertBtn");
     if (btn) { btn.disabled = true; }
     ndSetTip("ndTracertSummary", "追踪中（最长约 1 分钟）…");
@@ -939,6 +957,44 @@ function ndRenderTracert(r) {
     }
     html += '</table>';
     el.innerHTML = html;
+    /* 路由追踪 AI 分析入口（2026-09-11 对接平台 routetrace 分支）：
+       显示契约——tracert 完成渲染 且 中心已连接；否则隐藏（非置灰） */
+    ndState.traceLast = { target: String(r.target || ndState.traceTarget || ""), hops: r.hops || [] };
+    ndApplyTraceAiGate();
+}
+
+function ndApplyTraceAiGate() {
+    var btn = document.getElementById("ndTraceAiBtn");
+    if (!btn) { return; }
+    btn.style.display = (ndState.lastTracert && ndConnected()) ? "" : "none";
+}
+
+function ndStartTraceAi() {
+    var last = ndState.lastTracert;
+    if (!last || ndState.traceAiBusy) { return; }
+    ndState.traceAiBusy = true;
+    var btn = document.getElementById("ndTraceAiBtn");
+    if (btn) { btn.disabled = true; }
+    var body = document.getElementById("ndTraceAiBody");
+    if (body) { body.innerHTML = ""; }
+    ndSetTip("ndTraceAiTip", "平台路由分析中（约 30~60 秒）…");
+    var q = "?target=" + encodeURIComponent(last.target || "")
+        + "&hops_json=" + encodeURIComponent(JSON.stringify(last.hops || []));
+    ndLongPost("/api/netdoctor/trace-ai-analyze" + q, 60000,
+        "客户端超时（60s），路由分析可能仍在处理，可重试").then(function (d) {
+        ndState.traceAiBusy = false;
+        if (btn) { btn.disabled = false; }
+        if (!d || d.success === false) {
+            ndSetTip("ndTraceAiTip", "分析失败：" + ((d && d.error) || "未知") + "（可重试）");
+            return;
+        }
+        ndSetTip("ndTraceAiTip", "分析完成");
+        if (body) { body.innerHTML = ndRenderAiAssist(d.ai); }
+    }).catch(function (e) {
+        ndState.traceAiBusy = false;
+        if (btn) { btn.disabled = false; }
+        ndSetTip("ndTraceAiTip", "分析失败：" + String(e) + "（可重试）");
+    });
 }
 
 /* ===================== ⑤ 网络压测 ===================== */

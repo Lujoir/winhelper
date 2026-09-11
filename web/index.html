@@ -939,11 +939,14 @@
                     <div class="disk-toolbar">
                         <input class="nd-input" id="ndTracertTarget" placeholder="目的 IP 或域名，如 baidu.com" style="width:230px">
                         <button class="nd-btn primary" id="ndTracertBtn" onclick="ndStartTracert()">开始追踪</button>
+                        <button class="nd-btn primary" id="ndTraceAiBtn" style="display:none" onclick="ndStartTraceAi()">AI 分析</button>
                     </div>
                 </div>
                 <div class="card-body">
                     <div class="nd-summary" id="ndTracertSummary">逐跳显示延迟 / IP / 主机名，并按中心知识库标注所属网络区域</div>
                     <div id="ndTracertBody"><div class="nd-empty">尚未追踪</div></div>
+                    <div id="ndTraceAiBody"></div>
+                    <span class="nd-hint" id="ndTraceAiTip"></span>
                 </div>
             </div>
 

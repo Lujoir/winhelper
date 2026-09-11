@@ -682,12 +682,15 @@ def _pick_conflict_adapter(candidates, route_adapter):
     return candidates[0], "（中心路由不可解析，回退活动网卡）"
 
 
-def _ai_analyze_issue(tid, issue, timeout=45):
+def _ai_analyze_issue(tid, issue, timeout=45, extra=None):
     """调平台 AI 分析（/api/v1/ai/analyze），返回 result["ai"] 结构（45s 超时）。
+    extra：附加 payload 字段（如 routetrace 分支的 kind/data，2026-09-11）。
     提取链 2026-09-10 热修复：平台实证返回字段为 response（platform 冒烟 j2.get("response")），
     旧链 analysis/content/result 永远落空致「（无内容）」；analysis_id 透传供 UI 可追溯。"""
-    ai_code, ai_resp = _platform_post("/api/v1/ai/analyze",
-                                      {"terminal_id": tid, "issue_description": issue},
+    payload = {"terminal_id": tid, "issue_description": issue}
+    if extra:
+        payload.update(extra)
+    ai_code, ai_resp = _platform_post("/api/v1/ai/analyze", payload,
                                       timeout=timeout)
     if 200 <= ai_code < 300:
         return {"ok": True,
@@ -1633,6 +1636,36 @@ def handle_net_conflict_ai_reanalyze(params=None):
     return {"success": True, "ai": _ai_analyze_issue(tid, issue)}
 
 
+def handle_net_trace_ai_analyze(params=None):
+    """路由追踪 AI 分析（平台 routetrace 分支，LLM 真实耗时 30~60s，本地 45s 超时转发）。
+    params: {target, hops_json}——hops 为前端结果区全量 JSON（hop/delays/ip/host/zone）。
+    显示契约：tracert 完成渲染 且 中心已连接 才显示入口（前端控制），未连接不发起。"""
+    if not uplink_configured():
+        return {"success": False, "error": "not_connected"}
+    p = params or {}
+    target = str(p.get("target") or "").strip()
+    if not target:
+        return {"success": False, "error": "missing_target"}
+    try:
+        hops = json.loads(p.get("hops_json") or "[]")
+        if not isinstance(hops, list):
+            hops = []
+    except Exception:
+        hops = []
+    tid = _terminal_id()
+    parts = []
+    for h in hops[:30]:
+        if isinstance(h, dict):
+            parts.append("#%s %s%s" % (h.get("hop", "?"), h.get("ip") or "*",
+                                       ("（%s）" % h.get("zone")) if h.get("zone") else ""))
+        else:
+            parts.append(str(h)[:80])
+    issue = ("路由追踪分析：终端 %s 目标 %s；逐跳：%s"
+             % (tid, target, " → ".join(parts) or "无有效跳"))
+    ai = _ai_analyze_issue(tid, issue, extra={"kind": "routetrace", "data": hops})
+    return {"success": True, "ai": ai}
+
+
 def handle_net_ping_start(params=None):
     """启动连通性全量检测任务。"""
     task_id, reused = _start_task("ping", run_ping_suite, {})
@@ -1952,6 +1985,7 @@ NET_ROUTES = {
     "/api/netdoctor/conflict-deep-start": handle_net_conflict_deep_start,
     "/api/netdoctor/conflict-deep-poll": handle_net_conflict_deep_poll,
     "/api/netdoctor/conflict-ai-reanalyze": handle_net_conflict_ai_reanalyze,
+    "/api/netdoctor/trace-ai-analyze": handle_net_trace_ai_analyze,
     "/api/netdoctor/ping-start": handle_net_ping_start,
     "/api/netdoctor/ping-history": handle_net_ping_history,
     "/api/netdoctor/tracert-start": handle_net_tracert_start,
