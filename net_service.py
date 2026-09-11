@@ -1742,7 +1742,11 @@ def handle_net_trace_ai_analyze(params=None):
             parts.append(str(h)[:80])
     issue = ("路由追踪分析：终端 %s 目标 %s；逐跳：%s"
              % (tid, target, " → ".join(parts) or "无有效跳"))
-    ai = _ai_analyze_issue(tid, issue, extra={"kind": "routetrace", "data": hops})
+    # ADR-031 契约形状（server-platform a119acf 官方冻结）：顶层 context 键与 kind 平级，
+    # 值为 {target: 可选字符串, hops: list 必填}——此前误用 data 键致聚合分支永不生效
+    ai = _ai_analyze_issue(tid, issue, extra={
+        "kind": "routetrace",
+        "context": {"target": target, "hops": hops}})
     return {"success": True, "ai": ai}
 
 
