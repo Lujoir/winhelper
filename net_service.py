@@ -22,9 +22,11 @@ net_service.py — 网络排障服务层（框架无关）
 依赖：纯标准库（不新增第三方包）。
 """
 
+import hashlib
 import json
 import ipaddress
 import os
+import ssl
 import re
 import shutil
 import socket
@@ -167,7 +169,8 @@ def _load_app_config():
 
 
 def _uplink_config():
-    cfg = {"enabled": False, "server_url": "", "token": "", "terminal_id": ""}
+    cfg = {"enabled": False, "server_url": "", "token": "", "terminal_id": "",
+           "server_ca_fingerprint": ""}   # HTTPS 专项（2026-09-11）：CA 指纹双层校验，旧配置缺字段兼容（空=跳过比对）
     path = os.path.join(_data_dir(), "uplink_config.json")
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -177,6 +180,72 @@ def _uplink_config():
     except Exception:
         pass
     return cfg
+
+
+# ============================================================
+# HTTPS 传输层（2026-09-11 专项：自建 CA + TLSv1.2+ + 指纹双层校验）
+# 真实链路待服务端就绪联调；本层单测与本地自签冒烟覆盖。
+# ============================================================
+
+UPLINK_CA_ENV = "NETDOCTOR_CA_PATH"   # 单测/冒烟注入 CA 路径（优先）
+
+
+def _uplink_ca_path():
+    """内置 CA pem 定位：环境变量（单测注入）→ PyInstaller _MEIPASS 资源 → 脚本目录 assets。
+    全部缺失返回空串（https 调用将 fail-closed 报 ca_missing，http 不受影响）。"""
+    env = os.environ.get(UPLINK_CA_ENV)
+    if env and os.path.isfile(env):
+        return env
+    cands = []
+    base = getattr(sys, "_MEIPASS", None)
+    if base:
+        cands.append(os.path.join(base, "assets", "platform_ca.pem"))
+        cands.append(os.path.join(base, "platform_ca.pem"))
+    cands.append(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "assets", "platform_ca.pem"))
+    for c in cands:
+        if os.path.isfile(c):
+            return c
+    return ""
+
+
+def _builtin_ca_fingerprint(ca_path=None):
+    """内置 CA 证书 SHA256 指纹（小写连续 hex）；不可得返回空串。"""
+    path = ca_path or _uplink_ca_path()
+    if not path:
+        return ""
+    try:
+        with open(path, "rb") as f:
+            der = ssl.PEM_cert_to_DER_cert(f.read().decode("ascii"))
+        return hashlib.sha256(der).hexdigest()
+    except Exception:
+        return ""
+
+
+def _uplink_ssl_context(cfg):
+    """https 平台调用的 SSL 上下文：TLSv1.2+ + 内置 CA 验签（CERT_REQUIRED）。
+    指纹双层校验第一层：内置 CA 计算指纹 vs uplink_config.server_ca_fingerprint（下发值
+    非空时强制比对，不一致拒绝连接）。IP 自签场景 check_hostname=False，身份由
+    CA 链 + 指纹双层保证。返回 (context, err)；err 非空时调用方拒绝连接。"""
+    fp_cfg = str(cfg.get("server_ca_fingerprint") or "").strip().lower().replace(":", "")
+    ca_path = _uplink_ca_path()
+    if not ca_path:
+        return None, "ca_missing"
+    if fp_cfg:
+        fp_local = _builtin_ca_fingerprint(ca_path)
+        if not fp_local:
+            return None, "ca_error: 内置 CA 不可解析"
+        if fp_local != fp_cfg:
+            return None, "ca_fingerprint_mismatch"
+    try:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+        ctx.load_verify_locations(ca_path)
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_REQUIRED
+        return ctx, ""
+    except Exception as e:
+        return None, "ca_error: %s" % e
 
 
 def _terminal_id(cfg=None):
@@ -212,10 +281,15 @@ def _platform_get(path, timeout=12):
     server = (cfg.get("server_url") or "").rstrip("/")
     if not server or not cfg.get("token"):
         return -1, {"error": "uplink_not_configured"}
+    ctx = None
+    if server.startswith("https://"):
+        ctx, err = _uplink_ssl_context(cfg)
+        if err:
+            return -1, {"error": err}
     url = server + path
     req = urllib.request.Request(url, method="GET")
     req.add_header("X-ETP-Token", cfg.get("token") or "")
-    return _platform_req(req, timeout)
+    return _platform_req(req, timeout, ctx)
 
 
 def _platform_post(path, payload, timeout=15):
@@ -223,17 +297,22 @@ def _platform_post(path, payload, timeout=15):
     server = (cfg.get("server_url") or "").rstrip("/")
     if not server or not cfg.get("token"):
         return -1, {"error": "uplink_not_configured"}
+    ctx = None
+    if server.startswith("https://"):
+        ctx, err = _uplink_ssl_context(cfg)
+        if err:
+            return -1, {"error": err}
     url = server + path
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST")
     req.add_header("Content-Type", "application/json")
     req.add_header("X-ETP-Token", cfg.get("token") or "")
-    return _platform_req(req, timeout)
+    return _platform_req(req, timeout, ctx)
 
 
-def _platform_req(req, timeout):
+def _platform_req(req, timeout, ctx=None):
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
             body = resp.read()
             try:
                 return resp.status, json.loads(body.decode("utf-8"))

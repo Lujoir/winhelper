@@ -15,6 +15,9 @@ a = Analysis(
         ('web', 'web'),
         ('perf-analyzer/libs/*.dll', 'libs'),
         ('perf-analyzer/libs/iperf3/*', 'libs/iperf3'),
+        # HTTPS 专项（2026-09-11）：平台自建 CA 随包分发（uplink https 调用验签 +
+        # server_ca_fingerprint 双层校验）；当前为开发占位 CA，正式 CA 由 HTTPS 专项替换
+        ('assets/platform_ca.pem', 'assets'),
     ],
     hiddenimports=[
         # Windows 事件日志
