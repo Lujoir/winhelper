@@ -97,7 +97,7 @@
             <div class="home-wrap">
                 <!-- AI 智能诊断（2026-09-10 自网络排障页移入主页：置于终端概览之上；
                      渲染逻辑全在 web/netdoctor.js，主页激活时由 initNetDoctorTab 刷新） -->
-                <div class="section-card" data-collapse>
+                <div class="section-card nd-ai-card" data-collapse>
                     <div class="card-header">
                         <h3>AI 智能诊断</h3>
                         <div class="disk-toolbar">
@@ -111,7 +111,8 @@
                     <div class="card-body">
                         <div class="nd-gate" id="ndAiGate" style="display:none">未连接中心平台，功能不可用</div>
                         <div class="nd-summary" id="ndAiSummary">填写问题概述并勾选日志类型，由平台模型链出具诊断建议（需已连接中心）</div>
-                        <label class="nd-hint">问题概述（≤2000 字，当前 <span id="ndAiIssueCount">0</span>/2000）</label>
+                        <div class="hm-row nd-ai-row"><span class="hm-row-label">问题概述</span>
+                            <span class="hm-row-value">≤2000 字 · 当前 <span id="ndAiIssueCount">0</span>/2000</span></div>
                         <textarea id="ndAiIssue" class="nd-input nd-ai-issue" maxlength="2000" rows="4" style="width:100%"
                             placeholder="请输入本机在哪个时间段出现的问题概况（如：今天上午 9-11 点频繁卡顿）"
                             oninput="ndAiCountIssue()"></textarea>
@@ -780,7 +781,14 @@
                 .nd-info { color: var(--accent-cyan, #4fc3f7); border-color: rgba(79,195,247,.5); background: rgba(79,195,247,.1); }
                 .nd-muted { color: var(--text-secondary, #8a93a5); border-color: var(--border-color, #262b3a); background: var(--bg-hover, #1d212e); }
                 .nd-hint { color: var(--text-secondary, #8a93a5); font-size: 11.5px; }
-                .nd-empty { color: var(--text-muted, #5a6274); font-size: 12.5px; padding: 8px 0; }
+                .nd-empty { color: var(--text-muted, #5a6274); font-size: 12.5px; padding: 10px 0; }
+                /* AI 智能诊断卡排版对齐终端概览三卡设计语言（2026-09-11 用户要求，作用域限 nd-ai-card） */
+                .nd-ai-card .card-header h3 { font-size: 13.5px; font-weight: 600; color: var(--accent-cyan, #4fc3f7); letter-spacing: .5px; }
+                .nd-ai-card .card-body { padding: 15px 17px; }
+                .nd-ai-card .nd-summary { margin: 0 0 10px; line-height: 1.6; }
+                .nd-ai-card .nd-hint { font-size: 12px; }
+                .nd-ai-card .nd-ai-issue { background: var(--panel2, #1d212e); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; line-height: 1.6; }
+                .nd-ai-card .nd-ai-row { margin: 10px 0 6px; }
                 .nd-summary { font-size: 12px; color: var(--text-secondary, #8a93a5); margin-top: 8px; min-height: 16px; word-break: break-all; }
                 .nd-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 6px 0; }
                 .nd-table th, .nd-table td { border: 1px solid var(--border-color, #262b3a); padding: 5px 9px; text-align: left; }
