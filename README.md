@@ -26,6 +26,36 @@ Python（`bridge.py::ApiBridge`），无任何 HTTP 参与。
 
 ---
 
+## 打包与分发原理
+
+应用完全基于 **Python 3.12** 开发（桌面壳 `desktop.py`、JS 桥 `bridge.py`、各业务服务引擎），前端界面为 HTML/JS 由 Edge WebView2 渲染。发布产物 `winhelper.exe` 经 **PyInstaller** 打包——**自带一整套私有 Python 运行时**，因此目标机器无需安装 Python、pip 或任何依赖，解压即用：
+
+```
+winhelper.exe（约 200MB）内部结构：
+├─ Python 解释器本体（python312.dll）      ← 拷贝进来的，不调用系统 Python
+├─ 标准库（编译为 .pyc 字节码）
+├─ 全部第三方依赖（pywebview、psutil、cryptography…）
+├─ 前端资源（web/*.html/js、平台 CA 证书、iperf3.exe 等）
+└─ PyInstaller 引导器（bootloader）
+```
+
+**运行过程**：双击 → 引导器把内容自解压到临时目录（`%TEMP%\_MEIxxxxx`，代码中引用的 `_MEIPASS` 即此）→ 加载自带的 `python312.dll` 在进程内初始化 Python → 执行打包好的业务代码。目标机器最低要求仅「Windows 10/11 x64」。
+
+常见现象对照：
+
+| 现象 | 解释 |
+|---|---|
+| 任务管理器里出现两个 winhelper.exe | onefile 模式的引导进程 + 实际运行进程，属正常 |
+| 代码中的 `_MEIPASS` 路径 | 运行期解压目录，CA 证书、iperf3.exe 等捆绑资源从此读取 |
+| 安装包体积 200MB 出头 | 解释器 + 依赖 + 资源全部内置的代价 |
+| 强杀进程后偶尔文件锁定 | 解压目录句柄未释放 |
+
+**唯一外部依赖**是 Edge WebView2 运行时（UI 渲染用）：Win11 系统自带；Win10 缺失时安装包内的 `MicrosoftEdgeWebView2RuntimeInstallerX64.exe` 会自动静默补装（见 `installer\EyeTerm.iss` 的 `CurStepChanged` 逻辑）。
+
+**安全须知**：PyInstaller 是「打包」而非「编译」——字节码理论上可被解包提取，因此本项目铁律为**凭据零硬编码进 exe**（token/密码一律运行时从配置文件或环境变量读取）。
+
+---
+
 ## 目录结构
 
 ```
