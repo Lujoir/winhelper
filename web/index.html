@@ -38,6 +38,10 @@
                 <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" fill="currentColor"/></svg>
                 网络排障
             </button>
+            <button class="nav-tab" data-tab="filesearch" onclick="switchTab('filesearch')">
+                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill="currentColor"/></svg>
+                文件检索
+            </button>
         </div>
         <div class="nav-actions">
             <span class="mode-badge" id="modeBadge" title="终端类型：Windows（点击查看本机基础信息）" onclick="liShowSystemPanel()">Windows</span>
@@ -1063,9 +1067,68 @@
                 <div class="settings-card" id="ndSettingsHost"></div>
             </div>
         </div>
+
+        <!-- ==================== 文件检索 ==================== -->
+
     </div>
 
+        <div id="tab-filesearch" class="tab-content">
+            <style>
+                /* filesearch 模块样式（仅作用于本 section，遵循 STYLE.md 基线） */
+                .nd-styled .card-header h3, .nd-ai-card .card-header h3 { font-size: 13.5px; font-weight: 600; color: var(--accent-cyan, #4fc3f7); letter-spacing: .5px; }
+                .nd-styled .card-body, .nd-ai-card .card-body { padding: 15px 17px; }
+                .nd-styled .nd-summary, .nd-ai-card .nd-summary { margin: 0 0 10px; line-height: 1.6; }
+                .nd-styled .nd-hint { font-size: 12px; }
+            </style>
+            <div class="page-header">
+                <h2>文件检索</h2>
+                <p class="page-subtitle">Everything 本机全盘检索 · 秒级定位文件与目录</p>
+                <button class="btn btn-ghost" onclick="toggleAllCards(this)">📁 收纳全部</button>
+            </div>
+
+            <div class="section-card nd-ai-card collapsed" data-collapse>
+                <div class="card-header">
+                    <h3>文件检索</h3>
+                    <div class="disk-toolbar">
+                        <button class="nd-btn primary" id="fsSearchBtn" onclick="fsStartSearch()">开始检索</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="nd-summary" id="fsSummary">输入关键词即时检索全盘文件名（支持 Everything 语法），结果可定位到所在目录</div>
+                    <div class="hm-row nd-ai-row"><span class="hm-row-label">关键词</span>
+                        <span class="nd-hint">支持语法（如 ext:pdf），大小写不敏感</span></div>
+                    <input id="fsQuery" class="nd-input" type="text" style="width:100%"
+                        placeholder="输入关键词，如 report 或 ext:pdf">
+                    <div style="margin-top:10px">
+                        <button class="nd-btn primary" onclick="fsStartSearch()">开始检索</button>
+                        <span class="nd-hint" id="fsSearchTip"></span>
+                    </div>
+                    <div id="fsBody"><div class="nd-empty">尚未检索</div></div>
+                </div>
+            </div>
+
+            <div class="section-card nd-styled collapsed" data-collapse>
+                <div class="card-header">
+                    <h3>检索状态与设置</h3>
+                    <div class="disk-toolbar">
+                        <button class="nd-btn" onclick="fsLoadStatus()">刷新状态</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="nd-summary" id="fsStatusSummary">Everything 服务状态与程序路径配置</div>
+                    <div id="fsStatusBody"><div class="nd-empty">加载中…</div></div>
+                    <div class="hm-row nd-ai-row"><span class="hm-row-label">Everything.exe 路径</span></div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap">
+                        <input id="fsExePath" class="nd-input" type="text" style="width:420px"
+                            placeholder="例如 D:\Tools\Everything\Everything.exe">
+                        <button class="nd-btn" onclick="fsSavePath()">保存路径</button>
+                        <span class="nd-hint" id="fsPathTip"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
     <script src="app.js"></script>
+    <script src="filesearch.js"></script>
     <script src="home.js"></script>
     <script src="loginspector.js"></script>
     <script src="disk.js"></script>

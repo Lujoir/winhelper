@@ -59,6 +59,13 @@ def main() -> None:
         _bridge_mod.register_exit_hook(window.destroy)
     except Exception:
         pass
+    # 文件检索：Everything eyeterm 实例随启动拉起（后台线程；失败静默，首用时另有自动拉起兜底）
+    try:
+        import threading as _th
+        import file_search as _fs
+        _th.Thread(target=_fs.ensure_running, daemon=True).start()
+    except Exception:
+        pass
     # 不强制指定 gui: pywebview 自动优先 Edge Chromium(WebView2)
     try:
         webview.start()
