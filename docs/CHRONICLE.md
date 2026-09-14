@@ -1,6 +1,6 @@
 # 观枢终端平台｜EyeTerm · 建设史编年
 
-> 维护者：chronicler-dev ｜ v2.5 ｜ 2026-09-14 ｜ 补记废除原生 confirm/alert 专项（#54，ADR-021，uiConfirm 全局对话框与门禁长效化）
+> 维护者：chronicler-dev ｜ v2.6 ｜ 2026-09-14 ｜ 补记 #56 文件检索子系统立项交付与 #55 AI 热修三连（登记号非时间序：实证 56→55）
 
 ## 卷首语
 
@@ -72,6 +72,8 @@
 | 52 | 2026-09-11 | 定名回退「网络排障」+ STYLE.md 诞生 | 命名反转闭环终名 + EyeTerm 首份成文 UI 设计规格+门禁 |
 | 53 | 2026-09-14 | HTTPS 专项改造全闭环上线 | 8443/18443 双 TLS + 自建 CA 指纹固定 fail-closed，换装生效（ADR-032） |
 | 54 | 2026-09-14 | 废除原生 confirm/alert 专项 | uiConfirm 唯一出口 23 处清零 + 源码级门禁长效化（ADR-021） |
+| 56 | 2026-09-14 | 文件检索子系统立项并交付 | Everything 捆绑 + 服务模式 + 三仓集成，第五个独立子系统（ADR-001~003） |
+| 55 | 2026-09-14 | AI 补采模态热修三连 | 排队假象消除 + 异常必达复位 + 历史写路径加固（ADR-032） |
 
 ---
 
@@ -352,6 +354,16 @@
 - 意义：WebView2 环境下原生对话框缺陷（来源信息泄露 / 位置不可控）全体系根除，确立「唯一合法对话框出口 uiConfirm + 源码级门禁」的 UI 交互治理基线；与 STYLE.md（#52）共同构成「设计规格 + 交互规格 + 自动化门禁」体系。
 - 考证：perf-analyzer 提交 `0d8d551`（2026-09-14 10:54，ADR-021 已入档）、`16c92d2`（11:45）；主仓库提交 `f4b2077`（10:54）、`b5c3902`（11:42）、`bc2e479`（11:46，origin/main 实证）；disk-cleaner 提交 `130a012`（11:42）；收口 126/126 来源：会话记忆（2026-09-14）。
 
+#### 2026-09-14 · 文件检索子系统立项并交付（file-search，ADR-001~003）
+- 事件：file-search 独立仓库建立并当日交付首版（`ef42a92`，ADR-001/002：Everything 1.4.1.969 x64 便携捆绑——MIT License 合规检查单——+ HTTP Server 方案 + 集成契约边界，search_service + web + E2E + installer 清单）；主仓库集成（`c37cf97`：导航/tab/bridge 4 路由/switchTab/desktop 钩子，副本 MD5 一致）并接入 gitlink（`c88e7e0`，net-doctor-dev 代执行首版）；服务模式主路径落地（`df96c16`，ADR-003：iss 静默安装 Everything 服务（SYSTEM 承载，端口 5700）+ 注册表 {app} 探测 + desktop 钩子兜底；Medium 权限拉起失败实测入档，服务模式规避）。
+- 意义：EyeTerm 第五个独立子系统诞生，终端侧补齐全盘文件检索能力；「Everything 服务模式为主路径」规避 Medium 权限拉起失败，安装期承载决策（iss 静默装服务）成为安装包形态新范式；MIT 捆绑以合规检查单先行。
+- 考证：file-search 仓库提交 `ef42a92`（2026-09-14 17:42，ADR-001/002）、`1a6d3f3`（17:42）、`df96c16`（18:11，ADR-003）；主仓库提交 `c37cf97`（17:42）、`c88e7e0`（17:45，gitlink 接入）、`7c9b5ad`（18:11，随包服务模式）、`b406338`（18:15，origin/main 实证）；换装 b406338、安装包 218MB（18:14）与「管理员七步实测待安排」来源：会话记忆（2026-09-14）。
+
+#### 2026-09-14 · AI 补采模态热修三连与历史写路径加固（ADR-032）
+- 事件：AI 诊断补采链路热修三连（net-doctor `1bdf7e9` / 主仓库 `7c9b5ad` 同步，ADR-032）：①排队假象消除②补采模态 Skip/Go 提交反馈 + 按钮禁用③ndAiSafeError 异常路径必达复位 + 补采轮询 150s 硬上限④ai_history 写路径加固——根因链含 exe 版本滞后因素（运行版缺 ai-history 路由）。
+- 意义：补采模态（#43 引入）的交互反馈与异常路径补全，「异常路径必达复位」延续 UI 可信性防线（#36/#49 同族）；exe 版本滞后作为根因因素再次印证「构建同步」运维口径。
+- 考证：net-doctor 提交 `1bdf7e9`（2026-09-14 18:11，ADR-032 已入档）；主仓库提交 `7c9b5ad`（18:11）、`b406338`（18:15，origin/main 实证）。
+
 ---
 
 ## 三、存疑与考证
@@ -370,11 +382,12 @@
 
 | 仓库 | 位置 | 首提交 | 最新提交（建档时） | 提交数 | 决策记录 |
 |------|------|--------|-------------------|--------|---------|
-| winhelper 主应用 | workspace 根（.git）；远程 git.wzeye.cn/zlj/eyeterm（2026-09-10 接入） | `84ea539` 2026-05-22 | `bc2e479` 2026-09-14 | 135 | docs/ARCHITECTURE-CLIENT.md |
+| winhelper 主应用 | workspace 根（.git）；远程 git.wzeye.cn/zlj/eyeterm（2026-09-10 接入） | `84ea539` 2026-05-22 | `b406338` 2026-09-14 | 140 | docs/ARCHITECTURE-CLIENT.md |
 | disk-cleaner | disk-cleaner\（.git） | `3cdeb9b` 2026-09-05 | `130a012` 2026-09-14 | 12 | ADR-001~015（docs/DECISIONS.md） |
 | log-inspector | log-inspector\（.git） | `dde1c4b` 2026-09-06 | `5ca2c1f` 2026-09-08 | 7 | ADR-001~009（docs/DECISIONS.md） |
 | perf-analyzer | perf-analyzer\（.git） | `4192b95` 2026-09-05 | `16c92d2` 2026-09-14 | 21 | ADR-001~021（docs/DECISIONS.md） |
 | server-platform | server-platform\（.git） | `5a21967` 2026-09-06 | `35c74f5` 2026-09-11 | 35 | ADR-001~032（24 空缺，docs/DECISIONS.md）+ docs/login_upgrade_delivery.md、docs/iperf_e2e_report.md |
-| net-doctor | net-doctor\（.git） | `539b993` 2026-09-09 | `4679b11` 2026-09-11 | 36 | ADR-001~031（docs/DECISIONS.md）+ docs/STYLE.md 设计规格 |
+| net-doctor | net-doctor\（.git） | `539b993` 2026-09-09 | `1bdf7e9` 2026-09-14 | 38 | ADR-001~032（docs/DECISIONS.md）+ docs/STYLE.md 设计规格 |
+| file-search | file-search\（.git） | `ef42a92` 2026-09-14 | `df96c16` 2026-09-14 | 3 | ADR-001~003（docs/DECISIONS.md） |
 
 > 检索方式：`git log --date=short --format="%h %ad %s"`（各仓库根目录执行）。子项目仓库均位于主仓库 workspace 之下，主仓库以 gitlink 方式引用三者（server-platform 当前未以 gitlink 跟踪）。
