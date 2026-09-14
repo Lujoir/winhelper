@@ -250,7 +250,8 @@ function ndRenderUplink() {
     if (!el) { return; }
     /* 二元判定：已注册+心跳成功（state=connected）→ 已连接；其余一律未连接（无中间态） */
     var on = ndConnected();
-    el.innerHTML = ndBadge(on ? "已连接" : "未连接", on ? "nd-ok" : "nd-muted");
+    var secure = String((ndState.uplink || {}).server_url || "").indexOf("https://") === 0;
+    el.innerHTML = ndBadge((on ? "已连接" : "未连接") + (secure ? " 🔒" : ""), on ? "nd-ok" : "nd-muted");
     /* 依赖中心的功能置灰/解灰（如实标注，不虚构可用）；AI gate 仅对企业版生效（第九项） */
     var ids = ["ndConflictBtn", "ndStressBtn"];
     for (var i = 0; i < ids.length; i++) {
@@ -931,11 +932,40 @@ function ndRenderHistory(d) {
 
 /* ===================== ④ 路由追踪 ===================== */
 
+function ndTraceAutoTarget() {
+    /* 空目标默认规则（2026-09-11 用户要求）：已连中心 → 中心服务器地址（uplink host，
+       无则节点表 center 动态目标兜底）；未连接 → baidu.com。返回 "" 表示无法确定（上层报错）。 */
+    if (ndConnected()) {
+        if (ndState.uplink && ndState.uplink.server_url) {
+            var u = ndState.uplink.server_url.split("://");
+            var host = (u[1] || "").split("/")[0].split(":")[0];
+            if (host) { return host; }
+        }
+        for (var i = 0; i < ndState.nodes.length; i++) {
+            if (ndState.nodes[i].key === "center" && (ndState.nodes[i].target || "").trim()) {
+                return ndState.nodes[i].target.trim();
+            }
+        }
+        return "";
+    }
+    return "baidu.com";
+}
+
 function ndStartTracert() {
     ndExpandCard("ndTracertBtn");
     var input = document.getElementById("ndTracertTarget");
     var target = (input && input.value || "").trim();
-    if (!target) { ndSetTip("ndTracertSummary", "请输入目的 IP 或域名"); return; }
+    var autoSrc = "";
+    if (!target) {
+        target = ndTraceAutoTarget();
+        if (!target) {
+            ndSetTip("ndTracertSummary", "无法确定追踪目标：中心地址不可解析，请手动填写");
+            return;
+        }
+        autoSrc = ndConnected() ? "（自动：中心服务器）" : "（自动：baidu.com）";
+        if (input) { input.value = target; }   /* 透明化：实际使用的目标回填输入框 */
+    }
+    ndState.traceAutoSrc = autoSrc;
     ndState.traceTarget = target;
     ndState.lastTracert = null;   /* 重新追踪/切换目标：旧 AI 分析结果失效，按钮随新结果重显 */
     ndApplyTraceAiGate();
@@ -947,6 +977,7 @@ function ndStartTracert() {
     ndSetTip("ndTracertSummary", "追踪中（最长约 1 分钟）…");
     var body = document.getElementById("ndTracertBody");
     if (body) { body.innerHTML = '<div class="nd-empty">追踪中…</div>'; }
+    ndSetTip("ndTracertSummary", "追踪目标 " + target + autoSrc + "（最长约 1 分钟）…");
     ndApiFetch("/api/netdoctor/tracert-start?target=" + encodeURIComponent(target)).then(function (d) {
         if (!d || d.success === false) {
             ndSetTip("ndTracertSummary", "启动失败：" + (d && d.error ? d.error : "未知"));
@@ -979,7 +1010,8 @@ function ndRenderTracert(r) {
     }
     ndState.lastTracert = r;
     if (ndState.inited) { ndAiCollectNow("net_tracert"); }   /* AI 数据源联动刷新（追踪） */
-    ndSetTip("ndTracertSummary", "完成：共 " + (r.hops || []).length + " 跳 ｜ 知识库节点 "
+    ndSetTip("ndTracertSummary", "完成：目标 " + (r.target || ndState.traceTarget || "--")
+        + (ndState.traceAutoSrc || "") + " ｜ 共 " + (r.hops || []).length + " 跳 ｜ 知识库节点 "
         + r.kb_count + " 条" + (r.kb_error ? "（知识库不可用：" + r.kb_error + "）" : ""));
     var html = '<table class="nd-table"><tr><th>跳数</th><th>延迟</th><th>IP</th><th>主机名</th><th>所属区域</th></tr>';
     for (var i = 0; i < (r.hops || []).length; i++) {
