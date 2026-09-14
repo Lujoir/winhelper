@@ -1,6 +1,6 @@
 # 观枢终端平台｜EyeTerm · 建设史编年
 
-> 维护者：chronicler-dev ｜ v2.3 ｜ 2026-09-11 ｜ 补记 #51 排版对齐与 #52 定名回退 + STYLE.md 设计规格诞生
+> 维护者：chronicler-dev ｜ v2.4 ｜ 2026-09-14 ｜ 补记 HTTPS 专项改造全闭环上线（#53，ADR-032，首个专项制分工）
 
 ## 卷首语
 
@@ -70,6 +70,7 @@
 | 49 | 2026-09-11 | AI 聚合分析 60s 通道热修复 | LLM 长耗时专用超时通道，杜绝通用 15s 层误杀 |
 | 51 | 2026-09-11 | AI 诊断卡排版对齐终端概览 | 概览卡设计语言首次跨卡复用，催生成文设计规格 |
 | 52 | 2026-09-11 | 定名回退「网络排障」+ STYLE.md 诞生 | 命名反转闭环终名 + EyeTerm 首份成文 UI 设计规格+门禁 |
+| 53 | 2026-09-14 | HTTPS 专项改造全闭环上线 | 8443/18443 双 TLS + 自建 CA 指纹固定 fail-closed，换装生效（ADR-032） |
 
 ---
 
@@ -339,6 +340,11 @@
 - 意义：EyeTerm 首份成文 UI 设计规格诞生，设计治理从口头约定升级为「规格 + 自动化门禁」，成为全部后续 UI 的统一基线；模块命名经「排障→监测配置→排障」反转后最终定名。
 - 考证：net-doctor 提交 `52c06cd`（2026-09-11 10:25，ADR-012 修订与 docs/STYLE.md 已实证入档）；主仓库提交 `823caf4`（10:26）、`1a000f3`（10:27）；E2E 262/262 来源：会话记忆（2026-09-11）。
 
+#### 2026-09-14 · HTTPS 专项改造全闭环上线（ADR-032，首个「专项制」分工）
+- 事件：管理/终端通道全面 HTTPS 化，专项子 agent https-migration-dev 承接（EyeTerm 首个「专项制」分工）。**决策**（09-11 批准开工）：管理端口 HTTPS 8443、终端 18443、自建 CA + 指纹固定、旧 18090 并行过渡。**服务端**（server-platform `cf01444`/`abb2978`/`cee39b1`/`d95f1f4`/`a119acf`/`35c74f5`，ADR-032）：三监听（8443 console scope / 18443 terminal scope / 18090 legacy）路由域硬隔离（鉴权前 404）；自建 CA RSA3072/10y 私钥不出服务器（远端 openssl，SAN=IP+主机名）；生产排障三连（CA 畸形重签 / fullchain 补发 / SAN 探活）；版本单一源 hotfix（health 1.0.0 vs app 1.3.0）；白名单冒烟测试隔离整改 + 预存条目跳过（零副作用）。**终端侧三层**：net-doctor `0f19675`/`eeb5463` 与主仓库 `cc00ba2`——net_service 与 uplink 双传输层 https 同构（TLSv1.2+ / CERT_REQUIRED / CA 指纹 SHA256 双层校验 / fail-closed / http 兼容），正式 CA 换装真 TLS 链路（18443）验证通过；perf-analyzer `85f50cb` + 主仓库 `3c054f1`——uplink 资产结构化段回灌（HTTPS 同步整文件覆盖丢失主应用 77e1081 改动，ADR-020 整文件双向 diff 教训复发即被拦截）；主仓库 `ef07d47` 安装包内置平台根证书 + certutil 自动导入受信任根（管理端 HTTPS 信任零人工）。**过程机制**：接口登记官对账抓出 bridge 漏挂载与 routetrace 键名错位（data→context{target,hops}，net-doctor `4679b11`）两个跨端真缺陷，均「登记-修复-消项」闭环。**门禁链**：P0 spike×2 → 单测 27+14+12 → 本地冒烟 → 生产部署 → 生产只读冒烟 54/54（白名单零副作用）→ 终端真 TLS 链路独立验证 → 换装（09-14 08:30，exe=ef07d47 基线 19:15:27 构建）→ 第 2 段 PASS（last_seen 47s 推进 / 零 SSL 错误 / iptables 计数 18443 有流量且 18090 零流量）。
+- 意义：EyeTerm 终端↔平台链路从明文 HTTP 升级为 CA 指纹固定 HTTPS（fail-closed），传输安全基线确立；「专项制」分工与七段门禁链（spike→单测→冒烟→部署→只读验证→换装→分段 PASS）成为大型改造方法论样板。
+- 考证：server-platform 提交 `cf01444`（2026-09-11 18:05，ADR-032 已入档）、`abb2978`（18:31）、`cee39b1`（18:41）、`d95f1f4`（18:44）、`a119acf`（19:02）、`35c74f5`（19:05）；net-doctor 提交 `0f19675`（17:35）、`eeb5463`（18:39）、`4679b11`（19:10）；perf-analyzer 提交 `85f50cb`（17:50）+ 主仓库 `3c054f1`（17:50，回灌动作在主仓库执行，双仓对应）；主仓库 `cc00ba2`（17:35）、`ef07d47`（19:16，origin/main 实证）。换装 09-14 08:30、第 2 段 PASS（last_seen 47s / iptables 计数）、只读冒烟 54/54 来源：会话记忆（2026-09-14）；遗留如实标注——第 3 段管理端浏览器验证待用户导入 ca.crt（安装包可自动导入）、legacy 18090 下线待稳定期后走审批、v9.1 安装包（09-11 19:15）为正式分发版。
+
 ---
 
 ## 三、存疑与考证
@@ -357,11 +363,11 @@
 
 | 仓库 | 位置 | 首提交 | 最新提交（建档时） | 提交数 | 决策记录 |
 |------|------|--------|-------------------|--------|---------|
-| winhelper 主应用 | workspace 根（.git）；远程 git.wzeye.cn/zlj/eyeterm（2026-09-10 接入） | `84ea539` 2026-05-22 | `1a000f3` 2026-09-11 | 108 | docs/ARCHITECTURE-CLIENT.md |
+| winhelper 主应用 | workspace 根（.git）；远程 git.wzeye.cn/zlj/eyeterm（2026-09-10 接入） | `84ea539` 2026-05-22 | `ef07d47` 2026-09-11 | 129 | docs/ARCHITECTURE-CLIENT.md |
 | disk-cleaner | disk-cleaner\（.git） | `3cdeb9b` 2026-09-05 | `35a31a1` 2026-09-06 | 10 | ADR-001~015（docs/DECISIONS.md） |
 | log-inspector | log-inspector\（.git） | `dde1c4b` 2026-09-06 | `5ca2c1f` 2026-09-08 | 7 | ADR-001~009（docs/DECISIONS.md） |
-| perf-analyzer | perf-analyzer\（.git） | `4192b95` 2026-09-05 | `011f086` 2026-09-10 | 16 | ADR-001~019（docs/DECISIONS.md） |
-| server-platform | server-platform\（.git） | `5a21967` 2026-09-06 | `a8a6b95` 2026-09-10 | 27 | ADR-001~030（24 空缺，docs/DECISIONS.md）+ docs/login_upgrade_delivery.md、docs/iperf_e2e_report.md |
-| net-doctor | net-doctor\（.git） | `539b993` 2026-09-09 | `52c06cd` 2026-09-11 | 28 | ADR-001~015（docs/DECISIONS.md）+ docs/STYLE.md 设计规格 |
+| perf-analyzer | perf-analyzer\（.git） | `4192b95` 2026-09-05 | `85f50cb` 2026-09-11 | 19 | ADR-001~019（docs/DECISIONS.md） |
+| server-platform | server-platform\（.git） | `5a21967` 2026-09-06 | `35c74f5` 2026-09-11 | 35 | ADR-001~032（24 空缺，docs/DECISIONS.md）+ docs/login_upgrade_delivery.md、docs/iperf_e2e_report.md |
+| net-doctor | net-doctor\（.git） | `539b993` 2026-09-09 | `4679b11` 2026-09-11 | 36 | ADR-001~031（docs/DECISIONS.md）+ docs/STYLE.md 设计规格 |
 
 > 检索方式：`git log --date=short --format="%h %ad %s"`（各仓库根目录执行）。子项目仓库均位于主仓库 workspace 之下，主仓库以 gitlink 方式引用三者（server-platform 当前未以 gitlink 跟踪）。
