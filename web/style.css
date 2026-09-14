@@ -1054,3 +1054,43 @@ body {
 .section-card.collapsed .card-chevron {
     transform: rotate(-90deg);
 }
+
+/* =====================================================================
+ * uiConfirm 全局确认对话框（2026-09-14，废除原生 confirm/alert 专项）
+ * 组件实现：web/app.js uiConfirm()（全项目唯一合法对话框出口）
+ * fixed 全屏遮罩 + flex 居中 —— 卡片几何中心恒等于窗体中心
+ * ===================================================================== */
+.ui-confirm-mask {
+    position: fixed; inset: 0; z-index: 1200;
+    background: rgba(6, 8, 12, .72);
+    display: flex; align-items: center; justify-content: center;
+}
+.ui-confirm-card {
+    width: min(420px, 88vw);
+    background: var(--bg-card, #171a23);
+    border: 1px solid var(--border-color, #262b3a);
+    border-radius: 12px;
+    box-shadow: 0 12px 44px rgba(0, 0, 0, .55);
+    overflow: hidden;
+}
+.ui-confirm-head { padding: 16px 18px 0; }
+.ui-confirm-head h3 {
+    margin: 0; font-size: 15px; font-weight: 600;
+    color: var(--text-primary, #e8ebf2);
+}
+.ui-confirm-body {
+    padding: 10px 18px 4px;
+    font-size: 13px; line-height: 1.7;
+    color: var(--text-secondary, #aab3c5);
+    white-space: pre-line; word-break: break-word;
+    max-height: 50vh; overflow: auto;
+}
+.ui-confirm-foot {
+    display: flex; justify-content: flex-end; gap: 8px;
+    padding: 14px 18px 16px;
+}
+.ui-confirm-btn { min-width: 76px; }
+.ui-confirm-ok-danger {
+    background: #e57373 !important; border-color: #e57373 !important; color: #fff !important;
+}
+.ui-confirm-ok-danger:hover { background: #ef8a8a !important; }

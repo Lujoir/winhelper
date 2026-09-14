@@ -53,6 +53,12 @@ var perfState = {
     uplinkTimer: null,     // 平台接入状态轮询（10s）
 };
 
+/* 原生 alert 替代：uiConfirm 单按钮提示模式（2026-09-14 废除原生弹窗专项；
+ * 组件实现见主应用 web/app.js uiConfirm——全项目唯一合法对话框出口） */
+function perfNotify(title, message) {
+    return uiConfirm({ title: title, message: message, okText: "知道了", cancelText: "" });
+}
+
 // ===================== 初始化（主应用 switchTab 守卫调用） =====================
 
 function initPerfTab() {
@@ -113,16 +119,16 @@ async function saveTempsInterval() {
     var inp = document.getElementById("tempsIntervalInput");
     var v = parseInt(inp && inp.value, 10);
     if (isNaN(v) || v < 30 || v > 3600) {
-        alert("采样间隔需在 30~3600 秒之间");
+        await perfNotify("提示", "采样间隔需在 30~3600 秒之间");
         return;
     }
     var d = await perfApi("/api/perf/app-config?temperature_interval_sec=" + v);
     if (d && d.success) {
         perfState.tempsIntervalMs = (d.config.temperature_interval_sec) * 1000;
         if (perfState.tempsTimer) { perfStopTempsPolling(); perfStartTempsPolling(); }
-        alert("已保存：温度每 " + d.config.temperature_interval_sec + " 秒采样一次");
+        await perfNotify("已保存", "温度将每 " + d.config.temperature_interval_sec + " 秒采样一次");
     } else {
-        alert("保存失败：" + ((d && d.error) || "未知错误"));
+        await perfNotify("保存失败", "温度采样间隔未能保存：" + ((d && d.error) || "未知错误"));
     }
 }
 
@@ -168,7 +174,11 @@ function renderPerfTemps(d) {
 }
 
 async function restartPerfAdmin() {
-    if (!confirm("将以管理员身份重启应用以启用 CPU 温度检测。\n\n重启后界面显示「管理员模式」徽章，CPU 温度实时显示。\n\n注意：若杀毒软件拦截系统级驱动（WinRing0），请选择允许——该驱动仅用于读取传感器数据。确定继续？")) return;
+    if (!(await uiConfirm({
+        title: "以管理员身份重启",
+        message: "将以管理员身份重启应用以启用 CPU 温度检测。\n\n重启后界面显示「管理员模式」徽章，CPU 温度实时显示。\n\n注意：若杀毒软件拦截系统级驱动（WinRing0），请选择允许——该驱动仅用于读取传感器数据。",
+        okText: "重启", cancelText: "取消"
+    }))) return;
     var d = await perfApi("/api/perf/restart-admin");
     if (d && d.success && d.restarting) {
         var cv = document.getElementById("perfCpuTempVal");
@@ -176,11 +186,11 @@ async function restartPerfAdmin() {
         return;
     }
     if (d && d.error === "uac_cancelled") {
-        alert("未提权：您在 UAC 弹窗中取消了操作，应用仍在普通模式运行。");
+        await perfNotify("未提权", "您在 UAC 弹窗中取消了操作，应用仍在普通模式运行。");
         renderPerfTemps({ admin: false, cpu: { available: false, reason: "need_admin" }, gpu: {} });
         return;
     }
-    alert("重启失败: " + ((d && d.error) || "未知错误"));
+    await perfNotify("重启失败", (d && d.error) || "未知错误");
 }
 
 async function perfTick() {
@@ -406,7 +416,7 @@ async function perfStartRecord() {
     var itv = sel ? sel.value : "2";
     var d = await perfApi("/api/perf/record-start?interval=" + encodeURIComponent(itv));
     if (!d || !d.success) {
-        alert("开始记录失败: " + ((d && d.error) || "未知错误"));
+        await perfNotify("开始记录失败", (d && d.error) || "未知错误");
         return;
     }
     perfState.recordId = d.record_id;
@@ -444,7 +454,7 @@ async function perfPollRecordStatus() {
         perfState.recordId = null;
         if (perfState.recTimer) { clearInterval(perfState.recTimer); perfState.recTimer = null; }
         perfSetRecordUI(false);
-        alert("记录线程异常: " + (r.error || "未知"));
+        await perfNotify("记录线程异常", r.error || "未知");
     }
 }
 
@@ -456,7 +466,7 @@ async function perfStopRecord() {
     perfState.recordId = null;
     perfSetRecordUI(false);
     if (!d || !d.success) {
-        alert("停止/分析失败: " + ((d && d.error) || "未知错误"));
+        await perfNotify("停止/分析失败", (d && d.error) || "未知错误");
         return;
     }
     renderPerfReport(d.report);
@@ -578,7 +588,7 @@ function renderPerfReport(report) {
 async function perfExportReport() {
     var d = await perfApi("/api/perf/record-export");
     if (!d || !d.success) {
-        alert("导出失败: " + ((d && d.error) || "未知错误"));
+        await perfNotify("导出失败", (d && d.error) || "未知错误");
         return;
     }
     perfSetText("perfExportPath", d.path || "");
@@ -628,12 +638,16 @@ function perfSetStressUI(running) {
 }
 
 async function startPerfStress(mode) {
-    if (perfState.stressId) { alert("已有压测进行中，请等待完成或取消"); return; }
+    if (perfState.stressId) { await perfNotify("提示", "已有压测进行中，请等待完成或取消"); return; }
     var secs = PERF_STRESS_SECONDS[mode] || 58;
-    if (!confirm("压测约 " + secs + " 秒，期间系统可能短暂卡顿，请提前保存工作。\n\n确定开始「" + (PERF_STRESS_LABEL[mode] || mode) + "」？")) return;
+    if (!(await uiConfirm({
+        title: "开始" + (PERF_STRESS_LABEL[mode] || mode),
+        message: "压测约 " + secs + " 秒，期间系统可能短暂卡顿，请提前保存工作。",
+        okText: "开始", cancelText: "取消", danger: true
+    }))) return;
     var d = await perfApi("/api/perf/stress-start?mode=" + encodeURIComponent(mode));
     if (!d || !d.success) {
-        alert("启动失败: " + ((d && d.error) || "未知错误"));
+        await perfNotify("启动失败", (d && d.error) || "未知错误");
         return;
     }
     perfState.stressId = d.stress_id;
@@ -650,7 +664,7 @@ async function cancelPerfStress() {
     if (!perfState.stressId) return;
     var d = await perfApi("/api/perf/stress-cancel?stress_id=" + encodeURIComponent(perfState.stressId));
     if (!d || !d.success) {
-        alert("取消失败: " + ((d && d.error) || "未知错误"));
+        await perfNotify("取消失败", (d && d.error) || "未知错误");
     }
 }
 
@@ -704,7 +718,7 @@ async function perfPollStress() {
         perfState.stressDoneVisible = true;
         var prog = document.getElementById("perfStressProgress");
         if (prog) prog.style.display = "none";
-        if (t.status === "error") { alert("压测异常: " + (t.error || "未知")); return; }
+        if (t.status === "error") { await perfNotify("压测异常", t.error || "未知"); return; }
         if (t.result) renderStressResult(t.result, t.status);
     }
 }
@@ -797,7 +811,7 @@ function renderStressResult(result, taskStatus) {
 async function perfStressExport() {
     var d = await perfApi("/api/perf/stress-export");
     if (!d || !d.success) {
-        alert("导出失败: " + ((d && d.error) || "未知错误"));
+        await perfNotify("导出失败", (d && d.error) || "未知错误");
         return;
     }
     perfSetText("stressExportPath", d.path || "");
@@ -1046,7 +1060,7 @@ async function savePerfUplink(enabled) {
     }
     var d = await perfApi(url);
     if (!d || !d.success) {
-        alert((enabled ? "启用失败" : "停用失败") + ": " + ((d && d.error) || "未知错误"));
+        await perfNotify(enabled ? "启用失败" : "停用失败", (d && d.error) || "未知错误");
         return;
     }
     if (tk) tk.value = "";  // 保存后清空输入框（token 不回显）
@@ -1056,7 +1070,7 @@ async function savePerfUplink(enabled) {
 async function registerPerfUplink() {
     var d = await perfApi("/api/perf/uplink/register");
     if (!d || !d.success) {
-        alert("注册失败: " + ((d && d.error) || "未知错误") +
+        await perfNotify("注册失败", ((d && d.error) || "未知错误") +
             "\n请先填写服务端地址与接入 Token 并保存启用。");
         return;
     }

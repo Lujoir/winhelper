@@ -153,3 +153,90 @@ function showError(msg) {
     setTimeout(() => { div.style.opacity = "0"; div.style.transition = "opacity .3s";
         setTimeout(() => div.remove(), 300); }, 5000);
 }
+
+/* =====================================================================
+ * uiConfirm — 全项目唯一合法对话框出口（2026-09-14 废除原生 confirm/alert）
+ * ---------------------------------------------------------------------
+ * 背景：WebView2 原生弹窗标题强制显示来源「127.0.0.1:<端口> 显示」（pywebview
+ * 内置服务端口，每次启动变化），且位置贴顶不居中——用户要求弹窗居中于窗体
+ * 中心且不得出现任何端口/服务类信息。
+ * 用法：await uiConfirm({ title, message, okText="确定", cancelText="取消",
+ *                          danger=false }) → Promise<boolean>
+ *   - cancelText 传空串 = 单按钮提示模式（替代原生 alert），确定返回 true
+ *   - danger=true 时确认键红色（破坏性操作，如压测/取消类）
+ *   - ESC / 遮罩点击 = 取消（返回 false）；Enter = 确认
+ * 约定：web/ 源码禁止再出现原生 confirm( / alert( 调用（本注释除外）；
+ * 第二批（disk.js/appdata.js）与后续一切模块一律走本组件。
+ * 纯 DOM API + textContent 构建，message 动态文本零 HTML 注入面。
+ * ===================================================================== */
+function uiConfirm(opts) {
+    return new Promise(function (resolve) {
+        var title = (opts && opts.title) || "确认";
+        var message = (opts && opts.message) || "";
+        var okText = (opts && opts.okText) || "确定";
+        var cancelText = (opts && opts.cancelText !== undefined) ? opts.cancelText : "取消";
+        var danger = !!(opts && opts.danger);
+
+        var mask = document.createElement("div");
+        mask.className = "ui-confirm-mask";
+
+        var card = document.createElement("div");
+        card.className = "ui-confirm-card";
+        card.setAttribute("role", "dialog");
+        card.setAttribute("aria-modal", "true");
+
+        var head = document.createElement("div");
+        head.className = "ui-confirm-head";
+        var h3 = document.createElement("h3");
+        h3.textContent = title;
+        head.appendChild(h3);
+
+        var body = document.createElement("div");
+        body.className = "ui-confirm-body";
+        body.textContent = message;   // pre-line：\n 分行；textContent：零注入
+
+        var foot = document.createElement("div");
+        foot.className = "ui-confirm-foot";
+
+        var done = false;
+        function close(result) {
+            if (done) return;
+            done = true;
+            document.removeEventListener("keydown", onKey, true);
+            mask.remove();
+            resolve(result);
+        }
+        function onKey(e) {
+            if (e.key === "Escape") { e.stopPropagation(); close(false); }
+            else if (e.key === "Enter") { e.stopPropagation(); close(true); }
+        }
+
+        var btnCancel = null;
+        if (cancelText) {
+            btnCancel = document.createElement("button");
+            btnCancel.className = "btn btn-ghost ui-confirm-btn";
+            btnCancel.textContent = cancelText;
+            btnCancel.addEventListener("click", function () { close(false); });
+            foot.appendChild(btnCancel);
+        }
+
+        var btnOk = document.createElement("button");
+        btnOk.className = "btn btn-primary ui-confirm-btn" + (danger ? " ui-confirm-ok-danger" : "");
+        btnOk.textContent = okText;
+        btnOk.addEventListener("click", function () { close(true); });
+        foot.appendChild(btnOk);
+
+        mask.addEventListener("mousedown", function (e) {
+            if (e.target === mask) close(false);   // 仅遮罩本体，卡片内点击不关闭
+        });
+
+        card.appendChild(head);
+        card.appendChild(body);
+        card.appendChild(foot);
+        mask.appendChild(card);
+        document.body.appendChild(mask);
+
+        document.addEventListener("keydown", onKey, true);
+        btnOk.focus();
+    });
+}
