@@ -100,9 +100,27 @@ def _probe_common_exe():
     return ""
 
 
+def _registry_exe():
+    """{app} 探测：installer 登记的 HKLM/HKCU Software\\EyeTerm\\EverythingPath（定位链第三级，
+    2026-09-14 随安装包服务模式落地新增）。"""
+    try:
+        import winreg
+    except Exception:
+        return ""
+    for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+        try:
+            with winreg.OpenKey(root, r"Software\EyeTerm") as k:
+                p = str(winreg.QueryValueEx(k, "EverythingPath")[0] or "").strip()
+                if p and os.path.isfile(p):
+                    return p
+        except Exception:
+            continue
+    return ""
+
+
 def locate_everything_exe():
-    """返回 Everything.exe 绝对路径或空串（定位链：env → 配置 → 常见路径）。"""
-    return _env_exe() or _config_exe() or _probe_common_exe()
+    """返回 Everything.exe 绝对路径或空串（定位链：env → 配置 → 注册表{app} → 常见路径）。"""
+    return _env_exe() or _config_exe() or _registry_exe() or _probe_common_exe()
 
 
 # ============================================================

@@ -2230,7 +2230,7 @@ function ndAiSubmitProceed() {
         }
         return ndAiPostPrepared(issue, prep);
     }).catch(function (e) {
-        ndAiHandleError(e);
+        ndAiSafeError(e);
     }).then(function () {
         ndState.aiSubmitting = false;   /* 成功/失败/取消/模态四路径统一复位（issue_empty 分支已单独复位） */
         if (btn) { btn.disabled = false; }
@@ -2286,6 +2286,15 @@ function ndAiHandleError(e) {
     ndSetTip("ndAiSummary", "诊断失败：" + msg + "，可重试");
 }
 
+/* 失败处理安全包装（2026-09-14 热修：aiSubmitting 异常路径不复位）：
+   ndAiHandleError 在异常场景自身出错时不再沿 Promise 链上抛，
+   否则后续 .then(复位/关闭模态) 永不执行 → 标志永挂起 + 模态卡死 */
+function ndAiSafeError(e) {
+    try { ndAiHandleError(e); } catch (e2) {
+        ndSetTip("ndAiSummary", "诊断失败：" + (e && e.message ? e.message : String(e)) + "，可重试");
+    }
+}
+
 /* 模态内重采：完成后同步刷新主界面状态列与体量汇总 */
 function ndAiRecollectOne(k) {
     return new Promise(function (resolve) {
@@ -2321,11 +2330,26 @@ function ndTraceDefaultTarget() {
 function ndAiBackfillTask(key, stEl, onDone) {
     var setSt = function (t) { if (stEl) { stEl.textContent = t; } };
     var pollNd = function (taskId, onResult, onProg) {
-        ndPollTask(taskId, function (t) { if (onProg) { onProg(t.progress || {}); } }, function (err, result) {
-            if (err) { setSt("失败"); onDone(false); return; }
+        /* 2026-09-14 热修：补采单任务 150s 硬上限 + settled 防双回调——
+           此前直接沿用 ndPollTask（5 分钟上限），任务挂死时行状态长时间假死、模态卡住 */
+        var dl = Date.now() + 150000;
+        var settled = false;
+        var fin = function (ok) {
+            if (settled) { return; }
+            settled = true;
+            onDone(ok);
+        };
+        ndPollTask(taskId, function (t) {
+            if (Date.now() > dl) {
+                ndStopPoller(taskId);
+                setSt("超时（该源降级继续）"); fin(false); return;
+            }
+            if (onProg) { onProg(t.progress || {}); }
+        }, function (err, result) {
+            if (err) { setSt("失败"); fin(false); return; }
             setSt("完成");
             if (onResult) { onResult(result); }
-            onDone(true);
+            fin(true);
         });
     };
     if (key === "net_tracert") {
@@ -2433,7 +2457,7 @@ function ndAiShowCompleteModal(issue, prep, done) {
                     + ndEscapeHtml(ndTraceDefaultTarget()) + '" title="路由追踪目标（可编辑）">'
                 : "")
             + '<span class="nd-hint">' + (needCenter ? "需连接中心，本次不可补采" : bf.hint) + '</span>'
-            + '<span class="nd-hint nd-bf-status">排队</span></div>';
+            + '<span class="nd-hint nd-bf-status">待采集</span></div>';
     }
     for (var m = 0; m < retriable.length; m++) {
         rows += '<div class="nd-modal-row">'
@@ -2445,7 +2469,9 @@ function ndAiShowCompleteModal(issue, prep, done) {
     list.innerHTML = rows;
     var tip = ov.querySelector("#ndAiCompleteTip");
 
-    var finish = function () { ov.style.display = "none"; done(); };
+    var finish = function () {
+        try { ov.style.display = "none"; } finally { done(); }   /* 关闭失败也必达 resolve（防 aiSubmitting 永不复位） */
+    };
     var buttons = [ov.querySelector("#ndAiCompleteGo"),
                    ov.querySelector("#ndAiCompleteSkip"),
                    ov.querySelector("#ndAiCompleteCancel")];
@@ -2453,8 +2479,11 @@ function ndAiShowCompleteModal(issue, prep, done) {
     ov.style.display = "flex";
 
     ov.querySelector("#ndAiCompleteSkip").onclick = function () {
-        /* POST 收尾后才 finish（resolve 复位）——保证模态/提交期间防重入标志不提前释放 */
-        ndAiPostPrepared(issue, prep).catch(function (e) { ndAiHandleError(e); }).then(function () { finish(); });
+        /* 2026-09-14 热修：Skip 提交路径补齐进行中反馈——发起瞬间提示 + 三按钮禁用；
+           POST 收尾后才 finish（resolve 复位）——保证模态/提交期间防重入标志不提前释放 */
+        ndSetTip("ndAiCompleteTip", "诊断提交中（模型链约 30~120 秒）…");
+        for (var g = 0; g < buttons.length; g++) { buttons[g].disabled = true; }
+        ndAiPostPrepared(issue, prep).catch(function (e) { ndAiSafeError(e); }).then(function () { finish(); });
     };
     ov.querySelector("#ndAiCompleteCancel").onclick = function () {
         finish();
@@ -2480,14 +2509,16 @@ function ndAiShowCompleteModal(issue, prep, done) {
     }
     ov.querySelector("#ndAiCompleteGo").onclick = function () {
         for (var g = 0; g < buttons.length; g++) { buttons[g].disabled = true; }
+        ndSetTip("ndAiCompleteTip", "补采中，完成后自动提交（模型链提交约 30~120 秒）…");   /* 2026-09-14 补提交阶段零反馈 */
         var chosen = [];
         var chks = list.querySelectorAll(".nd-bf-chk:checked");
         for (var c = 0; c < chks.length; c++) { chosen.push(chks[c].getAttribute("data-key")); }
         var seq = chosen.slice();
         var next = function () {
             if (!seq.length) {
+                ndSetTip("ndAiCompleteTip", "诊断提交中（模型链约 30~120 秒）…");   /* 补采结束进入提交阶段，反馈切换 */
                 var prep2 = ndAiPrepareLogs();   /* 补采后重整日志；仍失败的源降级为证据不足照常声明 */
-                ndAiPostPrepared(issue, prep2).catch(function (e) { ndAiHandleError(e); }).then(function () { finish(); });
+                ndAiPostPrepared(issue, prep2).catch(function (e) { ndAiSafeError(e); }).then(function () { finish(); });
                 return;
             }
             var k = seq.shift();

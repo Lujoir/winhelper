@@ -1777,6 +1777,10 @@ def _read_ai_history():
 
 def _write_ai_history(records):
     path = _ai_history_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)   # 目录缺失时 tmp 写入会 FileNotFoundError（2026-09-14 加固）
+    except Exception:
+        pass
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         for r in records:
@@ -1800,10 +1804,13 @@ def handle_net_ai_history_append(params=None):
     valid = [r for r in items if isinstance(r, dict) and r.get("ts")]
     if not valid:
         return {"success": False, "error": "invalid_records"}
-    recs = _read_ai_history()
-    for r in valid:
-        recs.insert(0, r)
-    _write_ai_history(recs[:200])
+    try:
+        recs = _read_ai_history()
+        for r in valid:
+            recs.insert(0, r)
+        _write_ai_history(recs[:200])
+    except Exception as e:
+        return {"success": False, "error": "history_write_failed: %s" % e}
     return {"success": True, "total": min(len(recs), 200)}
 
 
@@ -1812,7 +1819,10 @@ def handle_net_ai_history_delete(params=None):
     p = params or {}
     recs = _read_ai_history()
     if str(p.get("all") or "") == "1":
-        _write_ai_history([])
+        try:
+            _write_ai_history([])
+        except Exception as e:
+            return {"success": False, "error": "history_write_failed: %s" % e}
         return {"success": True, "removed": len(recs)}
     try:
         ts = int(p.get("ts") or 0)
@@ -1821,7 +1831,10 @@ def handle_net_ai_history_delete(params=None):
     keep = [r for r in recs if int(r.get("ts") or 0) != ts]
     removed = len(recs) - len(keep)
     if removed:
-        _write_ai_history(keep)
+        try:
+            _write_ai_history(keep)
+        except Exception as e:
+            return {"success": False, "error": "history_write_failed: %s" % e}
     return {"success": True, "removed": removed}
 
 

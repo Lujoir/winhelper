@@ -34,6 +34,13 @@ Source: MicrosoftEdgeWebView2RuntimeInstallerX64.exe; DestDir: {tmp}; Flags: del
 ; EyeTerm 平台自建根证书（公开文件，私钥在服务器）：安装时自动导入系统"受信任的根证书颁发机构"，
 ; 使本机浏览器可直接信任 https 管理端（8443）。卸载不移除该信任（保留平台访问能力）。
 Source: ..\assets\platform_ca.pem; DestDir: {app}\assets; DestName: eyeterm_root_ca.crt; Flags: ignoreversion
+; ---- 文件检索（Everything 1.4.1.969 x64，MIT 许可，本体未修改；License.txt 必须随包）----
+Source: "..\third_party\Everything\Everything.exe"; DestDir: "{app}\everything"; Flags: ignoreversion
+Source: "..\third_party\Everything\Everything.lng"; DestDir: "{app}\everything"; Flags: ignoreversion
+Source: "..\third_party\Everything\License.txt"; DestDir: "{app}\everything"; Flags: ignoreversion
+Source: "..\third_party\Everything\README-voidtools.txt"; DestDir: "{app}\everything"; Flags: ignoreversion
+; 预置 ini（服务默认读取 exe 同目录 Everything.ini）：HTTP 服务器 127.0.0.1:5700，服务与实例共用该配置
+Source: "..\assets\filesearch\Everything.ini"; DestDir: "{app}\everything"; Flags: ignoreversion
 
 [Icons]
 Name: {group}\EyeTerm; Filename: {app}\{#MyAppExeName}
@@ -41,6 +48,8 @@ Name: {autodesktop}\EyeTerm; Filename: {app}\{#MyAppExeName}; Tasks: desktopicon
 
 [Registry]
 Root: HKCU; Subkey: Software\Microsoft\Windows\CurrentVersion\Run; ValueType: string; ValueName: EyeTerm; ValueData: "{app}\{#MyAppExeName}"; Tasks: autostart; Flags: uninsdeletevalue
+; 文件检索 {app} 探测：终端侧定位链（env → 配置 → 注册表 → 常见路径）第三级命中安装目录
+Root: HKLM; Subkey: Software\EyeTerm; ValueType: string; ValueName: EverythingPath; ValueData: "{app}\everything\Everything.exe"; Flags: uninsdeletevalue
 
 [Run]
 Filename: certutil; Parameters: "-addstore -f Root ""{app}\assets\eyeterm_root_ca.crt"""; Flags: runhidden; StatusMsg: "信任 EyeTerm 平台根证书..."
@@ -48,6 +57,8 @@ Filename: {app}\{#MyAppExeName}; Description: {cm:LaunchProgram,EyeTerm}; Flags:
 
 [UninstallRun]
 Filename: {cmd}; Parameters: /C taskkill /IM winhelper.exe /F; Flags: runhidden; RunOnceId: KillApp
+; 文件删除前先卸载 Everything 服务（SYSTEM 进程占用 exe）
+Filename: {app}\everything\Everything.exe; Parameters: "-uninstall-service"; Flags: runhidden; RunOnceId: DelEverythingSvc
 
 [Code]
 function IsWin7OrOlder(): Boolean;
@@ -104,5 +115,15 @@ begin
     begin
       Exec(ExpandConstant('{tmp}\MicrosoftEdgeWebView2RuntimeInstallerX64.exe'), '/silent /install', '', SW_SHOW, ewWaitUntilTerminated, Rc);
     end;
+    // 文件检索：覆盖文件前停旧服务与残留实例（SYSTEM 进程/实例占用 Everything.exe 会导致覆盖失败）；
+    // Exec 失败（如首次安装 exe 尚不存在）不阻断安装。
+    Exec(ExpandConstant('{app}\everything\Everything.exe'), '-uninstall-service', '', SW_HIDE, ewWaitUntilTerminated, Rc);
+    Exec(ExpandConstant('{cmd}'), '/C taskkill /IM Everything.exe /F', '', SW_HIDE, ewWaitUntilTerminated, Rc);
+  end;
+  if CurStep = ssPostInstall then
+  begin
+    // 服务模式为主路径：安装并启动 Everything 服务（SYSTEM 权限读 MFT + 由服务承载 HTTP 127.0.0.1:5700），
+    // 终端侧无需提权；EyeTerm 首用时拉起实例仅作服务不在时的兜底。
+    Exec(ExpandConstant('{app}\everything\Everything.exe'), '-install-service', '', SW_HIDE, ewWaitUntilTerminated, Rc);
   end;
 end;

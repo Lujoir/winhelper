@@ -12,3 +12,4 @@ build/
 # installer build artifacts & runtime payloads
 installer/Output/
 installer/*.exe
+third_party/
