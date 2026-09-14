@@ -184,7 +184,11 @@ async function cleanSelected() {
 
 async function startCleanup(categories, title) {
     if (!categories.length) return;
-    if (!confirm(`${title}\n\n将清理 ${categories.length} 个分类的文件。\n清理的文件不可恢复（回收站项除外），确定继续？`)) return;
+    if (!(await uiConfirm({
+        title: "磁盘清理确认",
+        message: `${title}\n\n将清理 ${categories.length} 个分类的文件。\n清理的文件不可恢复（回收站项除外），确定继续？`,
+        danger: true
+    }))) return;
 
     document.getElementById("junkCleanSelBtn").disabled = true;
     document.getElementById("junkScanBtn").disabled = true;
@@ -401,11 +405,15 @@ function onInstallerCheck() {
         : "🗑 清理勾选安装包";
 }
 
-function cleanInstallers() {
+async function cleanInstallers() {
     const paths = insItems.filter(i => i.checked).map(i => i.path);
     if (!paths.length) return;
     const totalSize = insItems.filter(i => i.checked).reduce((a, i) => a + i.size, 0);
-    if (!confirm(`清理安装包确认（不可恢复）\n\n将永久删除 ${paths.length} 个安装包，共 ${humanSizeRaw(totalSize)}。\n\n确定继续？`)) return;
+    if (!(await uiConfirm({
+        title: "安装包清理确认（不可恢复）",
+        message: `将永久删除 ${paths.length} 个安装包，共 ${humanSizeRaw(totalSize)}。\n\n确定继续？`,
+        danger: true
+    }))) return;
 
     document.getElementById("insCleanBtn").disabled = true;
     document.getElementById("insScanBtn").disabled = true;

@@ -200,14 +200,18 @@ function adOnCatCheck() {
         : "在上方分类表勾选要迁移的分类（建议: 聊天文件/接收的文件/会议录像），再点击「迁移选中分类」。";
 }
 
-function adMigrateSelected() {
+async function adMigrateSelected() {
     const drive = document.getElementById("adDriveSelect").value;
     const folder = (document.getElementById("adTargetName").value || "AppDataMigrate").trim();
     if (!drive || adSelectedCats.size === 0) return;
 
     const cats = [...adSelectedCats].map(s => JSON.parse(s));
     const listText = cats.map(c => "· " + c.key).join("\n");
-    if (!confirm(`迁移确认\n\n将以下 ${cats.length} 个分类的数据移动到 ${drive}${folder}:\n${listText}\n\n说明:\n· 迁移是"移动"而非删除，保留相对目录结构\n· 同名文件自动跳过或改名，不会覆盖\n· 聊天媒体迁移后在聊天窗口可能显示为过期\n\n确定开始迁移？`)) return;
+    if (!(await uiConfirm({
+        title: "应用数据迁移确认",
+        message: `将以下 ${cats.length} 个分类的数据移动到 ${drive}${folder}:\n${listText}\n\n说明:\n· 迁移是"移动"而非删除，保留相对目录结构\n· 同名文件自动跳过或改名，不会覆盖\n· 聊天媒体迁移后在聊天窗口可能显示为过期\n\n确定开始迁移？`,
+        danger: true
+    }))) return;
 
     startAdJob("migrate", cats.map(c =>
         `/api/appdata/migrate?path=${encodeURIComponent(c.path)}&target=${encodeURIComponent(drive + folder + "\\" + c.key.replace(/[\\/:*?"<>|]/g, "_"))}`),
@@ -218,14 +222,22 @@ function adMigrateSelected() {
 }
 
 // ===================== 删除辅助 =====================
-function adDeleteCat(catKey, path, count, sizeText, name) {
-    if (!confirm(`删除确认（不可恢复）\n\n目标: ${name}\n大小: ${sizeText} · ${count} 个文件\n\n⚠️ 数据文件删除后无法从回收站找回，\n如需保留请改用「迁移」功能。\n\n确定要永久删除该分类全部文件吗？`)) return;
+async function adDeleteCat(catKey, path, count, sizeText, name) {
+    if (!(await uiConfirm({
+        title: "应用数据删除确认（不可恢复）",
+        message: `目标: ${name}\n大小: ${sizeText} · ${count} 个文件\n\n⚠️ 数据文件删除后无法从回收站找回，\n如需保留请改用「迁移」功能。\n\n确定要永久删除该分类全部文件吗？`,
+        danger: true
+    }))) return;
     startAdJob("delete", [`/api/appdata/delete?paths=${encodeURIComponent(path)}`],
         `删除 ${name}`, () => startAppdataScan());
 }
 
-function adDeleteFiles(paths, count, sizeText) {
-    if (!confirm(`删除确认（不可恢复）\n\n将永久删除 ${count} 个文件 (共 ${sizeText})。\n\n确定继续？`)) return;
+async function adDeleteFiles(paths, count, sizeText) {
+    if (!(await uiConfirm({
+        title: "应用数据删除确认（不可恢复）",
+        message: `将永久删除 ${count} 个文件 (共 ${sizeText})。\n\n确定继续？`,
+        danger: true
+    }))) return;
     startAdJob("delete", [`/api/appdata/delete?paths=${paths.map(encodeURIComponent).join("|")}`],
         `删除 ${count} 个文件`, () => startAppdataScan());
 }
