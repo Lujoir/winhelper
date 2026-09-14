@@ -1,6 +1,6 @@
 # 观枢终端平台｜EyeTerm · 建设史编年
 
-> 维护者：chronicler-dev ｜ v2.4 ｜ 2026-09-14 ｜ 补记 HTTPS 专项改造全闭环上线（#53，ADR-032，首个专项制分工）
+> 维护者：chronicler-dev ｜ v2.5 ｜ 2026-09-14 ｜ 补记废除原生 confirm/alert 专项（#54，ADR-021，uiConfirm 全局对话框与门禁长效化）
 
 ## 卷首语
 
@@ -71,6 +71,7 @@
 | 51 | 2026-09-11 | AI 诊断卡排版对齐终端概览 | 概览卡设计语言首次跨卡复用，催生成文设计规格 |
 | 52 | 2026-09-11 | 定名回退「网络排障」+ STYLE.md 诞生 | 命名反转闭环终名 + EyeTerm 首份成文 UI 设计规格+门禁 |
 | 53 | 2026-09-14 | HTTPS 专项改造全闭环上线 | 8443/18443 双 TLS + 自建 CA 指纹固定 fail-closed，换装生效（ADR-032） |
+| 54 | 2026-09-14 | 废除原生 confirm/alert 专项 | uiConfirm 唯一出口 23 处清零 + 源码级门禁长效化（ADR-021） |
 
 ---
 
@@ -345,6 +346,12 @@
 - 意义：EyeTerm 终端↔平台链路从明文 HTTP 升级为 CA 指纹固定 HTTPS（fail-closed），传输安全基线确立；「专项制」分工与七段门禁链（spike→单测→冒烟→部署→只读验证→换装→分段 PASS）成为大型改造方法论样板。
 - 考证：server-platform 提交 `cf01444`（2026-09-11 18:05，ADR-032 已入档）、`abb2978`（18:31）、`cee39b1`（18:41）、`d95f1f4`（18:44）、`a119acf`（19:02）、`35c74f5`（19:05）；net-doctor 提交 `0f19675`（17:35）、`eeb5463`（18:39）、`4679b11`（19:10）；perf-analyzer 提交 `85f50cb`（17:50）+ 主仓库 `3c054f1`（17:50，回灌动作在主仓库执行，双仓对应）；主仓库 `cc00ba2`（17:35）、`ef07d47`（19:16，origin/main 实证）。换装 09-14 08:30、第 2 段 PASS（last_seen 47s / iptables 计数）、只读冒烟 54/54 来源：会话记忆（2026-09-14）；遗留如实标注——第 3 段管理端浏览器验证待用户导入 ca.crt（安装包可自动导入）、legacy 18090 下线待稳定期后走审批、v9.1 安装包（09-11 19:15）为正式分发版。
 
+#### 2026-09-14 · 废除原生 confirm/alert：uiConfirm 全局对话框与门禁长效化（ADR-021）
+- 事件：用户两条硬要求（弹窗居中窗体中心、禁止出现 127.0.0.1:端口类来源信息）驱动的专项收口。根因：WebView2 原生 JS 对话框标题强制显示来源、位置不可控。交付：全局组件 uiConfirm（app.js:172 唯一合法对话框出口，Promise 化 / ESC / 遮罩取消 / danger 红键 / 单按钮 alert 语义 / 纯 DOM 零注入面）→ 两批 23 处清零（perf.js 18 + disk.js 2 + appdata.js 3）→ standalone 内联副本（perf/app-lite）→ 门禁长效化：e2e_perf.py 源码 grep check_no_native_dialogs（残留即退出码 3）+ 居中坐标 ±2px 断言 + 零来源断言 + 原生 dialog 计数=0，收口 126/126。
+- 过程协作：disk-cleaner 剩余 3 断言并入 perf 全量门禁合并覆盖（main 编排，避免用户重复审批）；disk-cleaner 同批修复 E2E async evaluate 死锁（改同步 IIFE）入档。
+- 意义：WebView2 环境下原生对话框缺陷（来源信息泄露 / 位置不可控）全体系根除，确立「唯一合法对话框出口 uiConfirm + 源码级门禁」的 UI 交互治理基线；与 STYLE.md（#52）共同构成「设计规格 + 交互规格 + 自动化门禁」体系。
+- 考证：perf-analyzer 提交 `0d8d551`（2026-09-14 10:54，ADR-021 已入档）、`16c92d2`（11:45）；主仓库提交 `f4b2077`（10:54）、`b5c3902`（11:42）、`bc2e479`（11:46，origin/main 实证）；disk-cleaner 提交 `130a012`（11:42）；收口 126/126 来源：会话记忆（2026-09-14）。
+
 ---
 
 ## 三、存疑与考证
@@ -363,10 +370,10 @@
 
 | 仓库 | 位置 | 首提交 | 最新提交（建档时） | 提交数 | 决策记录 |
 |------|------|--------|-------------------|--------|---------|
-| winhelper 主应用 | workspace 根（.git）；远程 git.wzeye.cn/zlj/eyeterm（2026-09-10 接入） | `84ea539` 2026-05-22 | `ef07d47` 2026-09-11 | 129 | docs/ARCHITECTURE-CLIENT.md |
-| disk-cleaner | disk-cleaner\（.git） | `3cdeb9b` 2026-09-05 | `35a31a1` 2026-09-06 | 10 | ADR-001~015（docs/DECISIONS.md） |
+| winhelper 主应用 | workspace 根（.git）；远程 git.wzeye.cn/zlj/eyeterm（2026-09-10 接入） | `84ea539` 2026-05-22 | `bc2e479` 2026-09-14 | 135 | docs/ARCHITECTURE-CLIENT.md |
+| disk-cleaner | disk-cleaner\（.git） | `3cdeb9b` 2026-09-05 | `130a012` 2026-09-14 | 12 | ADR-001~015（docs/DECISIONS.md） |
 | log-inspector | log-inspector\（.git） | `dde1c4b` 2026-09-06 | `5ca2c1f` 2026-09-08 | 7 | ADR-001~009（docs/DECISIONS.md） |
-| perf-analyzer | perf-analyzer\（.git） | `4192b95` 2026-09-05 | `85f50cb` 2026-09-11 | 19 | ADR-001~019（docs/DECISIONS.md） |
+| perf-analyzer | perf-analyzer\（.git） | `4192b95` 2026-09-05 | `16c92d2` 2026-09-14 | 21 | ADR-001~021（docs/DECISIONS.md） |
 | server-platform | server-platform\（.git） | `5a21967` 2026-09-06 | `35c74f5` 2026-09-11 | 35 | ADR-001~032（24 空缺，docs/DECISIONS.md）+ docs/login_upgrade_delivery.md、docs/iperf_e2e_report.md |
 | net-doctor | net-doctor\（.git） | `539b993` 2026-09-09 | `4679b11` 2026-09-11 | 36 | ADR-001~031（docs/DECISIONS.md）+ docs/STYLE.md 设计规格 |
 
