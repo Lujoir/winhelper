@@ -70,7 +70,8 @@ function ndBadge(text, cls) {
 function ndStatusBadge(status) {
     var map = {
         ok: ["正常", "nd-ok"], warn: ["需关注", "nd-warn"], err: ["异常", "nd-err"],
-        muted: ["—", "nd-muted"], unknown: ["未配置基线", "nd-muted"], running: ["检测中", "nd-info"]
+        muted: ["—", "nd-muted"], unknown: ["未配置基线", "nd-muted"], running: ["检测中", "nd-info"],
+        no_response: ["无响应", "nd-warn"]
     };
     var m = map[status] || [String(status || "--"), "nd-muted"];
     return ndBadge(m[0], m[1]);
@@ -297,7 +298,8 @@ function ndRenderNodes() {
     var rows = "";
     for (var i = 0; i < ndState.nodes.length; i++) {
         var n = ndState.nodes[i];
-        var method = n.method === "nslookup" ? "DNS 解析" : (n.method === "ntp" ? "NTP 校时" : "ICMP ping");
+        var method = n.method === "nslookup" ? "DNS 解析" : (n.method === "ntp" ? "NTP 校时"
+            : n.method === "tcp" ? "TCP 连接" : n.method === "udp" ? "UDP 探测" : "ICMP ping");
         var target = n.target || (n.key === "gateway" ? "（动态取本地网关）" :
             n.key === "center" ? "（动态取中心服务器）" : "--");
         rows += '<tr data-ndkey="' + ndEscapeHtml(n.key) + '">'
@@ -307,9 +309,14 @@ function ndRenderNodes() {
             + '<td>' + ndStatusBadge("muted") + '</td>'
             + '<td class="nd-num nd-rlat">--</td>'
             + '<td class="nd-num nd-rloss">--</td>'
-            + '<td class="nd-rdetail nd-hint">待检测</td></tr>';
+            + '<td class="nd-rdetail nd-hint">待检测</td>'
+            + '<td><button class="nd-btn nd-btn-danger" onclick="ndDelNode(\'' + ndEscapeHtml(n.key)
+            + '\')">删除</button></td></tr>';
     }
-    if (!rows) { rows = '<tr><td colspan="7" class="nd-empty">未配置节点</td></tr>'; }
+    if (!rows) {
+        rows = '<tr><td colspan="8" class="nd-empty">未配置节点——可点击下方「恢复默认节点」'
+            + '一键还原常用检测节点</td></tr>';
+    }
     el.innerHTML = rows;
     var tip = document.getElementById("ndDnsBaselineTip");
     if (tip) {
@@ -318,6 +325,96 @@ function ndRenderNodes() {
             ? ("DNS 基线：" + ndState.expectedDns.join("，"))
             : "";
     }
+}
+
+/* ---- 节点自主增删（2026-09-15）：数据同源 /api/netdoctor/config SET merge 原子写 ---- */
+
+function ndSaveNodes(nodes, tipText) {
+    ndApiFetch("/api/netdoctor/config?nodes_json=" + encodeURIComponent(JSON.stringify(nodes)))
+        .then(function (d) {
+            if (!d || d.success === false) {
+                ndSetTip("ndPingSummary", "保存失败：" + ((d && d.error) || "未知"));
+                return;
+            }
+            ndState.nodes = d.nodes || nodes;
+            ndRenderNodes();
+            ndSetTip("ndPingSummary", tipText || "已保存，连通性检测即时生效");
+        }).catch(function (e) {
+            ndSetTip("ndPingSummary", "保存失败：" + String(e));
+        });
+}
+
+function ndDelNode(key) {
+    var node = null;
+    for (var i = 0; i < ndState.nodes.length; i++) {
+        if (ndState.nodes[i].key === key) { node = ndState.nodes[i]; break; }
+    }
+    if (!node) { return; }
+    uiConfirm({
+        title: "删除节点确认",
+        message: "确定删除节点「" + node.name + "」（" + (node.target || "动态目标") + "）吗？删除后可点「恢复默认节点」还原。",
+        okText: "删除", cancelText: "取消", danger: true
+    }).then(function (ok) {
+        if (!ok) { return; }
+        ndSaveNodes(ndState.nodes.filter(function (n) { return n.key !== key; }), "节点已删除，检测即时生效");
+    });
+}
+
+function ndResetNodes() {
+    ndApiFetch("/api/netdoctor/config?nodes_reset=1").then(function (d) {
+        if (!d || d.success === false) {
+            ndSetTip("ndPingSummary", "恢复失败：" + ((d && d.error) || "未知"));
+            return;
+        }
+        ndState.nodes = d.nodes || [];
+        ndRenderNodes();
+        ndSetTip("ndPingSummary", "已恢复默认节点，检测即时生效");
+    }).catch(function (e) { ndSetTip("ndPingSummary", "恢复失败：" + String(e)); });
+}
+
+function ndToggleNodeForm() {
+    var f = document.getElementById("ndNodeForm");
+    if (!f) { return; }
+    var show = f.style.display !== "flex";
+    f.style.display = show ? "flex" : "none";
+    var btn = document.getElementById("ndNodeFormToggle");
+    if (btn) { btn.textContent = show ? "收起表单" : "添加节点"; }
+}
+
+function ndNodeMethodChange() {
+    var m = (document.getElementById("ndNodeMethod") || {}).value || "ping";
+    var portInput = document.getElementById("ndNodePort");
+    if (!portInput) { return; }
+    var need = m === "tcp" || m === "udp";
+    portInput.style.display = need ? "" : "none";
+    portInput.placeholder = need ? "端口（必填，1-65535）" : "";
+}
+
+function ndAddNodeSubmit() {
+    var name = ((document.getElementById("ndNodeName") || {}).value || "").trim();
+    var target = ((document.getElementById("ndNodeTarget") || {}).value || "").trim();
+    var method = (document.getElementById("ndNodeMethod") || {}).value || "ping";
+    var port = ((document.getElementById("ndNodePort") || {}).value || "").trim();
+    if (!name) { ndSetTip("ndNodeFormTip", "请填写节点名称"); return; }
+    if (!target) { ndSetTip("ndNodeFormTip", "请填写目标"); return; }
+    var full = target;
+    if (method === "tcp" || method === "udp") {
+        if (!/^\d{1,5}$/.test(port) || +port < 1 || +port > 65535) {
+            ndSetTip("ndNodeFormTip", "该协议需要端口（1-65535）"); return;
+        }
+        full = target + ":" + port;
+    } else if (target.indexOf(":") >= 0) {
+        ndSetTip("ndNodeFormTip", "该协议目标仅支持 IP / 域名"); return;
+    }
+    var nodes = ndState.nodes.slice();
+    nodes.push({ key: "u" + Date.now().toString(36), name: name, method: method, target: full });
+    ndSaveNodes(nodes, "节点已添加，检测即时生效");
+    var ids = ["ndNodeName", "ndNodeTarget", "ndNodePort"];
+    for (var i = 0; i < ids.length; i++) {
+        var el = document.getElementById(ids[i]);
+        if (el) { el.value = ""; }
+    }
+    ndToggleNodeForm();
 }
 
 /* ===================== 后台任务轮询 ===================== */

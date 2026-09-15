@@ -121,6 +121,8 @@ DEFAULT_NODES = [
     {"key": "ntp",        "name": "温州总院",                       "method": "ntp",      "target": "ntp.eye.ac.cn"},
     {"key": "internet",   "name": "互联网",                         "method": "ping",     "target": "baidu.com"},
     {"key": "center",     "name": "中心服务器",                     "method": "ping",     "target": ""},
+    # TCP 协议示例锚点（2026-09-15 用户点名场景：TCP 访问 baidu.com:443）
+    {"key": "tcp-sample", "name": "TCP 端口检测（示例）",           "method": "tcp",      "target": "baidu.com:443"},
 ]
 
 _DEFAULT_STRESS_SIZES = [64, 256, 1024, 4096]
@@ -492,6 +494,93 @@ def _ntp_probe(host, samples=5):
                     "/samples:" + str(samples)], timeout=samples * 5 + 20)
     vals, errs = _parse_stripchart(out)
     return _ntp_result(vals, errs, out)
+
+
+# ============================================================
+# TCP / UDP 协议探测（2026-09-15 连通性增强）
+# ============================================================
+
+_UDP_NO_RESPONSE = "无响应（UDP 无连接，无响应不等于不通）"
+
+
+def _split_host_port(target):
+    """target 'host:port' → (host, port_int) 或 (None, None)。"""
+    m = re.match(r"^([\w.\-]+):(\d{1,5})$", target or "")
+    if not m:
+        return None, None
+    port = int(m.group(2))
+    if port < 1 or port > 65535:
+        return None, None
+    return m.group(1), port
+
+
+def _tcp_probe(target):
+    """TCP 连接探测：socket 连接 host:port（3s 超时）→ 通/不通 + 耗时 ms。"""
+    host, port = _split_host_port(target)
+    if not host:
+        return {"ok": False, "status": "err", "detail": "目标格式须为 host:端口", "avg_ms": None}
+    t0 = time.time()
+    try:
+        s = socket.create_connection((host, port), timeout=3.0)
+        elapsed = int(round((time.time() - t0) * 1000))
+        s.close()
+        return {"ok": True, "status": "ok", "detail": "连接成功", "avg_ms": elapsed}
+    except socket.timeout:
+        return {"ok": False, "status": "err", "detail": "连接超时（3s）", "avg_ms": None}
+    except ConnectionRefusedError:
+        return {"ok": False, "status": "err", "detail": "端口未开放或拒绝连接", "avg_ms": None}
+    except OSError as e:
+        return {"ok": False, "status": "err", "detail": "连接失败：%s" % (e.strerror or e), "avg_ms": None}
+
+
+def _dns_query_packet(domain):
+    """构造极简 DNS A 查询报文（递归期望，事务 ID 0x1e5a）。"""
+    qname = b"".join(bytes([len(p)]) + p.encode("ascii") for p in domain.split(".")) + b"\x00"
+    return b"\x1e\x5a\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00" + qname + b"\x00\x01\x00\x01"
+
+
+def _udp_probe(target):
+    """UDP 探测（语义如实分级）：
+    - 53/123 已知协议端口：发真实查询/请求包 → 收到响应 = 通；
+    - 通用端口：发探测报文 → 收到应用响应 = 通；端口不可达 = 不通；
+      超时 = 「无响应」（UDP 无连接，无响应绝不谎报为失败）。"""
+    host, port = _split_host_port(target)
+    if not host:
+        return {"ok": False, "status": "err", "detail": "目标格式须为 host:端口"}
+    payload = None
+    if port == 53:
+        payload = _dns_query_packet("baidu.com")
+    elif port == 123:
+        payload = b"\x1b" + b"\x00" * 47   # NTP 客户端请求（VN=3 Mode=3）
+    else:
+        payload = b"\x00\x00\x00\x00"      # 通用探测报文
+    t0 = time.time()
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.settimeout(3.0)
+    try:
+        s.sendto(payload, (host, port))
+        data, _addr = s.recvfrom(1024)
+        elapsed = int(round((time.time() - t0) * 1000))
+        detail = "收到响应（%d 字节，%dms）" % (len(data), elapsed)
+        if port == 53:
+            detail = "DNS 响应（%d 字节，%dms）" % (len(data), elapsed)
+        elif port == 123:
+            detail = "NTP 响应（%d 字节，%dms）" % (len(data), elapsed)
+        return {"ok": True, "status": "ok", "detail": detail, "avg_ms": elapsed}
+    except socket.timeout:
+        return {"ok": False, "status": "no_response", "detail": _UDP_NO_RESPONSE, "avg_ms": None}
+    except ConnectionResetError:
+        # Windows：ICMP 端口不可达以 WSAECONNRESET(10054) 报给 sendto/recvfrom
+        return {"ok": False, "status": "err", "detail": "端口不可达", "avg_ms": None}
+    except OSError as e:
+        if e.errno in (10054, 10065):   # WSAECONNRESET / WSAEHOSTUNREACH
+            return {"ok": False, "status": "err", "detail": "端口不可达", "avg_ms": None}
+        return {"ok": False, "status": "err", "detail": "探测失败：%s" % (e.strerror or e), "avg_ms": None}
+    finally:
+        try:
+            s.close()
+        except Exception:
+            pass
 
 
 # ============================================================
@@ -909,6 +998,25 @@ def run_ping_suite(task, params):
                      "loss_pct": 0.0 if r["ok"] else 100.0,
                      "avg_ms": (abs(r["offset_ms"]) if r["offset_ms"] is not None else None),
                      "max_ms": r["max_abs_ms"]}
+        elif method == "tcp":
+            r = _tcp_probe(target)
+            entry["ok"] = r["ok"]
+            entry["status"] = r["status"]          # ok | err
+            entry["detail"] = r["detail"]
+            entry["avg_ms"] = r.get("avg_ms")
+            jsonl = {"ts": int(time.time()), "key": key, "target": target, "ok": r["ok"],
+                     "warn": False, "loss_pct": 0.0 if r["ok"] else 100.0,
+                     "avg_ms": r.get("avg_ms"), "max_ms": r.get("avg_ms")}
+        elif method == "udp":
+            r = _udp_probe(target)
+            entry["ok"] = r["ok"]
+            entry["status"] = r["status"]          # ok | err | no_response（如实分级，不谎报失败）
+            entry["detail"] = r["detail"]
+            entry["avg_ms"] = r.get("avg_ms")
+            jsonl = {"ts": int(time.time()), "key": key, "target": target,
+                     "ok": r["ok"], "warn": (r["status"] == "no_response"),
+                     "loss_pct": 0.0 if r["ok"] else (0.0 if r["status"] == "no_response" else 100.0),
+                     "avg_ms": r.get("avg_ms"), "max_ms": r.get("avg_ms")}
         else:
             r = _ping_summary(target, count=4)
             entry["ok"] = r["ok"]
@@ -1492,12 +1600,13 @@ def _cancel_task(task_id):
 # ============================================================
 
 
-_NODE_METHODS = ("ping", "nslookup", "ntp")
+_NODE_METHODS = ("ping", "nslookup", "ntp", "tcp", "udp")
 _DYNAMIC_KEYS = ("gateway", "center")     # 目标动态解析（本地网关 / uplink server host）
 
 
 def _sanitize_nodes(raw):
-    """节点表校验：method 白名单 / 目标仅 IP·域名字符 / 动态键强制 target=""。"""
+    """节点表校验：method 白名单（含 tcp/udp 协议检测）/ 目标字符校验
+    （TCP/UDP 须 host:port 端口必填）/ 动态键强制 target=""。"""
     if not isinstance(raw, list):
         return None
     nodes = []
@@ -1511,7 +1620,10 @@ def _sanitize_nodes(raw):
         probe = str(n.get("probe") or "").strip()
         if not name or method not in _NODE_METHODS:
             return None
-        if target and not re.match(r"^[\w.\-]+$", target):
+        if method in ("tcp", "udp"):
+            if not re.match(r"^[\w.\-]+:\d{1,5}$", target):
+                return None   # TCP/UDP 节点端口必填（host:port）
+        elif target and not re.match(r"^[\w.\-]+$", target):
             return None
         if key in _DYNAMIC_KEYS:
             target = ""                      # 网关/中心服务器：动态获取，不接受静态目标
@@ -1551,13 +1663,19 @@ def handle_net_config(params=None):
     raw_dns = params.get("expected_dns_json")
     raw_ai = params.get("ai_personal_json")
     reset = str(params.get("reset") or "").strip().lower() in ("1", "true", "yes")
-    if raw_nodes is not None or raw_dns is not None or raw_ai is not None or reset:
+    nodes_reset = str(params.get("nodes_reset") or "").strip().lower() in ("1", "true", "yes")
+    if raw_nodes is not None or raw_dns is not None or raw_ai is not None or reset or nodes_reset:
         cur = _load_app_config()
         nd = {}
         if reset:
             # 恢复出厂：不写 nodes 键（读取端回退内置默认表），基线清空；
             # 个人版凭据属用户配置，随恢复保留
             nd["expected_dns"] = []
+            nd["ai_personal"] = cur.get("ai_personal") or {}
+        elif nodes_reset:
+            # 仅恢复默认节点表（2026-09-15 节点自主增删配套）：保留 DNS 基线与个人版
+            nd["nodes"] = [dict(x) for x in DEFAULT_NODES]
+            nd["expected_dns"] = cur.get("expected_dns") or []
             nd["ai_personal"] = cur.get("ai_personal") or {}
         else:
             nd["nodes"] = cur["nodes"]
@@ -1578,7 +1696,8 @@ def handle_net_config(params=None):
                 return {"success": False, "error": "nodes_json 解析失败"}
             if nodes is None:
                 return {"success": False,
-                        "error": "节点表校验失败（名称必填；方式限 ping/nslookup/ntp；目标仅 IP/域名）"}
+                        "error": "节点表校验失败（名称必填；方式限 ping/nslookup/ntp/tcp/udp；"
+                                 "TCP/UDP 目标须 host:端口；其余目标仅 IP/域名）"}
             nd["nodes"] = nodes
         if raw_ai is not None:
             try:

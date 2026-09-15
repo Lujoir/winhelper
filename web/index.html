@@ -929,11 +929,29 @@
                     </div>
                 </div>
                 <div class="card-body">
-                    <div class="nd-summary" id="ndPingSummary">按配置节点表逐区段探测（ping / DNS 解析 / NTP 校时），结果自动留档</div>
+                    <div class="nd-summary" id="ndPingSummary">按配置节点表逐区段探测（ping / DNS / NTP / TCP / UDP），结果自动留档</div>
                     <table class="nd-table">
-                        <tr><th>节点</th><th>目标</th><th>方式</th><th>状态</th><th>延迟</th><th>丢包</th><th>说明</th></tr>
+                        <tr><th>节点</th><th>目标</th><th>方式</th><th>状态</th><th>延迟</th><th>丢包</th><th>说明</th><th>操作</th></tr>
                         <tbody id="ndNodesBody"></tbody>
                     </table>
+                    <div class="nd-params" style="margin:8px 0 2px;flex-wrap:wrap">
+                        <button class="nd-btn" id="ndNodeFormToggle" onclick="ndToggleNodeForm()">添加节点</button>
+                        <button class="nd-btn" onclick="ndResetNodes()">恢复默认节点</button>
+                    </div>
+                    <div id="ndNodeForm" style="display:none;gap:8px;flex-wrap:wrap;margin:6px 0 2px">
+                        <input id="ndNodeName" class="nd-input" type="text" placeholder="节点名称（必填）" style="width:150px">
+                        <input id="ndNodeTarget" class="nd-input" type="text" placeholder="目标，如 baidu.com:443 或 127.0.0.1" style="width:210px">
+                        <select id="ndNodeMethod" class="nd-input" style="width:110px" onchange="ndNodeMethodChange()">
+                            <option value="ping">ICMP Ping</option>
+                            <option value="tcp">TCP 连接</option>
+                            <option value="udp">UDP 探测</option>
+                            <option value="nslookup">DNS 解析</option>
+                            <option value="ntp">NTP 校时</option>
+                        </select>
+                        <input id="ndNodePort" class="nd-input" type="text" placeholder="端口（必填，1-65535）" style="width:140px;display:none">
+                        <button class="nd-btn primary" onclick="ndAddNodeSubmit()">确认添加</button>
+                        <span class="nd-hint" id="ndNodeFormTip"></span>
+                    </div>
                     <div class="nd-hint" style="margin-top:10px">最近历史摘要（近 7 天）</div>
                     <div id="ndHistoryBody"><div class="nd-empty">加载中…</div></div>
                 </div>
@@ -1088,6 +1106,9 @@
                 .nd-ctx { display: none; position: fixed; z-index: 1200; background: var(--bg-card, #171a23); border: 1px solid var(--border-color, #262b3a); border-radius: 8px; padding: 4px; box-shadow: 0 8px 28px rgba(0,0,0,.5); min-width: 130px; }
                 .nd-ctx-item { padding: 7px 12px; font-size: 12.5px; color: var(--text-primary, #e8ebf2); cursor: pointer; border-radius: 6px; }
                 .nd-ctx-item:hover { background: var(--bg-hover, #1d212e); color: var(--accent-cyan, #4fc3f7); }
+                /* 节点行删除入口（危险样式，确认走 uiConfirm danger） */
+                .nd-btn-danger { border-color: rgba(224, 82, 82, .6) !important; color: #e05252 !important; }
+                .nd-btn-danger:hover { border-color: #e05252 !important; }
             </style>
             <div class="page-header">
                 <h2>文件检索</h2>
