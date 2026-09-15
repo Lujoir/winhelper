@@ -9,8 +9,78 @@
 var fsState = {
     inited: false,
     lastQuery: "",
-    searching: false
+    searching: false,
+    sortCol: "",       /* 表头排序列：name/size/date_modified（服务端重查）| ext（前端排）| 空=默认 */
+    sortAsc: true,     /* 正序/倒序（换列复位正序） */
+    exts: []           /* 类型预筛选中后缀（多选 OR，空=全部） */
 };
+
+/* 常用后缀快捷筛选（走 Everything 原生 ext: 语法拼接，多选=OR 分号多值） */
+var FS_EXT_CHIPS = [
+    { label: "全部", exts: [] },
+    { label: "pdf", exts: ["pdf"] },
+    { label: "doc(x)", exts: ["doc", "docx"] },
+    { label: "ppt(x)", exts: ["ppt", "pptx"] },
+    { label: "xls(x)", exts: ["xls", "xlsx"] },
+    { label: "zip", exts: ["zip"] },
+    { label: "exe", exts: ["exe"] },
+    { label: "txt", exts: ["txt"] }
+];
+
+function fsInitChips() {
+    var host = document.getElementById("fsChips");
+    if (!host || host.dataset.chipInit) { return; }
+    host.dataset.chipInit = "1";
+    var html = "";
+    for (var i = 0; i < FS_EXT_CHIPS.length; i++) {
+        html += '<button type="button" class="nd-chip" data-i="' + i + '" onclick="fsChipToggle(' + i + ')">'
+            + fsEscapeHtml(FS_EXT_CHIPS[i].label) + '</button>';
+    }
+    host.innerHTML = html;
+    fsSyncChips();
+}
+
+function fsChipToggle(i) {
+    var chip = FS_EXT_CHIPS[i];
+    if (!chip) { return; }
+    if (i === 0) {                       /* 「全部」= 清空筛选（互斥） */
+        fsState.exts = [];
+    } else {
+        var sel = fsState.exts.slice();
+        for (var k = 0; k < chip.exts.length; k++) {
+            var pos = sel.indexOf(chip.exts[k]);
+            if (pos >= 0) { sel.splice(pos, 1); } else { sel.push(chip.exts[k]); }
+        }
+        fsState.exts = sel;
+        if (!sel.length) { fsState.exts = []; }
+    }
+    fsSyncChips();
+}
+
+function fsSyncChips() {
+    var host = document.getElementById("fsChips");
+    if (!host) { return; }
+    var btns = host.querySelectorAll(".nd-chip");
+    for (var i = 0; i < btns.length; i++) {
+        var idx = parseInt(btns[i].getAttribute("data-i"), 10);
+        var exts = FS_EXT_CHIPS[idx] ? FS_EXT_CHIPS[idx].exts : [];
+        var on = false;
+        if (idx === 0) { on = fsState.exts.length === 0; }
+        else if (exts.length) {
+            on = true;
+            for (var k = 0; k < exts.length; k++) {
+                if (fsState.exts.indexOf(exts[k]) < 0) { on = false; break; }
+            }
+        }
+        if (on) { btns[i].classList.add("on"); } else { btns[i].classList.remove("on"); }
+    }
+}
+
+function fsBuildQuery(base) {
+    /* 检索词 + 类型筛选拼接（Everything 原生语法：空格 AND，ext:a;b 分号 OR） */
+    if (!fsState.exts.length) { return base; }
+    return base + " ext:" + fsState.exts.join(";");
+}
 
 function fsApiFetch(path) {
     /* 主应用宿主 apiFetch（app.js，带 15s 超时保护）优先；独立页走 pywebview/fetch */
@@ -104,6 +174,11 @@ function fsStartSearch() {
         fsSetTip("fsSummary", "请输入搜索关键词（支持 Everything 语法，如 ext:pdf，大小写不敏感）");
         return;
     }
+    fsDoSearch(q);
+}
+
+function fsDoSearch(q) {
+    /* 检索词经类型筛选拼接后查询；表头排序列（name/size/date_modified）透传 Everything 原生 sort 参数 */
     fsState.searching = true;
     fsState.lastQuery = q;
     var btn = document.getElementById("fsSearchBtn");
@@ -111,7 +186,11 @@ function fsStartSearch() {
     fsSetTip("fsSummary", "检索中…");
     var body = document.getElementById("fsBody");
     if (body) { body.innerHTML = '<div class="nd-empty">检索中…</div>'; }
-    fsApiFetch("/api/filesearch/query?q=" + encodeURIComponent(q) + "&count=200")
+    var url = "/api/filesearch/query?q=" + encodeURIComponent(fsBuildQuery(q)) + "&count=200";
+    if (fsState.sortCol === "name" || fsState.sortCol === "size" || fsState.sortCol === "date_modified") {
+        url += "&sort=" + fsState.sortCol + "&ascending=" + (fsState.sortAsc ? "1" : "0");
+    }
+    fsApiFetch(url)
         .then(function (d) {
             fsState.searching = false;
             if (btn) { btn.disabled = false; }
@@ -122,6 +201,24 @@ function fsStartSearch() {
             if (btn) { btn.disabled = false; }
             fsSetTip("fsSummary", "检索失败：" + String(e));
         });
+}
+
+function fsSortBy(col) {
+    /* 表头点击排序：同列翻转正倒序，换列复位正序；类型列前端排，其余服务端重查 */
+    if (fsState.sortCol === col) { fsState.sortAsc = !fsState.sortAsc; }
+    else { fsState.sortCol = col; fsState.sortAsc = true; }
+    if (col === "ext") {
+        if (fsState.lastResults && fsState.lastResults.length) {
+            fsRenderResults({ results: fsState.lastResults });
+        }
+        return;
+    }
+    if (fsState.lastQuery) { fsDoSearch(fsState.lastQuery); }
+}
+
+function fsExtOf(name) {
+    var i = String(name || "").lastIndexOf(".");
+    return i > 0 ? String(name).slice(i + 1).toLowerCase() : "";
 }
 
 function fsRenderError(d) {
@@ -143,6 +240,7 @@ function fsRenderResults(d) {
     var el = document.getElementById("fsBody");
     if (!el) { return; }
     var rs = d.results || [];
+    fsState.lastResults = rs.slice(0);
     var total = d.total !== undefined && d.total !== null ? d.total : null;
     fsSetTip("fsSummary", "完成：命中 " + rs.length + " 条"
         + (total !== null ? "（全部匹配 " + total + "，显示前 " + rs.length + "）" : "")
@@ -151,38 +249,124 @@ function fsRenderResults(d) {
         el.innerHTML = '<div class="nd-empty">无匹配结果</div>';
         return;
     }
+    var shown = rs.slice(0);
+    if (fsState.sortCol === "ext") {   /* 类型排序=按扩展名前端排（Everything HTTP 无此 sort 值） */
+        shown.sort(function (a, b) {
+            var ea = fsExtOf(a.name), eb = fsExtOf(b.name);
+            var c = ea < eb ? -1 : (ea > eb ? 1 : 0);
+            return fsState.sortAsc ? c : -c;
+        });
+    }
+    var arrow = function (col) {
+        if (fsState.sortCol !== col) { return ""; }
+        return fsState.sortAsc ? " ▲" : " ▼";
+    };
     var rows = "";
-    for (var i = 0; i < rs.length; i++) {
-        var r = rs[i];
+    for (var i = 0; i < shown.length; i++) {
+        var r = shown[i];
         var full = (r.path ? r.path + "\\" : "") + (r.name || "");
-        rows += '<tr>'
+        rows += '<tr oncontextmenu="fsRowMenu(event,this)">'
             + '<td>' + fsEscapeHtml(r.name || "--") + '</td>'
-            + '<td title="' + fsEscapeHtml(full) + '">' + fsEscapeHtml(r.path || "--") + '</td>'
+            + '<td>' + fsEscapeHtml(fsExtOf(r.name) || "--") + '</td>'
+            + '<td title="' + fsEscapeHtml(full) + '" data-path="' + fsEscapeHtml(r.path || "") + '">'
+            + fsEscapeHtml(r.path || "--") + '</td>'
             + '<td class="nd-num">' + fsEscapeHtml(fsFmtSize(r.size)) + '</td>'
             + '<td class="nd-num">' + fsEscapeHtml(fsFmtDate(r.date_modified)) + '</td>'
             + '<td><button class="nd-btn" onclick="fsOpenLocation(this)">打开位置</button></td>'
             + '</tr>';
     }
     el.innerHTML = '<div class="nd-hint" style="margin:2px 0 6px">路径列为文件所在目录，'
-        + '「打开位置」将在资源管理器中定位该文件</div>'
-        + '<table class="nd-table"><tr><th>名称</th><th>路径</th><th>大小</th><th>修改时间</th><th>操作</th></tr>'
-        + rows + '</table>';
+        + '「打开位置」将在资源管理器中定位该文件；右键结果行可复制完整路径</div>'
+        + '<table class="nd-table"><tr>'
+        + '<th class="nd-th-sort" onclick="fsSortBy(\'name\')">名称' + arrow("name") + '</th>'
+        + '<th class="nd-th-sort" onclick="fsSortBy(\'ext\')">类型' + arrow("ext") + '</th>'
+        + '<th>路径</th>'
+        + '<th class="nd-th-sort nd-num" onclick="fsSortBy(\'size\')">大小' + arrow("size") + '</th>'
+        + '<th class="nd-th-sort nd-num" onclick="fsSortBy(\'date_modified\')">修改时间' + arrow("date_modified") + '</th>'
+        + '<th>操作</th>'
+        + '</tr>' + rows + '</table>';
 }
 
 function fsOpenLocation(btn) {
-    /* 行内打开位置：取同行路径单元格 + 名称拼接完整路径（复用磁盘模块打开位置模式） */
+    /* 行内打开位置：取同行路径单元格（data-path 纯目录）+ 名称拼接完整路径 */
     if (!btn) { return; }
     var tr = btn.closest("tr");
     if (!tr) { return; }
     var tds = tr.querySelectorAll("td");
-    var path = tds[1] ? tds[1].getAttribute("title") || tds[1].textContent : "";
+    var path = tds[2] ? (tds[2].getAttribute("data-path") || tds[2].textContent) : "";
     var name = tds[0] ? tds[0].textContent : "";
     if (!path || !name) { return; }
-    var full = path.replace(/\\+$/, "") + "\\" + name;
+    fsOpenPath(path.replace(/\\+$/, "") + "\\" + name);
+}
+
+function fsOpenPath(full) {
+    if (!full) { return; }
     fsApiFetch("/api/filesearch/open-location?path=" + encodeURIComponent(full))
         .then(function (d) {
             if (!d || d.success === false) { fsSetTip("fsSummary", "打开位置失败：" + ((d && d.error) || "未知")); }
         }).catch(function (e) { fsSetTip("fsSummary", "打开位置失败：" + String(e)); });
+}
+
+/* ---- 结果行右键菜单（自绘，STYLE.md 风格）：打开文件位置 / 复制路径 ---- */
+
+function fsRowMenu(e, tr) {
+    if (!e || !tr) { return; }
+    var tds = tr.querySelectorAll("td");
+    var name = tds[0] ? tds[0].textContent : "";
+    var path = tds[2] ? (tds[2].getAttribute("data-path") || tds[2].textContent) : "";
+    if (!name) { return; }
+    fsShowCtxMenu(e, name, path);
+}
+
+function fsShowCtxMenu(e, name, path) {
+    var m = document.getElementById("fsCtxMenu");
+    if (!m) {
+        m = document.createElement("div");
+        m.id = "fsCtxMenu";
+        m.className = "nd-ctx";
+        m.innerHTML = '<div class="nd-ctx-item" data-act="open">打开文件位置</div>'
+            + '<div class="nd-ctx-item" data-act="copy">复制路径</div>';
+        document.body.appendChild(m);
+        m.addEventListener("click", function (ev) {
+            var it = ev.target;
+            while (it && it !== m && (it.className || "").toString().indexOf("nd-ctx-item") < 0) {
+                it = it.parentElement;
+            }
+            if (!it || it === m) { return; }
+            var full = m.getAttribute("data-full") || "";
+            if (it.getAttribute("data-act") === "open") { fsOpenPath(full); }
+            else if (fsCopyText(full)) { fsSetTip("fsSummary", "路径已复制"); }
+            else { fsSetTip("fsSummary", "复制失败（剪贴板不可用）"); }
+            fsHideCtxMenu();
+        });
+    }
+    m.setAttribute("data-full", (path ? path.replace(/\\+$/, "") + "\\" : "") + name);
+    m.style.display = "block";
+    var x = e.clientX, y = e.clientY;
+    var r = m.getBoundingClientRect();
+    if (x + r.width > window.innerWidth - 8) { x = window.innerWidth - r.width - 8; }
+    if (y + r.height > window.innerHeight - 8) { y = window.innerHeight - r.height - 8; }
+    m.style.left = x + "px";
+    m.style.top = y + "px";
+}
+
+function fsHideCtxMenu() {
+    var m = document.getElementById("fsCtxMenu");
+    if (m) { m.style.display = "none"; }
+}
+
+function fsCopyText(t) {
+    /* file:// 环境无 navigator.clipboard secure context 保证，走 execCommand 兜底 */
+    var ta = document.createElement("textarea");
+    ta.value = t;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    return ok;
 }
 
 function fsLoadStatus() {
@@ -219,6 +403,7 @@ function fsSavePath() {
 
 function initFileSearchTab() {
     nd_fs_boot();
+    fsInitChips();
     if (fsState.inited) {
         fsLoadStatus();
         return;
@@ -226,6 +411,7 @@ function initFileSearchTab() {
     fsState.inited = true;
     fsInitCollapsible();
     fsLoadStatus();
+    document.addEventListener("click", fsHideCtxMenu);
     var input = document.getElementById("fsQuery");
     if (input) {
         input.addEventListener("keydown", function (e) {

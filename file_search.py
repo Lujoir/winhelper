@@ -250,7 +250,9 @@ def ensure_running():
 # ============================================================
 
 def handle_fs_query(params=None):
-    """文件检索：params {q, count?}。未运行时自动拉起（eyeterm 实例），失败给指引。"""
+    """文件检索：params {q, count?, sort?, ascending?}。未运行时自动拉起（eyeterm 实例），失败给指引。
+    sort/ascending（2026-09-15 表头排序）：透传 Everything HTTP 原生参数——
+    sort ∈ {name, path, date_modified, size}（官方四值），ascending=1 升序/0 降序，非法值忽略。"""
     q = str((params or {}).get("q") or "").strip()
     if not q:
         return {"success": False, "error": "empty_query"}
@@ -264,13 +266,36 @@ def handle_fs_query(params=None):
         count = max(10, min(FS_MAX_RESULTS, int((params or {}).get("count") or 50)))
     except (TypeError, ValueError):
         count = 50
-    code, obj = _fs_get(q, timeout=6)
+    sort = str((params or {}).get("sort") or "").strip()
+    if sort not in ("name", "path", "date_modified", "size"):
+        sort = ""
+    asc = str((params or {}).get("ascending") or "").strip()
+    url = FS_HTTP_BASE + "/?search=" + urllib.parse.quote(q) \
+        + "&json=1&count=%d&path_column=1&size_column=1&date_modified_column=1" % FS_MAX_RESULTS
+    if sort:
+        url += "&sort=" + sort + "&ascending=" + ("1" if asc != "0" else "0")
+    code, obj = _fs_get_url(url, timeout=6)
     if code != 200 or not isinstance(obj, dict):
         return {"success": False, "error": "everything_http_%s" % code,
                 "hint": "Everything 查询失败，请检查其 HTTP 服务器状态"}
     results = _norm_results(obj)
     return {"success": True, "q": q, "total": obj.get("totalResults"),
             "count": len(results), "results": results}
+
+
+def _fs_get_url(url, timeout=6):
+    """带完整 URL 的 Everything HTTP GET（排序等扩展参数由调用方拼装）；返回 (status, obj)。"""
+    req = urllib.request.Request(url, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, json.loads(resp.read().decode("utf-8", errors="replace"))
+    except urllib.error.HTTPError as exc:
+        try:
+            return exc.code, json.loads(exc.read().decode("utf-8"))
+        except Exception:
+            return exc.code, {}
+    except Exception as e:
+        return -1, {"error": str(e) or type(e).__name__}
 
 
 def handle_fs_status(params=None):

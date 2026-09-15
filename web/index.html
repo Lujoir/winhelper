@@ -1078,6 +1078,16 @@
                 .nd-styled .nd-hint { font-size: 12px; }
                 /* 卡头按钮贴卡头右缘（与折叠箭头间距统一，对齐网络排障五卡/AI 卡先例，2026-09-15 整改） */
                 .nd-styled .card-header .disk-toolbar { margin-left: auto; }
+                /* 类型预筛 chips / 表头排序 / 右键菜单（2026-09-15 功能迭代） */
+                .nd-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 2px; }
+                .nd-chip { background: var(--bg-hover, #1d212e); color: var(--text-secondary, #8a93a5); border: 1px solid var(--border-color, #262b3a); border-radius: 10px; padding: 2px 10px; cursor: pointer; font-size: 12px; }
+                .nd-chip:hover { border-color: var(--accent-cyan, #4fc3f7); color: var(--accent-cyan, #4fc3f7); }
+                .nd-chip.on { background: var(--accent-cyan, #4fc3f7); color: #10213a; border-color: transparent; font-weight: 600; }
+                .nd-th-sort { cursor: pointer; user-select: none; }
+                .nd-th-sort:hover { color: var(--accent-cyan, #4fc3f7); }
+                .nd-ctx { display: none; position: fixed; z-index: 1200; background: var(--bg-card, #171a23); border: 1px solid var(--border-color, #262b3a); border-radius: 8px; padding: 4px; box-shadow: 0 8px 28px rgba(0,0,0,.5); min-width: 130px; }
+                .nd-ctx-item { padding: 7px 12px; font-size: 12.5px; color: var(--text-primary, #e8ebf2); cursor: pointer; border-radius: 6px; }
+                .nd-ctx-item:hover { background: var(--bg-hover, #1d212e); color: var(--accent-cyan, #4fc3f7); }
             </style>
             <div class="page-header">
                 <h2>文件检索</h2>
@@ -1098,6 +1108,7 @@
                         <span class="nd-hint">支持语法（如 ext:pdf），大小写不敏感</span></div>
                     <input id="fsQuery" class="nd-input" type="text" style="width:100%"
                         placeholder="输入关键词，如 report 或 ext:pdf">
+                    <div id="fsChips" class="nd-chips"></div>
                     <div style="margin-top:10px">
                         <button class="nd-btn primary" onclick="fsStartSearch()">开始检索</button>
                         <span class="nd-hint" id="fsSearchTip"></span>
