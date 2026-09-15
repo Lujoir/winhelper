@@ -313,9 +313,10 @@ function ndRenderNodes() {
     el.innerHTML = rows;
     var tip = document.getElementById("ndDnsBaselineTip");
     if (tip) {
+        /* 2026-09-15 文案清理：未配置基线不再渲染提示，直接展示实测值（比对功能逻辑零改动） */
         tip.textContent = ndState.expectedDns.length
             ? ("DNS 基线：" + ndState.expectedDns.join("，"))
-            : "未配置 DNS 基线，当前展示实测值（可在设置中配置基线比对）";
+            : "";
     }
 }
 
