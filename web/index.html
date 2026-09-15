@@ -1002,7 +1002,6 @@
             </div>
 
         </div>
-    </main>
 
     <!-- 设置（中心平台接入 / 性能分析 / 网络排障挂载点） -->
     <style>
@@ -1067,18 +1066,18 @@
                 <div class="settings-card" id="ndSettingsHost"></div>
             </div>
         </div>
-
-        <!-- ==================== 文件检索 ==================== -->
-
     </div>
 
+        <!-- ==================== 文件检索 ==================== -->
         <div id="tab-filesearch" class="tab-content">
             <style>
                 /* filesearch 模块样式（仅作用于本 section，遵循 STYLE.md 基线） */
-                .nd-styled .card-header h3, .nd-ai-card .card-header h3 { font-size: 13.5px; font-weight: 600; color: var(--accent-cyan, #4fc3f7); letter-spacing: .5px; }
-                .nd-styled .card-body, .nd-ai-card .card-body { padding: 15px 17px; }
-                .nd-styled .nd-summary, .nd-ai-card .nd-summary { margin: 0 0 10px; line-height: 1.6; }
+                .nd-styled .card-header h3 { font-size: 13.5px; font-weight: 600; color: var(--accent-cyan, #4fc3f7); letter-spacing: .5px; }
+                .nd-styled .card-body { padding: 15px 17px; }
+                .nd-styled .nd-summary { font-size: 12px; color: var(--text-secondary, #8a93a5); margin: 0 0 10px; line-height: 1.6; }
                 .nd-styled .nd-hint { font-size: 12px; }
+                /* 卡头按钮贴卡头右缘（与折叠箭头间距统一，对齐网络排障五卡/AI 卡先例，2026-09-15 整改） */
+                .nd-styled .card-header .disk-toolbar { margin-left: auto; }
             </style>
             <div class="page-header">
                 <h2>文件检索</h2>
@@ -1086,7 +1085,7 @@
                 <button class="btn btn-ghost" onclick="toggleAllCards(this)">📁 收纳全部</button>
             </div>
 
-            <div class="section-card nd-ai-card collapsed" data-collapse>
+            <div class="section-card nd-styled collapsed" data-collapse>
                 <div class="card-header">
                     <h3>文件检索</h3>
                     <div class="disk-toolbar">
@@ -1127,6 +1126,7 @@
                 </div>
             </div>
         </div>
+    </main>
     <script src="app.js"></script>
     <script src="filesearch.js"></script>
     <script src="home.js"></script>
