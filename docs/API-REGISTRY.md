@@ -1541,7 +1541,7 @@
 #### EXT-007 火绒终端安全管理系统 API v1（终端安全维度，调研阶段）
 - **用途**：EyeTerm「终端安全」维度数据源（方案场景：S1 终端安全状态聚合 / S2 高危漏洞风险 KPI / S3 病毒事件看板 / S4 分组-设备映射同步 / S5 软件资产统计；S6 远程处置为**破坏性**接口，EyeTerm 侧默认硬门禁禁用 `enable_tasks=False`，开启须另行审批立项）
 - **服务方**：火绒终端安全管理系统控制台（独立安全产品，非 EyeTerm 组件）
-- **端点**：base `https://<hr-host>:8080`（HTTPS 自签证书；真实地址经 settings `huorong.base_url` 配置后生效，不出台账）。**端点计数口径差异**：huorong-dev 下发称 14、实列 15 个路径（group 5 + clnts 8 + task 1 + swinfo 1），以路径清单为准，官方计数口径见 TBC-006：
+- **端点**：base `https://<hr-host>:8080`（HTTPS 自签证书；真实地址经 settings `huorong.base_url` 配置后生效，不出台账）。**端点计数口径差异**：huorong-dev 下发称 14、实列 15 个路径（group 5 + clnts 8 + task 1 + swinfo 1），以路径清单为准，官方计数口径见 TBC-006： > 更新 2026-09-15：**计数口径定论**（huorong-dev 回查官方文档目录）——官方文档操作章节 17 个条目（分组 3.1.1~3.1.5 + 终端 3.2.1~3.2.8 + 任务 3.3.1~3.3.3 查杀/隔离/通知 + 软件 3.4.1），任务三操作**共用 /api/task/_create 路径仅 type 不同**；按唯一路径口径 = 15，本条目登记正确；下发「14」系任务摘要少计非官方口径；方案文档 §1 已同步修正（huorong_integration_plan.md:11）
   - 分组（5）：`POST /api/group/_list`（全部分组树 group_id/parent_group/group_name）/ `_info`（group_id）/ `_create`（parent_group+group_name）/ `_delete`（group_id）/ `_rename`（group_id+group_name）
   - 终端（8）：`POST /api/clnts/_online`（limit≤200/offset，在线 MAC）/ `_list`（全量终端：client_id/local_ip/connect_ip/mac/client_name/computer_name/group_id/os_version/version/**definitions 病毒库日期**/is_online/last_connect_time，分页 limit≤200）/ `_rename` / `_group`（批量移动分组）/ `_info`（clients[]/mac[]）/ `_info2`（**v2.0.6.0+**，options: hardware/software/assets/netconf）/ `_leak`（高危漏洞未修复终端 + 全局 KPI all_client/risk_client）/ `_virus_events`（type 0=按终端/1=按分组/2=全量，begin_time/end_time/limit/offset，返回 count+success/fail/ignored/trusted）
   - 任务（1，**破坏性**）：`POST /api/task/_create`（type=quick_scan/full_scan/**custom_scan(v2.0.8.0+)**/netctrl 隔离/message 通知；clients[] 或 groups[] + param）
@@ -1605,7 +1605,7 @@
 | TBC-002 | settings 无预置键 | `llm.api_key`/`llm.model_fallback`/`iperf.server_ip`/`netdoctor.route_nodes`/`ftp.password` 不在 settings.py DEFAULTS（按需 set 后生效），GET settings 时未配置键不出现或为默认值 |
 | TBC-003 | BRG 各 handler 响应字段全集 | 39 条已挂载路由的响应以 success/error 公共字段 + 关键字段记录；逐字段全集可在联调对账时以 service 文件 handler 返回值补录 |
 | TBC-004 | config.json 键清单 | app.py dev 默认：port/terminal_token/console_password/session_ttl_hours/report_interval/retention_days/bottleneck_dedup_min/data_dir；生产 config.json 实际键以部署实例为准（口令已移除，登录走 console_auth.db） |
-| TBC-006 | 火绒 API 端点计数口径 | huorong-dev 下发称官方 14 端点、实列 15 个路径（group 5 + clnts 8 + task 1 + swinfo 1），台账按路径清单登记；差异待官方文档核对（可能为文档合并计数）。另：签名 body 传参 vs query 传参（CanonicalizedResource 子资源拼接）A/B 确认、签名 urlencode 形态定稿，均列入凭据修复后复验清单（方案文档 §7.1） |
+| TBC-006 | 火绒 API 端点计数口径 | 【计数核对已关闭 2026-09-15】口径定论：官方文档 17 个文档化操作（分组 5 + 终端 8 + 任务 3 + 软件 1，任务三操作共用 /api/task/_create 仅 type 不同），唯一路径口径 = 15，台账登记正确；下发「14」系摘要少计。**剩余待办（凭据修复后复验）**：签名 body 传参 vs query 传参（CanonicalizedResource 子资源拼接）A/B 确认、签名 urlencode 形态定稿（方案文档 §7.1） |
 
 ## 附：对账约定
 
