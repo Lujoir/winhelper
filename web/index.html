@@ -1091,7 +1091,7 @@
             </style>
             <div class="page-header">
                 <h2>文件检索</h2>
-                <p class="page-subtitle">Everything 本机全盘检索 · 秒级定位文件与目录</p>
+                <p class="page-subtitle">本机全盘检索 · 秒级定位文件与目录</p>
                 <button class="btn btn-ghost" onclick="toggleAllCards(this)">📁 收纳全部</button>
             </div>
 
@@ -1125,15 +1125,8 @@
                     </div>
                 </div>
                 <div class="card-body">
-                    <div class="nd-summary" id="fsStatusSummary">Everything 服务状态与程序路径配置</div>
+                    <div class="nd-summary" id="fsStatusSummary">文件索引状态（由系统组件自动维护，无需配置）</div>
                     <div id="fsStatusBody"><div class="nd-empty">加载中…</div></div>
-                    <div class="hm-row nd-ai-row"><span class="hm-row-label">Everything.exe 路径</span></div>
-                    <div style="display:flex;gap:8px;flex-wrap:wrap">
-                        <input id="fsExePath" class="nd-input" type="text" style="width:420px"
-                            placeholder="例如 D:\Tools\Everything\Everything.exe">
-                        <button class="nd-btn" onclick="fsSavePath()">保存路径</button>
-                        <span class="nd-hint" id="fsPathTip"></span>
-                    </div>
                 </div>
             </div>
         </div>

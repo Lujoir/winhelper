@@ -39,7 +39,7 @@ from uplink import (
 )
 from home_service import handle_home_network
 from file_search import (
-    handle_fs_query, handle_fs_status, handle_fs_save_path, handle_fs_open_location,
+    handle_fs_query, handle_fs_status, handle_fs_open_location,
 )
 from net_service import (
     handle_net_config, handle_net_config_check, handle_net_ipconflict,
@@ -110,10 +110,9 @@ ROUTES = {
     "/api/netdoctor/ai-history": handle_net_ai_history,
     "/api/netdoctor/ai-history-append": handle_net_ai_history_append,
     "/api/netdoctor/ai-history-delete": handle_net_ai_history_delete,
-    # 文件检索（file-search 子系统）
+    # 文件检索（file-search 子系统，路线 C 自研索引引擎）
     "/api/filesearch/query": handle_fs_query,
     "/api/filesearch/status": handle_fs_status,
-    "/api/filesearch/save-path": handle_fs_save_path,
     "/api/filesearch/open-location": handle_fs_open_location,
     "/api/netdoctor/ping-start": handle_net_ping_start,
     "/api/netdoctor/ping-history": handle_net_ping_history,

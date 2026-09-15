@@ -224,9 +224,7 @@ function fsExtOf(name) {
 function fsRenderError(d) {
     var emap = {
         empty_query: "请输入搜索关键词",
-        everything_not_found: "未找到 Everything.exe：请在设置中配置路径，或安装 Everything 1.4 x64",
-        http_not_listening: "Everything 已启动但 HTTP 服务器未就绪：读 MFT 需管理员权限，请以管理员运行 EyeTerm 后重试",
-        exited_early: "Everything 启动后立即退出（检查实例冲突或权限）"
+        indexer_not_running: "文件索引未就绪：索引器首次运行需要数分钟，请稍后重试；如持续未就绪请联系管理员检查索引器状态"
     };
     var msg = emap[d.error] || d.hint || d.error || "未知错误";
     fsSetTip("fsSummary", "检索失败：" + msg);
@@ -376,29 +374,20 @@ function fsLoadStatus() {
             window.__fsStatusErr = "bad_response: " + JSON.stringify(d).slice(0, 120);
             return;
         }
+        var ready = d.db_exists && d.file_count > 0;
         var bits = [];
-        bits.push(d.http_available ? fsBadge("Everything 在线", "nd-ok") : fsBadge("未就绪", "nd-warn"));
-        bits.push('<span class="nd-hint">' + (d.exe_found
-            ? "已定位 Everything 程序" : "未找到 Everything 程序（可在下方配置路径）") + "</span>");
+        bits.push(ready ? fsBadge("索引就绪", "nd-ok") : fsBadge("索引未就绪", "nd-warn"));
+        bits.push('<span class="nd-hint">'
+            + (ready
+                ? "已索引 " + Number(d.file_count).toLocaleString() + " 个文件（"
+                  + Number(d.dir_count).toLocaleString() + " 个目录）"
+                  + (d.volumes && d.volumes.length ? " · 卷 " + d.volumes.join(" / ") : "")
+                : "索引器首次运行需要数分钟，期间检索暂不可用；如长时间未就绪请联系管理员检查索引器状态")
+            + "</span>");
         el.innerHTML = bits.join(" ");
     }).catch(function (e) {
         window.__fsStatusErr = "catch: " + String(e).slice(0, 160);
     });
-}
-
-function fsSavePath() {
-    var input = document.getElementById("fsExePath");
-    var p = input ? input.value.trim() : "";
-    if (!p) { fsSetTip("fsPathTip", "请填写 Everything.exe 完整路径"); return; }
-    fsSetTip("fsPathTip", "保存中…");
-    fsApiFetch("/api/filesearch/save-path?path=" + encodeURIComponent(p)).then(function (d) {
-        if (!d || d.success === false) {
-            fsSetTip("fsPathTip", "保存失败：路径不存在或不可写");
-            return;
-        }
-        fsSetTip("fsPathTip", "已保存");
-        fsLoadStatus();
-    }).catch(function (e) { fsSetTip("fsPathTip", "保存失败：" + String(e)); });
 }
 
 function initFileSearchTab() {
