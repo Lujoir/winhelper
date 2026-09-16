@@ -100,6 +100,18 @@ body {
     font-weight: 600;
 }
 
+/* --- 导航条窄视口降级（STYLE.md §9 宽度自适应）---
+   页签不换行不挤压（flex-shrink:0 + nowrap），容器内滚动兜底；
+   ≤1240px 收紧间距并隐藏标题文字，保证 1080px 视口单行完整放下。 */
+.nav-tabs { min-width: 0; overflow-x: auto; overflow-y: hidden; }
+.nav-tab { flex-shrink: 0; white-space: nowrap; }
+
+@media (max-width: 1240px) {
+    .navbar { gap: 14px; padding: 0 16px; }
+    .nav-tab { padding: 8px 10px; }
+    .nav-title { display: none; }
+}
+
 .nav-actions {
     display: flex;
     align-items: center;
@@ -696,6 +708,11 @@ body {
 .disk-stat-value.accent { color: var(--accent-cyan); }
 
 .disk-stat-label { font-size: 12px; color: var(--text-muted); }
+
+/* 窄视口降级：四列统计改两列（STYLE.md §9 多栏降级断点） */
+@media (max-width: 900px) {
+    .disk-stats { grid-template-columns: repeat(2, 1fr); }
+}
 
 /* --- 进度条 --- */
 .disk-progress-wrap {
