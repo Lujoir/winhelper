@@ -10,10 +10,11 @@ var fsState = {
     inited: false,
     lastQuery: "",
     searching: false,
-    sortCol: "",       /* 表头排序列：name/size/date_modified（服务端重查）| ext（前端排）| 空=默认 */
+    sortCol: "",       /* 表头排序列：name/ext/size/date_modified（四列均服务端重查，2026-09-16）| 空=默认 */
     sortAsc: true,     /* 正序/倒序（换列复位正序） */
-    exts: [],          /* 类型预筛选中后缀（多选 OR，空=全部） */
-    advExts: [],       /* 从索引统计手动选择的扩展名 */
+    exts: [],          /* 类型预筛 chips 选中后缀（多选 OR，空=全部） */
+    advExts: [],       /* 类型下拉手动选择的扩展名 */
+    customExts: [],    /* 自定义类型输入（逗号/分号分隔，与 chips/下拉互斥） */
     dateFrom: "",     /* 修改时间起（YYYY-MM-DD） */
     dateTo: "",       /* 修改时间止（YYYY-MM-DD） */
     typeLoaded: false /* 是否已加载类型统计 */
@@ -44,9 +45,34 @@ function fsInitChips() {
     fsSyncChips();
 }
 
+function fsClearCustomExt() {
+    /* chips/类型下拉操作时清自定义输入（互斥切换） */
+    fsState.customExts = [];
+    var input = document.getElementById("fsCustomExt");
+    if (input && input.value) { input.value = ""; }
+}
+
+function fsOnCustomExt() {
+    /* 自定义类型输入：逗号/分号（含中英文）/空格分隔多扩展名 → ext: 多值 OR；
+       自定义生效时清 chips 与类型下拉选中态（互斥） */
+    var input = document.getElementById("fsCustomExt");
+    if (!input) { return; }
+    var raw = (input.value || "").toLowerCase();
+    var parts = raw.split(/[,;\s，；]+/).filter(function (s) { return s && /^[a-z0-9]+$/.test(s); });
+    fsState.customExts = parts;
+    if (parts.length && (fsState.exts.length || fsState.advExts.length)) {
+        fsState.exts = [];
+        fsState.advExts = [];
+        fsSyncChips();
+        var btn = document.getElementById("fsTypeFilterBtn");
+        if (btn) { btn.textContent = "选择类型"; }
+    }
+}
+
 function fsChipToggle(i) {
     var chip = FS_EXT_CHIPS[i];
     if (!chip) { return; }
+    fsClearCustomExt();
     if (i === 0) {                       /* 「全部」= 清空筛选（互斥） */
         fsState.exts = [];
     } else {
@@ -81,10 +107,13 @@ function fsSyncChips() {
 }
 
 function fsBuildQuery(base) {
-    /* 检索词 + 类型筛选拼接（空格 AND，ext:a;b 分号 OR） */
+    /* 检索词 + 类型筛选拼接（空格 AND，ext:a;b 分号 OR；chips/下拉/自定义互斥下仅一组生效） */
     var merged = fsState.exts.slice();
     for (var i = 0; i < fsState.advExts.length; i++) {
         if (merged.indexOf(fsState.advExts[i]) < 0) { merged.push(fsState.advExts[i]); }
+    }
+    for (var j = 0; j < fsState.customExts.length; j++) {
+        if (merged.indexOf(fsState.customExts[j]) < 0) { merged.push(fsState.customExts[j]); }
     }
     if (!merged.length) { return base; }
     return base + " ext:" + merged.join(";");
@@ -199,6 +228,7 @@ function fsRenderTypeFilter() {
 }
 
 function fsToggleTypeFilter(ext, on) {
+    fsClearCustomExt();
     var idx = fsState.advExts.indexOf(ext);
     if (on) {
         if (idx < 0) { fsState.advExts.push(ext); }
@@ -259,7 +289,7 @@ function fsDoSearch(q) {
     var body = document.getElementById("fsBody");
     if (body) { body.innerHTML = '<div class="nd-empty">检索中…</div>'; }
     var url = "/api/filesearch/query?q=" + encodeURIComponent(fsBuildQuery(q)) + "&count=200";
-    if (fsState.sortCol === "name" || fsState.sortCol === "size" || fsState.sortCol === "date_modified") {
+    if (fsState.sortCol) {   /* 四列均服务端排序（ext 于 2026-09-16 服务端化） */
         url += "&sort=" + (fsState.sortCol === "date_modified" ? "mtime" : fsState.sortCol)
             + "&ascending=" + (fsState.sortAsc ? "1" : "0");
     }
@@ -279,15 +309,9 @@ function fsDoSearch(q) {
 }
 
 function fsSortBy(col) {
-    /* 表头点击排序：同列翻转正倒序，换列复位正序；类型列前端排，其余服务端重查 */
+    /* 表头点击排序：同列翻转正倒序，换列复位正序；四列均服务端重查（含 ext） */
     if (fsState.sortCol === col) { fsState.sortAsc = !fsState.sortAsc; }
     else { fsState.sortCol = col; fsState.sortAsc = true; }
-    if (col === "ext") {
-        if (fsState.lastResults && fsState.lastResults.length) {
-            fsRenderResults({ results: fsState.lastResults });
-        }
-        return;
-    }
     if (fsState.lastQuery) { fsDoSearch(fsState.lastQuery); }
 }
 
@@ -455,13 +479,6 @@ function fsRenderResults(d) {
         return;
     }
     var shown = rs.slice(0);
-    if (fsState.sortCol === "ext") {   /* 类型排序=按扩展名前端排（服务端无此 sort 值） */
-        shown.sort(function (a, b) {
-            var ea = fsExtOf(a.name), eb = fsExtOf(b.name);
-            var c = ea < eb ? -1 : (ea > eb ? 1 : 0);
-            return fsState.sortAsc ? c : -c;
-        });
-    }
     var arrow = function (col) {
         if (fsState.sortCol !== col) { return ""; }
         return fsState.sortAsc ? " ▲" : " ▼";
@@ -594,6 +611,8 @@ function initFileSearchTab() {
             if (e.key === "Enter") { fsStartSearch(); }
         });
     }
+    var ce = document.getElementById("fsCustomExt");
+    if (ce) { ce.addEventListener("input", fsOnCustomExt); }
     var df = document.getElementById("fsDateFrom");
     var dt = document.getElementById("fsDateTo");
     if (df) {
