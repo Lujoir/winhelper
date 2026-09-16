@@ -419,38 +419,54 @@ def transcoded_wallpaper_mtime():
 
 def apply_wallpaper(per_monitor_files, monitors=None, verify=True):
     """应用多屏拼接壁纸 + 自检三件套（ADR-004）。返回 result dict。
-    生效判定唯一标准=抓屏回采；SPI 读回/注册表仅记录。"""
+
+    分类语义（BRG-066 阶段化精化）：
+    - 画布生成 / SPI 调用本身异常 → apply_failed（执行确实失败，拦截判定无从谈起）；
+    - SPI 已执行之后的任何异常（读回/抓屏/存档等）→ 不抛、不掩盖判定：
+      仍跑三件套（转码 mtime / 注册表落位），不过则 blocked_by_security
+      （拦截形态识别：安全软件可能在 SPI 广播后的系统转码阶段拦截）。
+    生效判定唯一标准=三件套；抓屏采样留人眼复核。"""
     monitors = monitors or enum_monitors()
     vx, vy, vw, vh = virtual_bounds()
     mtime_before = transcoded_wallpaper_mtime()
     reg_before = {"WallpaperStyle": reg_read_desktop("WallpaperStyle"),
                   "Wallpaper": reg_read_desktop("Wallpaper")}
-    stitch = build_stitch(per_monitor_files, monitors, vx, vy, vw, vh)
-    spi_set_wallpaper(stitch, style="2")
+    result = {
+        "mode": "stretch", "monitors": len(monitors),
+        "reg_before": reg_before,
+        "verify": "not_checked", "ok": False,
+    }
+    # —— 阶段 1：画布 + SPI 执行（此段异常 = 真正执行失败）——
+    try:
+        stitch = build_stitch(per_monitor_files, monitors, vx, vy, vw, vh)
+        spi_set_wallpaper(stitch, style="2")
+        result["stitch"] = stitch
+    except Exception as exc:
+        result["error"] = {"code": "apply_failed",
+                           "message": "壁纸执行失败（%s）" % exc}
+        log("壁纸应用·执行阶段异常: %r" % exc, "ERROR")
+        return result
+
+    # —— 阶段 2：SPI 已执行，判定证据采集（任何异常不掩盖拦截判定）——
     time.sleep(1.5)  # Explorer 异步转码与重绘
     mtime_after = transcoded_wallpaper_mtime()
     reg_after = {"WallpaperStyle": reg_read_desktop("WallpaperStyle"),
                  "Wallpaper": reg_read_desktop("Wallpaper")}
-    result = {
-        "mode": "stretch", "monitors": len(monitors),
-        "stitch": stitch,
-        "reg_before": reg_before, "reg_after": reg_after,
-        "spi_readback": spi_get_wallpaper(),
-        "transcoded_mtime_advanced": bool(
-            mtime_before is not None and mtime_after is not None
-            and mtime_after > mtime_before),
-        "verify": "not_checked",
-    }
-    if verify:
-        grab = grab_screen(vx, vy, vw, vh)
-        verify_path = os.path.join(data_dir(), "last_apply_grab.png")
-        save_png(grab, vw, vh, verify_path)
-        result["verify_grab"] = verify_path
-        # 生效判定：转码推进 或 注册表落位（抓屏含窗口干扰，采样留人眼复核）
-        if result["transcoded_mtime_advanced"] or \
-                (reg_after["Wallpaper"] and
-                 os.path.abspath(reg_after["Wallpaper"]) ==
-                 os.path.abspath(stitch)):
+    try:
+        result["spi_readback"] = spi_get_wallpaper()
+    except Exception as exc:
+        log("壁纸应用·读回异常（不影响判定）: %r" % exc, "WARN")
+    result["reg_after"] = reg_after
+    result["transcoded_mtime_advanced"] = bool(
+        mtime_before is not None and mtime_after is not None
+        and mtime_after > mtime_before)
+
+    def _verdict():
+        # 三件套前两件：转码推进 或 注册表落位
+        if result["transcoded_mtime_advanced"] or (
+                reg_after["Wallpaper"] and
+                os.path.abspath(reg_after["Wallpaper"]) ==
+                os.path.abspath(stitch)):
             result["verify"] = "ok"
             result["ok"] = True
         else:
@@ -459,10 +475,23 @@ def apply_wallpaper(per_monitor_files, monitors=None, verify=True):
             result["error"] = {"code": "blocked_by_security",
                                "message": "壁纸变更未生效（疑似被终端安全"
                                           "软件拦截）"}
+
+    if verify:
+        try:
+            grab = grab_screen(vx, vy, vw, vh)
+            verify_path = os.path.join(data_dir(), "last_apply_grab.png")
+            save_png(grab, vw, vh, verify_path)
+            result["verify_grab"] = verify_path
+        except Exception as exc:
+            # 抓屏/存档失败不影响判定，仅记录（证据降级）
+            result["verify_grab"] = None
+            log("壁纸应用·抓屏存档异常（判定不受影响）: %r" % exc, "WARN")
+        _verdict()
     else:
         result["ok"] = True
-    log("壁纸应用: verify=%s monitors=%d stitch=%s"
-        % (result["verify"], len(monitors), stitch))
+    log("壁纸应用: verify=%s monitors=%d stitch=%s mtime_adv=%s"
+        % (result["verify"], len(monitors), stitch,
+           result["transcoded_mtime_advanced"]))
     return result
 
 
@@ -1143,7 +1172,10 @@ class Engine(object):
                     results["desktop_wallpaper"] = apply_wallpaper(files)
                     r = results["desktop_wallpaper"]
                     r["policy"] = "desktop_wallpaper"
-                    if not r.get("ok"):
+                    # 重试语义（CONTRACT）：blocked_by_security 不重试直接上报
+                    no_retry = (r.get("error") or {}).get("code") == \
+                        "blocked_by_security"
+                    if not r.get("ok") and not no_retry:
                         for i, wait in enumerate(BACKOFF_SEC):
                             r2 = apply_wallpaper(files)
                             r2["policy"] = "desktop_wallpaper"
@@ -1153,11 +1185,13 @@ class Engine(object):
                             if i < len(BACKOFF_SEC) - 1:
                                 self._stop.wait(wait)
                 except WallpaperFileError:
+                    log("壁纸文件获取失败（file_missing）", "ERROR")
                     results["desktop_wallpaper"] = {
                         "policy": "desktop_wallpaper", "ok": False,
                         "error": {"code": "file_missing",
                                   "message": "壁纸文件获取失败"}}
                 except Exception as exc:
+                    log("壁纸应用未预期异常: %r" % exc, "ERROR")
                     results["desktop_wallpaper"] = {
                         "policy": "desktop_wallpaper", "ok": False,
                         "error": {"code": "apply_failed",
@@ -1178,6 +1212,7 @@ class Engine(object):
                     "error": {"code": "file_missing",
                               "message": "锁屏壁纸获取失败"}}
             except Exception as exc:
+                log("锁屏应用未预期异常: %r" % exc, "ERROR")
                 results["lock_screen"] = {
                     "policy": "lock_screen", "ok": False,
                     "error": {"code": "apply_failed",
