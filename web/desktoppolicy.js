@@ -195,6 +195,22 @@ function dpOpenLogs() {
 }
 
 function initDesktopPolicyTab() {
+  // 未接入平台时禁止进入本标签页，自动回到主页
+  dpApiFetch("/api/perf/uplink/status").then(function (d) {
+    var u = d && d.uplink ? d.uplink : null;
+    if (!u || u.state !== "connected") {
+      if (typeof switchTab === "function") switchTab("home");
+      if (typeof showError === "function") showError("锁屏及壁纸管理需接入观枢终端平台后方可使用");
+      return;
+    }
+    dpInitDesktopPolicyTabCore();
+  }).catch(function () {
+    if (typeof switchTab === "function") switchTab("home");
+    if (typeof showError === "function") showError("锁屏及壁纸管理需接入观枢终端平台后方可使用");
+  });
+}
+
+function dpInitDesktopPolicyTabCore() {
   if (!dpState.inited) {
     dpState.inited = true;
     var btnPoll = dp$("#dpBtnPoll");
@@ -203,8 +219,115 @@ function initDesktopPolicyTab() {
     if (btnPoll) btnPoll.addEventListener("click", function () { dpRunTask("/api/desktoppolicy/policy-now"); });
     if (btnReapply) btnReapply.addEventListener("click", function () { dpRunTask("/api/desktoppolicy/apply-now"); });
     if (btnLogs) btnLogs.addEventListener("click", dpOpenLogs);
+    dpBindPowerCfg();
   }
   dpLoadStatus();
+  dpLoadPowerCfg();
+}
+
+/* ---------- 本地电源配置（关闭显示器 / 睡眠超时） ---------- */
+var DP_POWER_OPTIONS = [
+  { v: 0, t: "从不" },
+  { v: 60, t: "1 分钟" },
+  { v: 120, t: "2 分钟" },
+  { v: 180, t: "3 分钟" },
+  { v: 300, t: "5 分钟" },
+  { v: 600, t: "10 分钟" },
+  { v: 900, t: "15 分钟" },
+  { v: 1200, t: "20 分钟" },
+  { v: 1800, t: "30 分钟" },
+  { v: 3600, t: "1 小时" },
+  { v: 7200, t: "2 小时" }
+];
+
+function dpBuildPowerSelect(id, currentSec) {
+  var html = '<select id="' + id + '" class="nd-input dp-power-select" style="width:auto;min-width:110px;">';
+  var matched = false;
+  for (var i = 0; i < DP_POWER_OPTIONS.length; i++) {
+    var o = DP_POWER_OPTIONS[i];
+    var sel = (o.v === currentSec) ? ' selected' : '';
+    if (sel) matched = true;
+    html += '<option value="' + o.v + '"' + sel + '>' + dpEsc(o.t) + '</option>';
+  }
+  // 当前值不在标准选项中时追加一个真实值选项
+  if (!matched && currentSec >= 0) {
+    html += '<option value="' + currentSec + '" selected>' + dpEsc(currentSec + " 秒") + '</option>';
+  }
+  html += '</select>';
+  return html;
+}
+
+function dpLoadPowerCfg() {
+  var host = dp$("#dpPowerCfgBody");
+  if (!host) return;
+  host.innerHTML = '<div class="nd-empty">正在读取本地电源配置…</div>';
+  return dpApiFetch("/api/desktoppolicy/powercfg/read").then(function (data) {
+    if (!data || data.success === false) throw new Error(data && data.error && data.error.message || "读取失败");
+    dpRenderPowerCfg(data);
+  }).catch(function (e) {
+    if (host) host.innerHTML = '<div class="nd-empty">未获取到本地配置（' + dpEsc(e && e.message || "未知错误") + '）</div>';
+  });
+}
+
+function dpRenderPowerCfg(data) {
+  var host = dp$("#dpPowerCfgBody");
+  if (!host) return;
+  var scheme = data.scheme || {};
+  var display = data.display_off || {};
+  var sleep = data.sleep || {};
+  var html = '<div class="nd-summary">当前电源方案：' + dpEsc(scheme.name || scheme.guid || "—") +
+    '。修改后点击保存即可生效。</div>';
+  html += '<div class="hm-row"><span class="hm-row-label">关闭显示器（接通电源）</span>' +
+    dpBuildPowerSelect("dpDisplayAc", display.ac_sec) + '</div>';
+  html += '<div class="hm-row"><span class="hm-row-label">关闭显示器（使用电池）</span>' +
+    dpBuildPowerSelect("dpDisplayDc", display.dc_sec) + '</div>';
+  html += '<div class="hm-row"><span class="hm-row-label">进入睡眠（接通电源）</span>' +
+    dpBuildPowerSelect("dpSleepAc", sleep.ac_sec) + '</div>';
+  html += '<div class="hm-row"><span class="hm-row-label">进入睡眠（使用电池）</span>' +
+    dpBuildPowerSelect("dpSleepDc", sleep.dc_sec) + '</div>';
+  html += '<div style="margin-top:12px"><button class="nd-btn primary" id="dpBtnSavePowerCfg">保存</button>' +
+    '<span class="nd-hint" id="dpPowerCfgTip" style="margin-left:10px"></span></div>';
+  host.innerHTML = html;
+  var btn = dp$("#dpBtnSavePowerCfg");
+  if (btn) btn.addEventListener("click", dpSavePowerCfg);
+}
+
+function dpBindPowerCfg() {
+  // 渲染后事件委托到容器
+  var host = dp$("#dpPowerCfgBody");
+  if (!host) return;
+  host.addEventListener("change", function (e) {
+    if (e.target && e.target.classList && e.target.classList.contains("dp-power-select")) {
+      dp$("#dpPowerCfgTip").textContent = "";
+    }
+  });
+}
+
+function dpSavePowerCfg() {
+  var tip = dp$("#dpPowerCfgTip");
+  var btn = dp$("#dpBtnSavePowerCfg");
+  if (!tip || !btn) return;
+  btn.disabled = true;
+  tip.textContent = "保存中…";
+  function gv(id) { var el = dp$("#" + id); return el ? parseInt(el.value, 10) : null; }
+  var body = {
+    display_off_ac: gv("dpDisplayAc"),
+    display_off_dc: gv("dpDisplayDc"),
+    sleep_ac: gv("dpSleepAc"),
+    sleep_dc: gv("dpSleepDc")
+  };
+  dpApiFetch("/api/desktoppolicy/powercfg/set", body).then(function (data) {
+    if (!data || data.success === false || !data.result || !data.result.ok) {
+      var msg = data && data.result && data.result.error && data.result.error.message;
+      throw new Error(msg || data && data.error && data.error.message || "保存失败");
+    }
+    tip.textContent = "已保存";
+    return dpLoadPowerCfg();
+  }).catch(function (e) {
+    tip.textContent = "保存失败：" + (e && e.message || "未知错误");
+  }).then(function () {
+    if (btn) btn.disabled = false;
+  });
 }
 
 /* 独立页（无主应用 $ 时内联降级） */

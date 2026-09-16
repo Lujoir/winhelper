@@ -65,7 +65,20 @@ document.addEventListener("DOMContentLoaded", () => {
     initCollapsibleCards();
     // 默认加载日志诊断（菜单合并后首个标签页）
     if (typeof initLogInspectorTab === "function") initLogInspectorTab();
+    // 应用启动即查询平台接入状态，同步显隐锁屏及壁纸管理菜单
+    appCheckUplinkForDesktopPolicy();
 });
+
+/** 启动时查询平台接入状态，用于控制锁屏及壁纸管理导航入口 */
+async function appCheckUplinkForDesktopPolicy() {
+    try {
+        var d = await apiFetch("/api/perf/uplink/status");
+        var u = d && d.uplink ? d.uplink : null;
+        updateDesktopPolicyNavVisibility(u ? u.state : null);
+    } catch (e) {
+        updateDesktopPolicyNavVisibility(null);
+    }
+}
 
 // ===================== 卡片折叠/展开（一键收纳） =====================
 
@@ -122,6 +135,14 @@ function switchTab(tab) {
     if ((tab === "netdoctor" || tab === "home") && typeof initNetDoctorTab === "function") initNetDoctorTab();
     if (tab === "filesearch" && typeof initFileSearchTab === "function") initFileSearchTab();
     if (tab === "desktoppolicy" && typeof initDesktopPolicyTab === "function") initDesktopPolicyTab();
+}
+
+/** 根据平台接入状态显隐「锁屏及壁纸管理」导航入口（仅已连接平台时可见） */
+function updateDesktopPolicyNavVisibility(state) {
+    var btn = document.getElementById("nav-desktoppolicy");
+    if (!btn) return;
+    var connected = (state === "connected");
+    btn.style.display = connected ? "" : "none";
 }
 
 /* 旧 仪表盘/日志查看/故障分析/知识库 四标签的专属逻辑已随菜单合并移除

@@ -125,6 +125,9 @@ var hmUplinkStateMap = {
 function hmRenderUplink(u) {
     var el = document.getElementById("homeUplinkBody");
     if (!el) { return; }
+    if (typeof updateDesktopPolicyNavVisibility === "function") {
+        updateDesktopPolicyNavVisibility(u ? u.state : null);
+    }
     if (!u) {
         el.innerHTML = '<div class="hm-empty">平台对接状态不可用</div>';
         return;

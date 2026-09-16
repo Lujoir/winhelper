@@ -1019,6 +1019,9 @@ async function perfLoadUplink() {
 }
 
 function renderPerfUplink(u) {
+    if (typeof updateDesktopPolicyNavVisibility === "function") {
+        updateDesktopPolicyNavVisibility(u ? u.state : null);
+    }
     var stateText = UPLINK_STATE_TEXT[u.state] || "未连接";
     var badge = document.getElementById("perfUplinkBadge");
     if (badge) {
