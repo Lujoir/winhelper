@@ -66,6 +66,13 @@ def main() -> None:
         _th.Thread(target=_fs.ensure_running, daemon=True).start()
     except Exception:
         pass
+    # 桌面管控：锁屏及壁纸引擎随启动常驻（后台线程等待平台接入就绪后开始轮询；
+    # 失败静默不崩主进程，引擎内每轮自动重试——BRG-065 修复懒加载缺陷）
+    try:
+        import desktop_policy as _dp
+        _dp.ensure_autostart()
+    except Exception:
+        pass
     # 不强制指定 gui: pywebview 自动优先 Edge Chromium(WebView2)
     try:
         webview.start()

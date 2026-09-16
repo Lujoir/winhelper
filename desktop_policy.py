@@ -1249,7 +1249,7 @@ _DP_ENGINE_LOCK = threading.Lock()
 
 
 def get_engine():
-    """引擎单例（主应用启动后首次访问时创建并启动常驻轮询）。"""
+    """引擎单例（首次访问时创建并启动常驻轮询）。"""
     global _DP_ENGINE
     with _DP_ENGINE_LOCK:
         if _DP_ENGINE is None:
@@ -1257,6 +1257,69 @@ def get_engine():
             _DP_ENGINE.start()
             log("桥接层创建引擎单例")
         return _DP_ENGINE
+
+
+_AUTOSTART_DONE = [False]
+_AUTOSTART_LOCK = threading.Lock()
+UPLINK_WAIT_TIMEOUT = 60      # 首轮拉取前等待 uplink 注册就绪上限（秒）
+UPLINK_WAIT_INTERVAL = 2.0
+
+
+def _uplink_ready():
+    """uplink 注册是否就绪（tid 可用）；框架无关环境 import 失败视为就绪
+    （独立运行无注册概念，由 transport 自身语义处理）。"""
+    try:
+        import uplink
+        r = uplink.handle_uplink_status(None) or {}
+        u = r.get("uplink") or {}
+        if (str(u.get("terminal_id") or "").strip()
+                and u.get("registered")):
+            return True
+        # 已有 tid 但 registered 标志未置（心跳间隙）也算就绪——tid 是硬条件
+        return bool(str(u.get("terminal_id") or "").strip())
+    except Exception:
+        return True  # 独立运行/无 uplink 模块：不等，交由引擎每轮如实重试
+
+
+def _wait_uplink_ready(timeout, interval, checker=None):
+    """等待 uplink 注册就绪（消除启动时序竞争）。返回 True=就绪。"""
+    checker = checker or _uplink_ready
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if checker():
+            return True
+        time.sleep(interval)
+    return checker()
+
+
+def ensure_autostart(wait_uplink=True):
+    """随主应用启动自动拉起引擎（desktop.py 装配处调用；幂等、后台、不阻塞 UI）。
+
+    修复 BRG-065：引擎此前为懒加载单例（首次 UI 访问 status 才创建）——
+    用户不打开「锁屏及壁纸管理」菜单则策略永不生效，违反规格「随系统启动常驻」。
+    首轮拉取前等待 uplink 注册完成（≤60s），超时照常启动（引擎 120s 周期
+    自动重试，拉取失败走离线兜底，不静默失败）。"""
+    with _AUTOSTART_LOCK:
+        if _AUTOSTART_DONE[0]:
+            return False
+        _AUTOSTART_DONE[0] = True
+
+    def _run():
+        try:
+            if wait_uplink:
+                ready = _wait_uplink_ready(UPLINK_WAIT_TIMEOUT,
+                                           UPLINK_WAIT_INTERVAL)
+                if not ready:
+                    log("等待平台接入超时（%ds），引擎照常启动"
+                        "（后续轮询自动重试）" % UPLINK_WAIT_TIMEOUT, "WARN")
+            eng = get_engine()
+            log("引擎随主应用自动启动完成（ensure_autostart）")
+            return eng
+        except Exception as exc:
+            log("引擎自动启动失败: %r" % exc, "ERROR")
+
+    threading.Thread(target=_run, name="dp-autostart", daemon=True).start()
+    return True
 
 
 def _dp_start_task(fn):
