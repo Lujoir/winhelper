@@ -135,6 +135,7 @@ function switchTab(tab) {
     if ((tab === "netdoctor" || tab === "home") && typeof initNetDoctorTab === "function") initNetDoctorTab();
     if (tab === "filesearch" && typeof initFileSearchTab === "function") initFileSearchTab();
     if (tab === "desktoppolicy" && typeof initDesktopPolicyTab === "function") initDesktopPolicyTab();
+    if (tab === "powercontrol" && typeof initPowerControlTab === "function") initPowerControlTab();
 }
 
 /** 根据平台接入状态显隐「锁屏及壁纸管理」导航入口（仅已连接平台时可见） */

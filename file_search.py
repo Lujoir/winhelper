@@ -21,8 +21,32 @@ import subprocess
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 FS_MAX_RESULTS = 200
-FS_SORTABLE = {"name": "name COLLATE NOCASE", "size": "size", "mtime": "mtime"}
+FS_SORTABLE = {
+    "name": "name COLLATE NOCASE",
+    "size": "size",
+    "mtime": "mtime",
+    "date_modified": "mtime",   # 前端列名兼容
+}
 _FS_EXT_RE = re.compile(r"(?:^|\s)ext:([A-Za-z0-9_;]+)", re.IGNORECASE)
+
+
+def _parse_date_param(v, end_of_day=False):
+    """解析日期参数：支持 ISO 日期字符串或 Unix 时间戳。
+    end_of_day=True 时日期字符串视为 23:59:59。"""
+    if not v:
+        return None
+    s = str(v).strip()
+    if not s:
+        return None
+    try:
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", s):
+            import time
+            t = time.strptime(s, "%Y-%m-%d")
+            ts = int(time.mktime(t))
+            return ts + 86399 if end_of_day else ts
+        return int(float(s))
+    except Exception:
+        return None
 
 
 def _fs_db_path():
@@ -89,6 +113,17 @@ def handle_fs_query(params=None):
         if exts:   # 多选语义=OR（组内 OR：ext:a;b → 以 .a 或 .b 结尾；组间与 kw AND）
             where.append("(" + " OR ".join(["name LIKE ? ESCAPE '\\'"] * len(exts)) + ")")
             args.extend("%." + _like_escape(e) for e in exts)
+
+        # 修改时间区间过滤（date_from/date_to 接受 YYYY-MM-DD 或时间戳）
+        date_from = _parse_date_param(params.get("date_from"))
+        date_to = _parse_date_param(params.get("date_to"), end_of_day=True)
+        if date_from is not None:
+            where.append("mtime >= ?")
+            args.append(date_from)
+        if date_to is not None:
+            where.append("mtime <= ?")
+            args.append(date_to)
+
         cond = " AND ".join(where)
 
         sort = str(params.get("sort") or "").strip()
@@ -163,9 +198,36 @@ def handle_fs_open_location(params=None):
         return {"success": False, "error": str(e)}
 
 
+def handle_fs_stats(params=None):
+    """统计：返回索引库中存在的文件扩展名（前 30）与修改时间区间。"""
+    conn = _connect_ro()
+    if conn is None:
+        return {"success": False, "error": "indexer_not_running",
+                "hint": "文件索引未就绪：索引器首次运行需要数分钟，请稍后重试"}
+    try:
+        conn.execute("SELECT 1 FROM files LIMIT 1").fetchone()
+        rows = conn.execute(
+            "SELECT LOWER(SUBSTR(name, INSTR(name, '.') + 1)) AS ext, COUNT(*) AS c "
+            "FROM files WHERE is_dir=0 AND name LIKE '%.%' "
+            "GROUP BY ext ORDER BY c DESC LIMIT 30"
+        ).fetchall()
+        exts = [{"ext": r[0], "count": r[1]} for r in rows]
+        r = conn.execute("SELECT MIN(mtime), MAX(mtime) FROM files WHERE is_dir=0").fetchone()
+        return {"success": True, "exts": exts, "date_min": r[0], "date_max": r[1]}
+    except sqlite3.Exception:
+        return {"success": False, "error": "indexer_not_running",
+                "hint": "文件索引未就绪：索引器首次运行需要数分钟，请稍后重试"}
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 FS_ROUTES = {
     "/api/filesearch/query": handle_fs_query,
     "/api/filesearch/status": handle_fs_status,
+    "/api/filesearch/stats": handle_fs_stats,
     "/api/filesearch/open-location": handle_fs_open_location,
 }
 

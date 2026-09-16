@@ -6,6 +6,24 @@
  * 样式规格遵循 net-doctor/docs/STYLE.md（卡片基线/默认收起点按钮展开/零实现细节文案）。
  */
 
+/* 结果表列宽（2026-09-16 用户要求：名称/类型/路径默认为自动布局的 2/3，表头右缘可拖拽调整并记忆） */
+var FS_COL_MIN = 56;                      /* 拖拽最小列宽 px */
+var FS_COL_DEFAULT = { name: 160, ext: 160, path: 230 };  /* 仅三内容列设宽；大小/修改时间/操作平分剩余 */
+
+function fsLoadColW() {
+    /* 上次手动调整的列宽（仅收 名称/类型/路径 三键，数值钳制），损坏即回默认 */
+    var w = {};
+    try {
+        var raw = JSON.parse(localStorage.getItem("fs_col_widths_v1") || "{}");
+        var keys = Object.keys(FS_COL_DEFAULT);
+        for (var i = 0; i < keys.length; i++) {
+            var v = Number(raw[keys[i]]);
+            if (v >= FS_COL_MIN && v <= 2000) { w[keys[i]] = Math.round(v); }
+        }
+    } catch (e) { /* 忽略，用默认 */ }
+    return w;
+}
+
 var fsState = {
     inited: false,
     lastQuery: "",
@@ -17,7 +35,8 @@ var fsState = {
     customExts: [],    /* 自定义类型输入（逗号/分号分隔，与 chips/下拉互斥） */
     dateFrom: "",     /* 修改时间起（YYYY-MM-DD） */
     dateTo: "",       /* 修改时间止（YYYY-MM-DD） */
-    typeLoaded: false /* 是否已加载类型统计 */
+    typeLoaded: false, /* 是否已加载类型统计 */
+    colW: fsLoadColW() /* 手动列宽（仅记 名称/类型/路径） */
 };
 
 /* 常用后缀快捷筛选（ext: 语法拼接，多选=OR 分号多值） */
@@ -282,6 +301,9 @@ function fsStartSearch() {
 function fsDoSearch(q) {
     /* 检索词经类型筛选拼接后查询；表头排序列（name/size/date_modified）透传服务端 sort 参数 */
     fsState.searching = true;
+    /* 2026-09-16 用户要求：未检索时隐藏筛选行（类型/自定义/修改时间），首次检索后显示 */
+    var fr = document.getElementById("fsFilterRow");
+    if (fr) { fr.style.display = ""; }
     fsState.lastQuery = q;
     var btn = document.getElementById("fsSearchBtn");
     if (btn) { btn.disabled = true; }
@@ -502,15 +524,75 @@ function fsRenderResults(d) {
             + '</tr>';
     }
     el.innerHTML = '<div class="nd-hint" style="margin:2px 0 6px">路径列为文件所在目录，'
-        + '「打开位置」将在资源管理器中定位该文件；右键结果行可复制完整路径</div>'
-        + '<table class="nd-table"><tr>'
-        + '<th class="nd-th-sort" onclick="fsSortBy(\'name\')">名称' + arrow("name") + '</th>'
-        + '<th class="nd-th-sort" onclick="fsSortBy(\'ext\')">类型' + arrow("ext") + '</th>'
-        + '<th>路径</th>'
-        + '<th class="nd-th-sort nd-num" onclick="fsSortBy(\'size\')">大小' + arrow("size") + '</th>'
-        + '<th class="nd-th-sort nd-num" onclick="fsSortBy(\'date_modified\')">修改时间' + arrow("date_modified") + '</th>'
-        + '<th>操作</th>'
-        + '</tr>' + rows + '</table>';
+        + '「打开位置」将在资源管理器中定位该文件；右键结果行可复制完整路径；拖拽表头右缘可调整列宽</div>'
+        + '<table class="nd-table fs-cols" id="fsTable">'
+        + '<colgroup><col data-col="name"><col data-col="ext"><col data-col="path">'
+        + '<col data-col="size"><col data-col="mtime"><col data-col="act"></colgroup>'
+        + '<thead><tr>'
+        + '<th data-col="name" class="nd-th-sort" onclick="fsSortBy(\'name\')">名称' + arrow("name") + '</th>'
+        + '<th data-col="ext" class="nd-th-sort" onclick="fsSortBy(\'ext\')">类型' + arrow("ext") + '</th>'
+        + '<th data-col="path">路径</th>'
+        + '<th data-col="size" class="nd-th-sort nd-num" onclick="fsSortBy(\'size\')">大小' + arrow("size") + '</th>'
+        + '<th data-col="mtime" class="nd-th-sort nd-num" onclick="fsSortBy(\'date_modified\')">修改时间' + arrow("date_modified") + '</th>'
+        + '<th data-col="act">操作</th>'
+        + '</tr></thead>'
+        + '<tbody>' + rows + '</tbody></table>';
+    fsApplyColWidths();
+    fsAttachResizers();
+}
+
+/* ---- 结果表列宽：colgroup 应用 + 表头右缘拖拽（2026-09-16） ---- */
+
+function fsApplyColWidths() {
+    /* 手动列宽优先，否则用默认（名称/类型/路径 160/160/230）；未设宽列由 fixed 布局平分剩余空间 */
+    var cols = document.querySelectorAll("#fsTable colgroup col");
+    for (var i = 0; i < cols.length; i++) {
+        var k = cols[i].getAttribute("data-col");
+        var w = fsState.colW[k] !== undefined ? fsState.colW[k] : FS_COL_DEFAULT[k];
+        cols[i].style.width = w ? (w + "px") : "";
+    }
+}
+
+function fsSaveColW() {
+    try { localStorage.setItem("fs_col_widths_v1", JSON.stringify(fsState.colW)); } catch (e) { /* 存储不可用时仅会话内生效 */ }
+}
+
+function fsAttachResizers() {
+    /* 每个 th 右缘挂 7px 拖拽热区；mousedown 起拖，mousemove 实时改 col 宽，mouseup 记忆 */
+    var ths = document.querySelectorAll("#fsTable thead th");
+    for (var i = 0; i < ths.length; i++) {
+        (function (th) {
+            var rs = document.createElement("span");
+            rs.className = "fs-rs";
+            rs.title = "拖拽调整列宽";
+            th.appendChild(rs);
+            rs.addEventListener("click", function (e) { e.stopPropagation(); });   /* 不触发表头排序 */
+            rs.addEventListener("mousedown", function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                var key = th.getAttribute("data-col");
+                var col = document.querySelector('#fsTable colgroup col[data-col="' + key + '"]');
+                if (!col) { return; }
+                var startX = e.clientX;
+                /* <col> 非渲染盒（rect 恒 0），起点宽取已设 px，未设宽列回退表头实际宽 */
+                var startW = parseFloat(col.style.width) || th.getBoundingClientRect().width;
+                document.body.classList.add("fs-col-dragging");
+                function onMove(ev) {
+                    var w = Math.max(FS_COL_MIN, Math.round(startW + ev.clientX - startX));
+                    fsState.colW[key] = w;
+                    col.style.width = w + "px";
+                }
+                function onUp() {
+                    document.removeEventListener("mousemove", onMove);
+                    document.removeEventListener("mouseup", onUp);
+                    document.body.classList.remove("fs-col-dragging");
+                    fsSaveColW();
+                }
+                document.addEventListener("mousemove", onMove);
+                document.addEventListener("mouseup", onUp);
+            });
+        })(ths[i]);
+    }
 }
 
 function fsOpenLocation(btn) {
@@ -600,6 +682,9 @@ function fsCopyText(t) {
 function initFileSearchTab() {
     nd_fs_boot();
     fsInitChips();
+    /* 2026-09-16 用户要求：进入文件检索页默认展开，不保留上一次的收纳状态 */
+    var fsCard = document.querySelector("#tab-filesearch .section-card");
+    if (fsCard) { fsCard.classList.remove("collapsed"); }
     if (fsState.inited) { return; }   /* 引擎状态自检在服务层（fs_indexer），UI 无状态卡（2026-09-16） */
     fsState.inited = true;
     fsInitCollapsible();

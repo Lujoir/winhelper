@@ -869,6 +869,30 @@
 
 ---
 
+### 1.13 自动开关机（power-control P0，2026-09-16 新增）
+
+> 组级约定：终端只读快照上报 + 控制台时间线查询；存储 `power_snapshots` 表（server/power_control.py `PowerControlStore`，自持连接 WAL，desktop_policy 同款形态，app.py `ctx.pc` 挂载）。终端侧引擎 power-control/power_control.py（P0 全只读，零写操作）。规格 docs/POWER_CONTROL_SPEC.md，决策 power-control/docs/DECISIONS.md（ADR-001~005）。
+
+#### SRV-080 电源策略快照上报 `POST /api/v1/terminals/{tid}/powercontrol/snapshot`
+- **用途**：终端上报本机电源策略快照（机型/BIOS 自动开机能力与 RTC 项/唤醒定时器/关机计划任务/快速启动），服务端时间线存档
+- **鉴权**：X-ETP-Token（+ 准入）
+- **请求参数**：快照 JSON 对象（schema=1：`machine/bios/wake_timers/shutdown_tasks/fast_startup/errors`，必含 `collected_ts`；体积上限 256KB）
+- **响应**：`{"ok":true,"snapshot_id":1,"terminal_id":"WIN-xxx"}`；非对象 body 400；终端未注册 404
+- **代码出处**：api.py `_terminal_api` powercontrol 分支 → power_control.py `save_snapshot`
+- **状态**：在用（P0）
+- **登记记录**：2026-09-16，代码实证（power-control-dev 实施，smoke_power_srv.py 10/10）
+
+#### SRV-081 电源快照查询（控制台）`GET /api/v1/console/powercontrol/terminals/{tid}/snapshots`
+- **用途**：控制台按终端查快照（`latest=1` 最新一条；否则历史时间线）
+- **鉴权**：X-ETP-Console-Token
+- **请求参数**：`latest=1`（可选）；`limit`（默认 50，≤500）；`since`（created_ts 下限，可选）
+- **响应**：`{"ok":true,"snapshot":{...}}`（latest）或 `{"ok":true,"total":N,"snapshots":[...]}`（history，snapshot 字段已 JSON 解析）；终端不存在 404
+- **代码出处**：api.py `_console_powercontrol`（dispatch 分支 parts[:4]==console/powercontrol）→ power_control.py `latest_snapshot`/`history_snapshots`
+- **状态**：在用（P0；控制台 UI 展示由 server-platform-dev 后续接入）
+- **登记记录**：2026-09-16，代码实证（power-control-dev 实施，smoke_power_srv.py 10/10）
+
+---
+
 ## 二、终端本地桥接 API（来源：winhelper 主应用 bridge.py）
 
 > 传输通道：pywebview js_api（`window.pywebview.api.call(path)`），全程无 HTTP、无端口；前端传 `/api/xxx?query` 形式路径，`ApiBridge.call` 解析后按 ROUTES 分发到 handler(params)。**鉴权：无（本机进程内调用）**。响应统一含 `success`（或 `ok`）字段，异常 `{"success":false,"error":"..."}`。
@@ -1422,6 +1446,25 @@
 - **代码出处**：desktop_policy.py `handle_dp_logs`(1327) / `log`(60) / `set_log_dir`(54)；bridge.py:135
 - **状态**：在用（缺陷已消项：写读同路径，tail 可见）
 - **登记记录**：2026-09-16，代码实证（同 BRG-059）> 更新 2026-09-16（晚）：热修复核通过（见上），`handle_dp_logs` 行号 1325→1327
+
+#### BRG-064 电源快照采集 `GET /api/powercontrol/snapshot`
+- **用途**：本机电源策略快照（机型/BIOS 自动开机能力徽章与 RTC 项/唤醒定时器/关机计划任务/快速启动）；P0 全只读；触发 12h 节流的后台自动上报（已接入平台时）
+- **鉴权**：无（本机进程内）
+- **请求参数**：无
+- **响应**：`{"success":true,"snapshot":{schema:1, collected_at, collected_ts, machine:{hostname,manufacturer,model,system_family,vendor_line,vendor_line_text,capability,capability_text}, bios:{remote_configurable,wmi_class_found,reason,items[],rtc{}}, wake_timers:{ok,need_admin,count,items[]}, shutdown_tasks:{ok,count,items[]}, fast_startup:{registry_present,hiberboot_enabled,available,enabled,note}, errors[]}}`；采集异常 `{"success":false,"error":...}`
+- **RTC 形状（企业线）**：`{alarm, alarm_on, time, user_time, date, day, weekdays{}, after_power_loss, wake_on_lan, cycle_text, summary}`（仅实测命中项出现；分线判定=厂商+Lenovo_BiosSetting 类存在性）
+- **代码出处**：power_control.py `handle_pc_snapshot` / `collect_snapshot`（同步契约：power-control/power_control.py → 主应用根）；bridge.py ROUTES
+- **状态**：在用（P0）
+- **登记记录**：2026-09-16，代码实证（power-control-dev 实施；解析器以 ThinkCentre M720t 实测 CurrentSetting 两形态为准，power-control ADR-005）
+
+#### BRG-065 电源快照手动上报 `GET /api/powercontrol/report`
+- **用途**：立即采集并推送平台存档（POST /api/v1/terminals/{tid}/powercontrol/snapshot，SRV-080；X-ETP-Token 同源 uplink_config，语义复制 desktop_policy PlatformTransport，不 import uplink）
+- **鉴权**：无（本机进程内；平台侧凭据由引擎注入，前端不接触）
+- **请求参数**：无
+- **响应**：`{"success":true,"reported":true,"server":{"ok":true,"snapshot_id":N}}`；未接入平台 `{"success":false,"error":"尚未接入中心平台，请先在主页完成平台接入"}`；平台不可达 `{"success":false,"error":"上报失败（平台不可达或未接入）"}`
+- **代码出处**：power_control.py `handle_pc_report` / `PlatformReporter`（terminal_id 三级解析同 desktop-policy ADR-006 口径）；bridge.py ROUTES
+- **状态**：在用（P0；随心跳上报列入 P1，需 uplink 契约协调）
+- **登记记录**：2026-09-16，代码实证（power-control-dev 实施）
 
 ---
 

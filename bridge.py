@@ -57,6 +57,7 @@ from desktop_policy import (
     handle_dp_task_status, handle_dp_logs,
     handle_dp_powercfg_read, handle_dp_powercfg_set,
 )
+from power_control import handle_pc_snapshot, handle_pc_report
 
 # 路由表：前端请求路径 -> 业务处理器
 ROUTES = {
@@ -139,6 +140,9 @@ ROUTES = {
     "/api/desktoppolicy/logs": handle_dp_logs,
     "/api/desktoppolicy/powercfg/read": handle_dp_powercfg_read,
     "/api/desktoppolicy/powercfg/set": handle_dp_powercfg_set,
+    # 自动开关机（power-control）
+    "/api/powercontrol/snapshot": handle_pc_snapshot,
+    "/api/powercontrol/report": handle_pc_report,
 }
 
 
