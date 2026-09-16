@@ -118,9 +118,7 @@ function fsEscapeHtml(s) {
         .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-function fsBadge(text, cls) {
-    return '<span class="nd-badge ' + (cls || "nd-muted") + '">' + fsEscapeHtml(text) + "</span>";
-}
+
 
 function fsExpandCard(anchorId) {
     /* 收起卡的搜索按钮点击 → 先展开再搜索（与网络排障五卡联动机制一致） */
@@ -582,44 +580,12 @@ function fsCopyText(t) {
     return ok;
 }
 
-function fsLoadStatus() {
-    fsApiFetch("/api/filesearch/status").then(function (d) {
-        var el = document.getElementById("fsStatusBody");
-        if (!el || !d || d.success === false) {
-            window.__fsStatusErr = "bad_response: " + JSON.stringify(d).slice(0, 120);
-            return;
-        }
-        var ready = d.db_exists && d.file_count > 0;
-        var partial = d.partial_volumes || [];
-        var bits = [];
-        bits.push(ready ? fsBadge("索引就绪", "nd-ok") : fsBadge("索引未就绪", "nd-warn"));
-        bits.push('<span class="nd-hint">'
-            + (ready
-                ? "已索引 " + Number(d.file_count).toLocaleString() + " 个文件（"
-                  + Number(d.dir_count).toLocaleString() + " 个目录）"
-                  + (d.volumes && d.volumes.length ? " · 卷 " + d.volumes.join(" / ") : "")
-                : "索引器首次运行需要数分钟，期间检索暂不可用；如长时间未就绪请联系管理员检查索引器状态")
-            + "</span>");
-        if (partial.length) {
-            bits.push('<div class="nd-hint">部分卷索引未完成（' + fsEscapeHtml(partial.join(" / "))
-                + '），这些卷的文件暂不可检索，索引器将在下次运行时继续补全</div>');
-        }
-        el.innerHTML = bits.join(" ");
-    }).catch(function (e) {
-        window.__fsStatusErr = "catch: " + String(e).slice(0, 160);
-    });
-}
-
 function initFileSearchTab() {
     nd_fs_boot();
     fsInitChips();
-    if (fsState.inited) {
-        fsLoadStatus();
-        return;
-    }
+    if (fsState.inited) { return; }   /* 引擎状态自检在服务层（fs_indexer），UI 无状态卡（2026-09-16） */
     fsState.inited = true;
     fsInitCollapsible();
-    fsLoadStatus();
     fsLoadStats();
     document.addEventListener("click", fsHideCtxMenu);
     var input = document.getElementById("fsQuery");
