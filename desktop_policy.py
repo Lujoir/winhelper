@@ -15,6 +15,7 @@ import struct
 import subprocess
 import threading
 import time
+import traceback
 import zlib
 
 APP_DIR_NAME = "desktop_policy"
@@ -202,13 +203,16 @@ class GdiplusLoader(object):
             si = _GdiplusStartupInput()
             si.GdiplusVersion = 1
             token = wt.ULONG(0)
-            if dll.GdiplusStartup(ctypes.byref(token), ctypes.byref(si),
-                                  None) == 0:
+            rc = dll.GdiplusStartup(ctypes.byref(token), ctypes.byref(si),
+                                    None)
+            if rc == 0:
                 self.token = token
                 self.dll = dll
                 self.ok = True
+            else:
+                log("GdiplusStartup 失败 rc=%d" % rc, "ERROR")
         except Exception:
-            pass
+            log("GDI+ 初始化异常:\n%s" % traceback.format_exc(), "ERROR")
         return self.ok
 
     def load_hbitmap(self, path):
@@ -465,7 +469,8 @@ def apply_wallpaper(per_monitor_files, monitors=None, verify=True):
     except Exception as exc:
         result["error"] = {"code": "apply_failed",
                            "message": "壁纸执行失败（%s）" % exc}
-        log("壁纸应用·执行阶段异常: %r" % exc, "ERROR")
+        # BRG-067 教训：ERROR 日志必须带堆栈（含行号），否则盲迭代
+        log("壁纸应用·执行阶段异常:\n%s" % traceback.format_exc(), "ERROR")
         return result
 
     # —— 阶段 2：SPI 已执行，判定证据采集（任何异常不掩盖拦截判定）——
@@ -648,6 +653,22 @@ def get_active_scheme():
     if not m:
         raise RuntimeError("未能解析活动电源方案 GUID")
     return m.group(0).lower()
+
+
+def get_active_scheme_info():
+    """返回当前活动电源方案 {guid, name}。"""
+    rc, out, err = _run_powercfg("/getactivescheme")
+    if rc != 0:
+        raise RuntimeError("getactivescheme rc=%d %s" % (rc, err.strip()))
+    m = GUID_RE.search(out)
+    if not m:
+        raise RuntimeError("未能解析活动电源方案 GUID")
+    guid = m.group(0).lower()
+    name = ""
+    rest = out[m.end():].strip()
+    if rest.startswith("(") and ")" in rest:
+        name = rest[1:rest.index(")")].strip()
+    return {"guid": guid, "name": name}
 
 
 def query_snapshot(guid):
@@ -1212,7 +1233,8 @@ class Engine(object):
                         "error": {"code": "file_missing",
                                   "message": "壁纸文件获取失败"}}
                 except Exception as exc:
-                    log("壁纸应用未预期异常: %r" % exc, "ERROR")
+                    log("壁纸应用未预期异常:\n%s" % traceback.format_exc(),
+                        "ERROR")
                     results["desktop_wallpaper"] = {
                         "policy": "desktop_wallpaper", "ok": False,
                         "error": {"code": "apply_failed",
@@ -1233,7 +1255,8 @@ class Engine(object):
                     "error": {"code": "file_missing",
                               "message": "锁屏壁纸获取失败"}}
             except Exception as exc:
-                log("锁屏应用未预期异常: %r" % exc, "ERROR")
+                log("锁屏应用未预期异常:\n%s" % traceback.format_exc(),
+                    "ERROR")
                 results["lock_screen"] = {
                     "policy": "lock_screen", "ok": False,
                     "error": {"code": "apply_failed",
@@ -1502,4 +1525,87 @@ def handle_dp_logs(params):
             pass
     return {"success": True, "log_dir": d, "log_file": path,
             "exists": os.path.exists(path), "tail": tail}
+
+
+# ------------------------------------------------------------- 本地电源配置读写
+_POWER_SETTING_ALIASES = {
+    "display_off": "VIDEOIDLE",
+    "sleep": "STANDBYIDLE",
+}
+
+
+def get_current_power_settings():
+    """读取当前活动电源方案的显示关闭/睡眠超时（ac/dc，秒；0=从不）。"""
+    scheme = get_active_scheme_info()
+    snap, aliases = query_snapshot(scheme["guid"])
+    out = {"scheme": scheme}
+    for key, alias in _POWER_SETTING_ALIASES.items():
+        try:
+            sg, st = find_setting(snap, aliases, alias)
+            vals = snap.get(sg, {}).get(st, {}) or {}
+            ac = vals.get("ac")
+            dc = vals.get("dc")
+        except RuntimeError:
+            ac = dc = None
+        out[key] = {
+            "ac_sec": ac if ac is not None else -1,
+            "dc_sec": dc if dc is not None else -1,
+        }
+    return out
+
+
+def set_current_power_settings(params):
+    """设置当前活动电源方案的显示关闭/睡眠超时。
+    params: {display_off_ac, display_off_dc, sleep_ac, sleep_dc}，值单位为秒，≥0。
+    返回 result dict。"""
+    scheme = get_active_scheme_info()
+    snap, aliases = query_snapshot(scheme["guid"])
+    changed = []
+    errors = []
+    for key, alias in _POWER_SETTING_ALIASES.items():
+        try:
+            sg, st = find_setting(snap, aliases, alias)
+        except RuntimeError:
+            errors.append("%s 设置项不存在" % key)
+            continue
+        for ch in ("ac", "dc"):
+            param_name = "%s_%s" % (key, ch)
+            val = params.get(param_name)
+            if val is None:
+                continue
+            try:
+                v = int(val)
+                if v < 0:
+                    errors.append("%s 不能为负数" % param_name)
+                    continue
+                powercfg_set_index(scheme["guid"], sg, st, v, ch)
+                changed.append(param_name)
+            except Exception as exc:
+                errors.append("%s 设置失败：%s" % (param_name, exc))
+    if changed:
+        powercfg_set_active(scheme["guid"])
+    if errors:
+        return {"ok": False, "scheme": scheme, "changed": changed,
+                "error": {"code": "apply_failed",
+                          "message": "；".join(errors)}}
+    return {"ok": True, "scheme": scheme, "changed": changed}
+
+
+def handle_dp_powercfg_read(params):
+    """GET /api/desktoppolicy/powercfg/read：读取本地当前电源配置。"""
+    try:
+        return {"success": True, **get_current_power_settings()}
+    except Exception as exc:
+        return {"success": False, "error": {"code": "read_failed",
+                                            "message": str(exc)}}
+
+
+def handle_dp_powercfg_set(params):
+    """POST /api/desktoppolicy/powercfg/set：设置本地电源配置。"""
+    try:
+        return {"success": True, "result": set_current_power_settings(params)}
+    except Exception as exc:
+        return {"success": False, "error": {"code": "apply_failed",
+                                            "message": str(exc)}}
+
 
