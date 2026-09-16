@@ -5,12 +5,12 @@
 - **维护人**：api-registrar-dev（接口登记官）
 - **事实来源**：代码实证（server-platform/server/api.py、bridge.py、uplink.py、net-doctor/net_service.py 等），每条注明文件+函数
 - **登记统计**：
-  - 一、服务端 REST API（SRV）：79 条（2026-09-10 晚新增 ADR-029 IP 冲突深度检测 2 条）
-  - 二、终端本地桥接 API（BRG）：63 条（netdoctor 19 条：10 条 2026-09-09 合入转「在用」commit 628c210；AI 诊断 2 条 commit a892f62/bd965ae；冲突检测本地转发 3 条 commit b344bbc/40abd3f；路由追踪 AI 分析 + AI 诊断历史持久化 4 条 2026-09-11 登记，commit c4495bc/916e791；桌面管控 5 条 2026-09-16 登记，commit 08b3547/9bdfcdf）
+  - 一、服务端 REST API（SRV）：81 条（2026-09-10 晚新增 ADR-029 IP 冲突深度检测 2 条；2026-09-16（晚）新增 power-control P0 2 条 SRV-080/081，服务端实现在 server-platform 工作区在途，commit 待补）
+  - 二、终端本地桥接 API（BRG）：65 条（netdoctor 19 条：10 条 2026-09-09 合入转「在用」commit 628c210；AI 诊断 2 条 commit a892f62/bd965ae；冲突检测本地转发 3 条 commit b344bbc/40abd3f；路由追踪 AI 分析 + AI 诊断历史持久化 4 条 2026-09-11 登记，commit c4495bc/916e791；桌面管控 5 条 2026-09-16 登记，commit 08b3547/9bdfcdf；power-control 2 条 2026-09-16（晚）登记，主应用挂载 commit 2bbf881）
   - 三、终端↔平台协议（UPL）：13 条（2026-09-16 新增桌面管控契约 3 条 UPL-011~013，契约冻结/服务端未实现）
   - 四、外部依赖接口（EXT）：7 条（2026-09-15 新增火绒终端安全 API v1，调研阶段）
   - 五、废弃/规划接口（DEP）：5 条
-  - **合计 167 条**
+  - **合计 171 条**
 - **通用约定**：
   - 服务端监听：ThreadingHTTPServer，`0.0.0.0:{port}`，默认 18090（app.py `_load_config` / `main`）；配置经 `$ETP_CONFIG` → `server/config.local.json` → dev 默认三级加载
   - 终端上行鉴权：请求头 `X-ETP-Token`（对照 config.json `terminal_token`）> 更新 2026-09-09：收敛为**多 token 模型**——config token 或 SQLite `terminal_tokens` 表 status='active' 命中均放行（详见 UPL-010，commit 4d2924b）
@@ -878,18 +878,20 @@
 - **鉴权**：X-ETP-Token（+ 准入）
 - **请求参数**：快照 JSON 对象（schema=1：`machine/bios/wake_timers/shutdown_tasks/fast_startup/errors`，必含 `collected_ts`；体积上限 256KB）
 - **响应**：`{"ok":true,"snapshot_id":1,"terminal_id":"WIN-xxx"}`；非对象 body 400；终端未注册 404
-- **代码出处**：api.py `_terminal_api` powercontrol 分支 → power_control.py `save_snapshot`
-- **状态**：在用（P0）
-- **登记记录**：2026-09-16，代码实证（power-control-dev 实施，smoke_power_srv.py 10/10）
+- **代码出处**：api.py `_terminal_api` powercontrol 分支（api.py:462-476，`len(parts)==6 and parts[4]=="powercontrol"`）→ power_control.py `save_snapshot`
+- **状态**：在用（P0；服务端实现在 server-platform 工作区已实证但**未提交，commit 待补**——api.py/app.py 为 M 状态）
+- **调用方式**：`curl -X POST http://<server>/api/v1/terminals/WIN-xxx/powercontrol/snapshot -H "X-ETP-Token: <token>" -H "Content-Type: application/json" -d '{"schema":1,"collected_ts":...,...}'`
+- **登记记录**：2026-09-16，代码实证（power-control-dev 实施并登记，api-registrar-dev 复核归档；smoke_power_srv.py 10/10）> 更新 2026-09-16（晚）：复核补强——代码出处行号、在途未提交标注、调用方式补全
 
 #### SRV-081 电源快照查询（控制台）`GET /api/v1/console/powercontrol/terminals/{tid}/snapshots`
 - **用途**：控制台按终端查快照（`latest=1` 最新一条；否则历史时间线）
 - **鉴权**：X-ETP-Console-Token
 - **请求参数**：`latest=1`（可选）；`limit`（默认 50，≤500）；`since`（created_ts 下限，可选）
 - **响应**：`{"ok":true,"snapshot":{...}}`（latest）或 `{"ok":true,"total":N,"snapshots":[...]}`（history，snapshot 字段已 JSON 解析）；终端不存在 404
-- **代码出处**：api.py `_console_powercontrol`（dispatch 分支 parts[:4]==console/powercontrol）→ power_control.py `latest_snapshot`/`history_snapshots`
-- **状态**：在用（P0；控制台 UI 展示由 server-platform-dev 后续接入）
-- **登记记录**：2026-09-16，代码实证（power-control-dev 实施，smoke_power_srv.py 10/10）
+- **代码出处**：api.py `_console_powercontrol`（dispatch 分支 api.py:965-966 `parts[:4]==["api","v1","console","powercontrol"]`，定义 api.py:1244+）→ power_control.py `latest_snapshot`/`history_snapshots`
+- **状态**：在用（P0；控制台 UI 展示由 server-platform-dev 后续接入；服务端实现同 SRV-080 在途未提交，commit 待补）
+- **调用方式**：`curl "http://<server>/api/v1/console/powercontrol/terminals/WIN-xxx/snapshots?latest=1" -H "X-ETP-Console-Token: <token>"`；历史 `curl "http://<server>/api/v1/console/powercontrol/terminals/WIN-xxx/snapshots?limit=50" -H "X-ETP-Console-Token: <token>"`
+- **登记记录**：2026-09-16，代码实证（power-control-dev 实施并登记，api-registrar-dev 复核归档；smoke_power_srv.py 10/10）> 更新 2026-09-16（晚）：复核补强——代码出处行号、在途标注、调用方式补全
 
 ---
 
@@ -1445,7 +1447,13 @@
 - **⚠️ 已知缺陷（登记如实，2026-09-16 对账发现）【已消项 2026-09-16（晚）】**：本接口读 `data_dir()/logs/` 子目录（对齐 CONTRACT.md §4），但主应用运行态**无任何 `set_log_dir` 调用**（grep 实证：定义于 desktop_policy.py:54，调用仅存在于 desktop-policy/tools 测试脚本）——引擎 `log()` 实际写 `data_dir()` 根目录，主应用内本接口 tail 恒空/exists=false > 更新 2026-09-16（晚）：**缺陷已消项**——热修 `log()` 默认目录直接对齐 `data_dir()/logs`（desktop_policy.py:64 `_log_dir or os.path.join(data_dir(), "logs")`，零侵入：主应用与独立运行同路径，`set_log_dir` 保留为测试注入口）+ `os.makedirs(d, exist_ok=True)` 自动建目录（:65）；验证冒烟 21/21（含 3 条主应用态防回归断言：写读同路径/tail 含探针/目录自建）+ 单测 18/18 + E2E 40/40（desktop-policy c316d87 / 主应用 72d51bc，代码实证 log():60-71，team-lead 下发消项）
 - **代码出处**：desktop_policy.py `handle_dp_logs`(1327) / `log`(60) / `set_log_dir`(54)；bridge.py:135
 - **状态**：在用（缺陷已消项：写读同路径，tail 可见）
-- **登记记录**：2026-09-16，代码实证（同 BRG-059）> 更新 2026-09-16（晚）：热修复核通过（见上），`handle_dp_logs` 行号 1325→1327
+- **登记记录**：2026-09-16，代码实证（同 BRG-059）> 更新 2026-09-16（晚）：热修复核通过（见上），`handle_dp_logs` 行号 1325→1327 > 更新 2026-09-16（晚 2）：主应用 2bbf881 增量（desktop_policy.py `read_power_state` 电源状态读取新增 +77 行，供 UI 管控徽章）使 handle_dp_* 行号整体下移——本组行号以登记基线 72d51bc 为准（status 1245 / policy-now 1283 / apply-now 1289 / task-status 1306 / logs 1327），2bbf881 基线下实测对应 1464/1522/1528/1545/1564（工作区另有后续在途增量，行号以最近对账为准）；**响应结构不变**（handle_dp_*/`_summarize` 未改动，代码实证）
+
+### 2.9 自动开关机（power_control.py，power-control P0）
+
+> 来源：power-control 子仓引擎 `power_control.py`（P0 全只读，零写操作）+ 主应用集成 commit **2bbf881**（bridge.py:60 `from power_control import handle_pc_snapshot, handle_pc_report` + ROUTES :144-145）。双仓副本：主仓根 power_control.py 与 power-control/power_control.py 一致（31.78KB，2026-09-16 核对）。
+> 传输与鉴权：同 2.8（pywebview bridge IPC，无 HTTP 端口，鉴权无本机进程内）。平台上报通道 `PlatformReporter` 语义复制 desktop_policy `PlatformTransport`（X-ETP-Token 同源 uplink_config.json，不 import uplink）。
+> 引擎形态：P0 快照采集全只读；已接入平台时触发 12h 节流的后台自动上报（随心跳上报列入 P1，需 uplink 契约协调）。
 
 #### BRG-064 电源快照采集 `GET /api/powercontrol/snapshot`
 - **用途**：本机电源策略快照（机型/BIOS 自动开机能力徽章与 RTC 项/唤醒定时器/关机计划任务/快速启动）；P0 全只读；触发 12h 节流的后台自动上报（已接入平台时）
@@ -1453,7 +1461,7 @@
 - **请求参数**：无
 - **响应**：`{"success":true,"snapshot":{schema:1, collected_at, collected_ts, machine:{hostname,manufacturer,model,system_family,vendor_line,vendor_line_text,capability,capability_text}, bios:{remote_configurable,wmi_class_found,reason,items[],rtc{}}, wake_timers:{ok,need_admin,count,items[]}, shutdown_tasks:{ok,count,items[]}, fast_startup:{registry_present,hiberboot_enabled,available,enabled,note}, errors[]}}`；采集异常 `{"success":false,"error":...}`
 - **RTC 形状（企业线）**：`{alarm, alarm_on, time, user_time, date, day, weekdays{}, after_power_loss, wake_on_lan, cycle_text, summary}`（仅实测命中项出现；分线判定=厂商+Lenovo_BiosSetting 类存在性）
-- **代码出处**：power_control.py `handle_pc_snapshot` / `collect_snapshot`（同步契约：power-control/power_control.py → 主应用根）；bridge.py ROUTES
+- **代码出处**：power_control.py `handle_pc_snapshot`(581) / `collect_snapshot`(790)（同步契约：power-control/power_control.py → 主应用根）；bridge.py:60 import + :144 ROUTES（挂载 commit 2bbf881，代码实证）
 - **状态**：在用（P0）
 - **登记记录**：2026-09-16，代码实证（power-control-dev 实施；解析器以 ThinkCentre M720t 实测 CurrentSetting 两形态为准，power-control ADR-005）
 
@@ -1462,7 +1470,7 @@
 - **鉴权**：无（本机进程内；平台侧凭据由引擎注入，前端不接触）
 - **请求参数**：无
 - **响应**：`{"success":true,"reported":true,"server":{"ok":true,"snapshot_id":N}}`；未接入平台 `{"success":false,"error":"尚未接入中心平台，请先在主页完成平台接入"}`；平台不可达 `{"success":false,"error":"上报失败（平台不可达或未接入）"}`
-- **代码出处**：power_control.py `handle_pc_report` / `PlatformReporter`（terminal_id 三级解析同 desktop-policy ADR-006 口径）；bridge.py ROUTES
+- **代码出处**：power_control.py `handle_pc_report`(776) / `PlatformReporter`（terminal_id 三级解析同 desktop-policy ADR-006 口径）；bridge.py:145 ROUTES（挂载 commit 2bbf881，代码实证）
 - **状态**：在用（P0；随心跳上报列入 P1，需 uplink 契约协调）
 - **登记记录**：2026-09-16，代码实证（power-control-dev 实施）
 
@@ -1736,6 +1744,6 @@
 
 ## 附：对账约定
 
-- 本台账对账基线 commit：工作区当前版本（bridge.py / uplink.py 有未提交修改，以台账登记时点代码为准）> 更新 2026-09-09：net-doctor 合入基线 commit 628c210（bridge.py ROUTES 含 /api/netdoctor/* 10 条）> 更新 2026-09-09：系统管理模块基线 commit 4d2924b（sysadmin 13 路由 + 多 token 模型 UPL-010 + session-info，代码实证 api.py:88-104/243-248/764-773/829+）> 更新 2026-09-09：知识库模块语义修正基线 commit 31f8e1d（KB 9 端点 ADR-022 语义 + route-nodes source 字段，代码实证 api.py:1396-1461/1369-1377/383-397、kb_store.py:43/59/157）> 更新 2026-09-09：终端 AI 智能诊断基线 commit 8aaa64e（SRV-070 diagnose + SRV-071 单条详情 + trigger=terminal_diagnose，代码实证 api.py:419-445/784-790/1160+，ADR-023）> 更新 2026-09-09：画方 admission_log 接入基线 commit a5156cc（nad_client.py + _enrich_ipconflict_admission，EXT-006 补代码实证与 3 处文档-实际差异，ADR-024）> 更新 2026-09-09：交换机管理基线 commit f031152（SRV-072~077 sysadmin 组，ADR-026，代码实证 api.py:1059-1133、settings.py:15/31、store.py:170-177）> 更新 2026-09-10：AI 诊断批次基线 net-doctor a892f62 / 主应用 bd965ae（BRG-050 补登+mode 双模式扩展、BRG-051 新增、BRG-040 ai_personal_json 写配置；bridge.py `call` body 双参透传仅 ai-diagnose 一条，bridge.py:128-133；EXT-006/BRG-042 回归核对无变化）> 更新 2026-09-10（晚）：AI 诊断收尾批次基线——server-platform 子仓 47de462/91b2fe6（ADR-027 截断重做+证据硬约束，SRV-070）、257ed21（ADR-028 判定精化 SRV-051 + ADR-029 深度检测 SRV-078/079）、25d48e2（静态资源 ETag 协商缓存，SRV-042/043）；net-doctor 子仓 c7219c7/1f60f95（BRG-051 used_key 三态+防假阳性、BRG-050 URL 归一化+提示词加固、BRG-042 Find-NetRoute 路由解析）；主仓同步 a81bd1c/3069ea7（net-doctor 指针前进 1f60f95）> 更新 2026-09-10（晚 2）：server-platform 9e604a7+cc34bae（deep-engine ADR-029 双端点归属修正 + verdict.sources ARP 失败同步）；net-doctor 深度检测本地转发 2 条 BRG-052/053（conflict-deep-start/poll，query 传参非 body；NET_ROUTES 已定义、主应用 bridge.py ROUTES 挂载待同步——待办移交主应用集成）> 更新 2026-09-10（晚 2）：BRG-054 conflict-ai-reanalyze 入账（主应用 b344bbc / net-doctor acee817）；BRG-052/053 撤「挂载待同步」（主应用 40abd3f hotfix 挂载 bridge.py:102-103，v8 内按钮不可用根因即漏挂载）——主应用内 netdoctor 冲突检测三路由双端就绪> 更新 2026-09-11：路由追踪 AI 分析批次基线——net-doctor a8aa49e（trace-ai-analyze 对接）+ f22e2bf（AI 诊断历史 JSONL 持久化三路由）；server-platform 2cb39d2（ADR-031 routetrace 分支）+ a8a6b95（ADR-030 ipconflict 聚合分支补登记）；主仓 c4495bc/916e791（bridge 挂载 4 条，bridge.py:106-109）；**遗留缺陷：BRG-055↔SRV-055 键名不一致（data vs context），routetrace 聚合走回退，待 net-doctor-dev/server-platform-dev 定责修复****遗留缺陷：BRG-055↔SRV-055 键名不一致（data vs context），routetrace 聚合走回退，待 net-doctor-dev/server-platform-dev 定责修复**【已消项 2026-09-11（晚）：net-doctor 4679b11 / 主应用 e6452e5，extra 改 context{target,hops}，缺陷关闭；注意 main 此前重建的 exe 在热修提交前，下次换装前需全量重建一次（team-lead 换装时执行）】> 更新 2026-09-15：火绒对接调研批次基线——EXT-007 新增（火绒终端安全 API v1，huorong-dev 下发，官方文档解析 + 连通性实测；签名认证待凭据修复，消费方 huorong.py//console/huorong/* 均为规划未实现，落地后对账补代码实证）> 更新 2026-09-15（晚）：火绒试点打通批次基线——签名谜题破案（官方参考脚本 api测试.py 定稿 4 处歧义，31 变体根因），EXT-007 状态推进「试点通过/已实证」（89 分组 + 710 终端全量），TBC-006 三项全关闭；台账鉴权段按实测算法修订（URL 参数签名，原 Header 模式描述为文档歧义）> 更新 2026-09-16：桌面管控批次基线——主应用 08b3547（bridge.py ROUTES 5 条 /api/desktoppolicy/* + web/desktoppolicy.js + index.html 导航「锁屏及壁纸管理」）+ desktop-policy 子仓 9bdfcdf（终端引擎 desktop_policy.py + CONTRACT v1.1 冻结，双仓副本 MD5 一致 017C788D）；BRG-059~063 新增（2.8 组），UPL-011~013 契约冻结/服务端未实现（P1 在途，TBC-007 跟踪）；对账发现 BRG-063 日志目录写读不一致缺陷已如实登记（主应用无 set_log_dir 调用，待 desktop-policy-dev 修）> 更新 2026-09-16（晚）：桌面管控热修消项基线——desktop-policy c316d87 / 主应用 72d51bc（`log()` 默认目录对齐 data_dir()/logs + makedirs(exist_ok=True) 自建 + BRG-062 注释 600s 对齐；冒烟 21/21 含 3 条主应用态防回归断言、单测 18/18、E2E 40/40）；BRG-063 缺陷关闭、BRG-062 注释语义消项（台账条目内已追加更新行），双仓副本复核 MD5 仍一致（55C856F6，主应用 72d51bc 同步 c316d87）；条数不变 167
+- 本台账对账基线 commit：工作区当前版本（bridge.py / uplink.py 有未提交修改，以台账登记时点代码为准）> 更新 2026-09-09：net-doctor 合入基线 commit 628c210（bridge.py ROUTES 含 /api/netdoctor/* 10 条）> 更新 2026-09-09：系统管理模块基线 commit 4d2924b（sysadmin 13 路由 + 多 token 模型 UPL-010 + session-info，代码实证 api.py:88-104/243-248/764-773/829+）> 更新 2026-09-09：知识库模块语义修正基线 commit 31f8e1d（KB 9 端点 ADR-022 语义 + route-nodes source 字段，代码实证 api.py:1396-1461/1369-1377/383-397、kb_store.py:43/59/157）> 更新 2026-09-09：终端 AI 智能诊断基线 commit 8aaa64e（SRV-070 diagnose + SRV-071 单条详情 + trigger=terminal_diagnose，代码实证 api.py:419-445/784-790/1160+，ADR-023）> 更新 2026-09-09：画方 admission_log 接入基线 commit a5156cc（nad_client.py + _enrich_ipconflict_admission，EXT-006 补代码实证与 3 处文档-实际差异，ADR-024）> 更新 2026-09-09：交换机管理基线 commit f031152（SRV-072~077 sysadmin 组，ADR-026，代码实证 api.py:1059-1133、settings.py:15/31、store.py:170-177）> 更新 2026-09-10：AI 诊断批次基线 net-doctor a892f62 / 主应用 bd965ae（BRG-050 补登+mode 双模式扩展、BRG-051 新增、BRG-040 ai_personal_json 写配置；bridge.py `call` body 双参透传仅 ai-diagnose 一条，bridge.py:128-133；EXT-006/BRG-042 回归核对无变化）> 更新 2026-09-10（晚）：AI 诊断收尾批次基线——server-platform 子仓 47de462/91b2fe6（ADR-027 截断重做+证据硬约束，SRV-070）、257ed21（ADR-028 判定精化 SRV-051 + ADR-029 深度检测 SRV-078/079）、25d48e2（静态资源 ETag 协商缓存，SRV-042/043）；net-doctor 子仓 c7219c7/1f60f95（BRG-051 used_key 三态+防假阳性、BRG-050 URL 归一化+提示词加固、BRG-042 Find-NetRoute 路由解析）；主仓同步 a81bd1c/3069ea7（net-doctor 指针前进 1f60f95）> 更新 2026-09-10（晚 2）：server-platform 9e604a7+cc34bae（deep-engine ADR-029 双端点归属修正 + verdict.sources ARP 失败同步）；net-doctor 深度检测本地转发 2 条 BRG-052/053（conflict-deep-start/poll，query 传参非 body；NET_ROUTES 已定义、主应用 bridge.py ROUTES 挂载待同步——待办移交主应用集成）> 更新 2026-09-10（晚 2）：BRG-054 conflict-ai-reanalyze 入账（主应用 b344bbc / net-doctor acee817）；BRG-052/053 撤「挂载待同步」（主应用 40abd3f hotfix 挂载 bridge.py:102-103，v8 内按钮不可用根因即漏挂载）——主应用内 netdoctor 冲突检测三路由双端就绪> 更新 2026-09-11：路由追踪 AI 分析批次基线——net-doctor a8aa49e（trace-ai-analyze 对接）+ f22e2bf（AI 诊断历史 JSONL 持久化三路由）；server-platform 2cb39d2（ADR-031 routetrace 分支）+ a8a6b95（ADR-030 ipconflict 聚合分支补登记）；主仓 c4495bc/916e791（bridge 挂载 4 条，bridge.py:106-109）；**遗留缺陷：BRG-055↔SRV-055 键名不一致（data vs context），routetrace 聚合走回退，待 net-doctor-dev/server-platform-dev 定责修复****遗留缺陷：BRG-055↔SRV-055 键名不一致（data vs context），routetrace 聚合走回退，待 net-doctor-dev/server-platform-dev 定责修复**【已消项 2026-09-11（晚）：net-doctor 4679b11 / 主应用 e6452e5，extra 改 context{target,hops}，缺陷关闭；注意 main 此前重建的 exe 在热修提交前，下次换装前需全量重建一次（team-lead 换装时执行）】> 更新 2026-09-15：火绒对接调研批次基线——EXT-007 新增（火绒终端安全 API v1，huorong-dev 下发，官方文档解析 + 连通性实测；签名认证待凭据修复，消费方 huorong.py//console/huorong/* 均为规划未实现，落地后对账补代码实证）> 更新 2026-09-15（晚）：火绒试点打通批次基线——签名谜题破案（官方参考脚本 api测试.py 定稿 4 处歧义，31 变体根因），EXT-007 状态推进「试点通过/已实证」（89 分组 + 710 终端全量），TBC-006 三项全关闭；台账鉴权段按实测算法修订（URL 参数签名，原 Header 模式描述为文档歧义）> 更新 2026-09-16：桌面管控批次基线——主应用 08b3547（bridge.py ROUTES 5 条 /api/desktoppolicy/* + web/desktoppolicy.js + index.html 导航「锁屏及壁纸管理」）+ desktop-policy 子仓 9bdfcdf（终端引擎 desktop_policy.py + CONTRACT v1.1 冻结，双仓副本 MD5 一致 017C788D）；BRG-059~063 新增（2.8 组），UPL-011~013 契约冻结/服务端未实现（P1 在途，TBC-007 跟踪）；对账发现 BRG-063 日志目录写读不一致缺陷已如实登记（主应用无 set_log_dir 调用，待 desktop-policy-dev 修）> 更新 2026-09-16（晚）：桌面管控热修消项基线——desktop-policy c316d87 / 主应用 72d51bc（`log()` 默认目录对齐 data_dir()/logs + makedirs(exist_ok=True) 自建 + BRG-062 注释 600s 对齐；冒烟 21/21 含 3 条主应用态防回归断言、单测 18/18、E2E 40/40）；BRG-063 缺陷关闭、BRG-062 注释语义消项（台账条目内已追加更新行），双仓副本复核 MD5 仍一致（55C856F6，主应用 72d51bc 同步 c316d87）；条数不变 167 > 更新 2026-09-16（晚 2）：power-control P0 批次基线——SRV-080/081（§1.13）+ BRG-064/065（2.9 组）共 4 条由 power-control-dev 登记、api-registrar-dev 复核归档；复核修正 4 项：①头部统计同步 167→171 ②BRG-064/065 从 2.8 组划出独立 2.9 组（原挂桌面管控组下归属错误）③SRV-080/081 补 curl 调用方式 ④代码出处补精确行号（bridge.py:60/144-145 挂载 commit 2bbf881 代码实证；server api.py:462-476/965-966/1244+ 工作区实证但**未提交，commit 待补**）；附注：主应用 2bbf881 为混合主题提交（bridge.py powercontrol 挂载 + desktop_policy.py read_power_state 增强 + web 管控徽章），2.8 组行号基线漂移注记见 2.8 组级更新行；同批另发现桌面管控 2bbf881 增量不改 BRG-059~063 响应结构
 - 对账方法：grep api.py `_terminal_api`/`_console_api`/`_console_kb_api`/`_console_nettest` 分支 + bridge.py `ROUTES`，与台账逐条比对，输出差异清单（新增未登记/已废弃仍登记/字段不符）
 - 维护规则：接口变更（改参数/改路径/废弃）必须同步更新台账，条目内追加 `> 更新 YYYY-MM-DD：变更点（出处）`，保留历史痕迹
