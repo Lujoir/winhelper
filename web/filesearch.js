@@ -19,7 +19,7 @@ var fsState = {
     typeLoaded: false /* 是否已加载类型统计 */
 };
 
-/* 常用后缀快捷筛选（走 Everything 原生 ext: 语法拼接，多选=OR 分号多值） */
+/* 常用后缀快捷筛选（ext: 语法拼接，多选=OR 分号多值） */
 var FS_EXT_CHIPS = [
     { label: "全部", exts: [] },
     { label: "pdf", exts: ["pdf"] },
@@ -81,7 +81,7 @@ function fsSyncChips() {
 }
 
 function fsBuildQuery(base) {
-    /* 检索词 + 类型筛选拼接（Everything 原生语法：空格 AND，ext:a;b 分号 OR） */
+    /* 检索词 + 类型筛选拼接（空格 AND，ext:a;b 分号 OR） */
     var merged = fsState.exts.slice();
     for (var i = 0; i < fsState.advExts.length; i++) {
         if (merged.indexOf(fsState.advExts[i]) < 0) { merged.push(fsState.advExts[i]); }
@@ -243,14 +243,14 @@ function fsStartSearch() {
     var input = document.getElementById("fsQuery");
     var q = (input && input.value || "").trim();
     if (!q) {
-        fsSetTip("fsSummary", "请输入搜索关键词（支持 Everything 语法，如 ext:pdf，大小写不敏感）");
+        fsSetTip("fsSummary", "请输入搜索关键词（支持语法筛选，如 ext:pdf，大小写不敏感）");
         return;
     }
     fsDoSearch(q);
 }
 
 function fsDoSearch(q) {
-    /* 检索词经类型筛选拼接后查询；表头排序列（name/size/date_modified）透传 Everything 原生 sort 参数 */
+    /* 检索词经类型筛选拼接后查询；表头排序列（name/size/date_modified）透传服务端 sort 参数 */
     fsState.searching = true;
     fsState.lastQuery = q;
     var btn = document.getElementById("fsSearchBtn");
@@ -455,7 +455,7 @@ function fsRenderResults(d) {
         return;
     }
     var shown = rs.slice(0);
-    if (fsState.sortCol === "ext") {   /* 类型排序=按扩展名前端排（Everything HTTP 无此 sort 值） */
+    if (fsState.sortCol === "ext") {   /* 类型排序=按扩展名前端排（服务端无此 sort 值） */
         shown.sort(function (a, b) {
             var ea = fsExtOf(a.name), eb = fsExtOf(b.name);
             var c = ea < eb ? -1 : (ea > eb ? 1 : 0);
