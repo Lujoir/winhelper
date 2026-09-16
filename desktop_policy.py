@@ -739,15 +739,51 @@ def powercfg_set_active(guid):
         raise RuntimeError("setactive rc=%d %s" % (rc, err.strip()))
 
 
-# PART2_POWER_APPLY
+# ------------------------------------------------------------- 本机电源状态
+POWER_DISPLAY_ALIASES = ("VIDEOIDLE",)      # 关闭显示器
+POWER_SLEEP_ALIASES = ("STANDBYIDLE", "SLEEPIDLE")  # 使计算机进入睡眠状态
+POWER_DISK_ALIASES = ("DISKIDLE",)          # 硬盘关闭
 
 
-# 电源计划预设（SUB_* 组别名 → GUID；settings 走别名定位）
-POWER_PRESETS = {
-    "balanced": "381b4222-f694-41f0-9685-ff5bb260df2e",
-    "high": "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c",
-    "saver": "a1841308-3541-4fab-bc81-f71556f20b4a",
-}
+
+def read_power_state():
+    """读当前激活方案 + 关闭显示器/睡眠/硬盘超时（AC/DC，秒；0=从不）。
+    查询无需管理员（spike C 实测）。返回 dict；失败抛 RuntimeError。"""
+    guid = get_active_scheme()
+    snap, aliases = query_snapshot(guid)
+    rc, out, _ = _run_powercfg("/getactivescheme")
+    m = re.search(r"\(([^)]+)\)", out or "")
+    plan_name = m.group(1) if m else guid
+
+    def _entry(alias_list):
+        for alias in alias_list:
+            try:
+                sg, st = find_setting(snap, aliases, alias)
+            except RuntimeError:
+                continue
+            return snap[sg][st]
+        return None
+
+    def _pair(alias_list):
+        vals = _entry(alias_list)
+        if vals is None:
+            return {"ac_sec": None, "dc_sec": None, "available": False}
+        return {"ac_sec": vals.get("ac"), "dc_sec": vals.get("dc"),
+                "available": True}
+
+    return {
+        "guid": guid,
+        "plan_name": plan_name,
+        "display_off": _pair(POWER_DISPLAY_ALIASES),
+        "sleep": _pair(POWER_SLEEP_ALIASES),
+        "disk_off": _pair(POWER_DISK_ALIASES),
+        "readback_sec": {
+            "display_off": _entry(POWER_DISPLAY_ALIASES),
+            "sleep": _entry(POWER_SLEEP_ALIASES),
+            "disk_off": _entry(POWER_DISK_ALIASES),
+        },
+    }
+
 
 
 def apply_power_plan(policy):
@@ -1433,6 +1469,17 @@ def handle_dp_status(params):
     results = state.get("last_results") or {}
     base, _token, tid = eng.transport._cfg() \
         if isinstance(eng.transport, PlatformTransport) else ("", "", None)
+    # 本机电源状态（查询无需管理员）+ 策略管控判定
+    try:
+        power_state = read_power_state()
+        power_state_read_error = None
+    except Exception as exc:
+        log("本机电源状态读取失败: %r" % exc, "WARN")
+        power_state = None
+        power_state_read_error = str(exc)
+    pp_result = (state.get("last_results") or {}).get("power_plan") or {}
+    pol = (state.get("policies") or {}).get("power_plan") or {}
+    power_managed = bool(pol.get("enabled") and pp_result.get("ok"))
     return {
         "success": True,
         "engine_running": True,
@@ -1442,6 +1489,9 @@ def handle_dp_status(params):
         "last_poll_error": eng.last_poll_error,
         "last_poll_ok_ts": eng.last_poll_ok_ts,
         "revision": state.get("revision", -1),
+        "power_state": power_state,
+        "power_state_read_error": power_state_read_error,
+        "power_managed": power_managed,
         "reported_at": state.get("reported_at"),
         "session_type": session_type(),
         "monitors": [{"index": m["index"], "width": m["width"],
@@ -1512,7 +1562,6 @@ def handle_dp_task_status(params):
 
 
 def handle_dp_logs(params):
-    """GET /api/desktoppolicy/logs：日志目录与最近日志尾部。"""
     d = os.path.join(data_dir(), "logs")
     tail = []
     path = os.path.join(d, "dp_%s.log" % time.strftime("%Y%m%d"))
@@ -1584,6 +1633,18 @@ def set_current_power_settings(params):
                 errors.append("%s 设置失败：%s" % (param_name, exc))
     if changed:
         powercfg_set_active(scheme["guid"])
+        # 回读校验（BRG-068：读回值与目标一致才算成功，不静默成功）
+        after = get_current_power_settings()
+        for key, alias in _POWER_SETTING_ALIASES.items():
+            for ch in ("ac", "dc"):
+                param_name = "%s_%s" % (key, ch)
+                want = params.get(param_name)
+                if want is None or param_name not in changed:
+                    continue
+                got = after[key][ch + "_sec"]
+                if got != int(want):
+                    errors.append("%s 回读 %s 与目标 %s 不一致"
+                                  % (param_name, got, want))
     if errors:
         return {"ok": False, "scheme": scheme, "changed": changed,
                 "error": {"code": "apply_failed",

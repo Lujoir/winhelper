@@ -39,8 +39,9 @@ from uplink import (
 )
 from home_service import handle_home_network
 from file_search import (
-    handle_fs_query, handle_fs_status, handle_fs_open_location,
+    handle_fs_query, handle_fs_status, handle_fs_stats, handle_fs_open_location,
 )
+
 from net_service import (
     handle_net_config, handle_net_config_check, handle_net_ipconflict,
     handle_net_conflict_deep_start, handle_net_conflict_deep_poll,
@@ -54,6 +55,7 @@ from net_service import (
 from desktop_policy import (
     handle_dp_status, handle_dp_policy_now, handle_dp_apply_now,
     handle_dp_task_status, handle_dp_logs,
+    handle_dp_powercfg_read, handle_dp_powercfg_set,
 )
 
 # 路由表：前端请求路径 -> 业务处理器
@@ -117,7 +119,9 @@ ROUTES = {
     # 文件检索（file-search 子系统，路线 C 自研索引引擎）
     "/api/filesearch/query": handle_fs_query,
     "/api/filesearch/status": handle_fs_status,
+    "/api/filesearch/stats": handle_fs_stats,
     "/api/filesearch/open-location": handle_fs_open_location,
+
     "/api/netdoctor/ping-start": handle_net_ping_start,
     "/api/netdoctor/ping-history": handle_net_ping_history,
     "/api/netdoctor/tracert-start": handle_net_tracert_start,
@@ -133,6 +137,8 @@ ROUTES = {
     "/api/desktoppolicy/apply-now": handle_dp_apply_now,
     "/api/desktoppolicy/task-status": handle_dp_task_status,
     "/api/desktoppolicy/logs": handle_dp_logs,
+    "/api/desktoppolicy/powercfg/read": handle_dp_powercfg_read,
+    "/api/desktoppolicy/powercfg/set": handle_dp_powercfg_set,
 }
 
 
@@ -143,8 +149,9 @@ class ApiBridge:
         """
         统一入口：前端传入 '/api/loginspector/search?page=1' 形式的路径，
         分发到对应业务处理器并返回 dict（pywebview 自动转为 JS Promise）。
-        body（可选，2026-09-09 AI 诊断增量）：JSON 字符串，仅
-        /api/netdoctor/ai-diagnose 使用（大 payload 双参透传，向后兼容旧单参调用）。
+        body（可选）：JSON 字符串，仅下列需要双参透传的路由使用
+        （2026-09-09 AI 诊断增量；2026-09-16 桌面管控电源修改增量）：
+        /api/netdoctor/ai-diagnose、/api/desktoppolicy/powercfg/set
         """
         try:
             parsed = urlparse(path or "")
@@ -158,6 +165,12 @@ class ApiBridge:
                 except Exception:
                     data = None
                 return handle_net_ai_diagnose(params, data)
+            if parsed.path == "/api/desktoppolicy/powercfg/set":
+                try:
+                    data = json.loads(body) if body else {}
+                except Exception:
+                    data = {}
+                return handle_dp_powercfg_set(data)
             return handler(params)
         except Exception as e:
             return {"success": False, "error": str(e)}

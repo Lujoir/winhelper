@@ -88,6 +88,16 @@ function dpRenderStatus(data) {
   dp$("#dpResLock").innerHTML = dpResultBadge(r.lock_screen);
   dp$("#dpResPower").innerHTML = dpResultBadge(r.power_plan);
   dp$("#dpResIdle").innerHTML = dpResultBadge(r.idle_lock);
+  var mg = dp$("#dpPowerManaged");
+  if (mg) {
+    if (data.power_managed) {
+      mg.textContent = "策略管控中";
+      mg.className = "nd-badge nd-info";
+    } else {
+      mg.textContent = "本机自管";
+      mg.className = "nd-badge nd-muted";
+    }
+  }
   // 显示器布局表
   var ms = data.monitors || [];
   var host = dp$("#dpMonBody");
@@ -276,7 +286,7 @@ function dpRenderPowerCfg(data) {
   var display = data.display_off || {};
   var sleep = data.sleep || {};
   var html = '<div class="nd-summary">当前电源方案：' + dpEsc(scheme.name || scheme.guid || "—") +
-    '。修改后点击保存即可生效。</div>';
+    '。修改后点击保存即可生效；若平台策略配置了电源项，下次策略发布将覆盖此处的手动设置。</div>';
   html += '<div class="hm-row"><span class="hm-row-label">关闭显示器（接通电源）</span>' +
     dpBuildPowerSelect("dpDisplayAc", display.ac_sec) + '</div>';
   html += '<div class="hm-row"><span class="hm-row-label">关闭显示器（使用电池）</span>' +

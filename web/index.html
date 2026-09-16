@@ -1125,10 +1125,17 @@
                 .fs-icon { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; margin-right: 5px; flex-shrink: 0; }
                 .fs-icon svg { display: block; }
                 .fs-name-cell { white-space: nowrap; }
-                .fs-name { display: inline-block; vertical-align: middle; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+                .fs-name { display: inline-block; vertical-align: middle; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: calc(100% - 22px); }
                 .fs-type-cell { white-space: nowrap; }
                 .fs-dir { font-weight: 500; }
                 .fs-dir .fs-name { color: var(--accent-cyan, #4fc3f7); }
+                /* 结果表列宽：名称/类型/路径默认 160/160/230（自动布局的 2/3），表头右缘可拖拽（2026-09-16） */
+                #fsBody table.fs-cols { table-layout: fixed; }
+                #fsBody table.fs-cols td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+                #fsBody table.fs-cols thead th { position: relative; }
+                .fs-rs { position: absolute; top: 0; right: -3px; width: 7px; height: 100%; cursor: col-resize; z-index: 5; }
+                .fs-rs:hover, body.fs-col-dragging .fs-rs { background: rgba(79, 195, 247, .28); }
+                body.fs-col-dragging { user-select: none; cursor: col-resize; }
             </style>
             <div class="page-header">
                 <h2>文件检索</h2>
@@ -1200,7 +1207,7 @@
                     <div class="nd-summary">四类策略在本机各自的最新执行结果。</div>
                     <div class="hm-row"><span class="hm-row-label">桌面壁纸</span><span class="hm-row-value" id="dpResWallpaper">—</span></div>
                     <div class="hm-row"><span class="hm-row-label">锁屏界面</span><span class="hm-row-value" id="dpResLock">—</span></div>
-                    <div class="hm-row"><span class="hm-row-label">电源方案</span><span class="hm-row-value" id="dpResPower">—</span></div>
+                    <div class="hm-row"><span class="hm-row-label">电源方案 <span class="nd-badge nd-muted" id="dpPowerManaged">本机自管</span></span><span class="hm-row-value" id="dpResPower">—</span></div>
                     <div class="hm-row"><span class="hm-row-label">空闲自动锁屏</span><span class="hm-row-value" id="dpResIdle">—</span></div>
                     <div id="dpNotes" style="margin-top:8px"></div>
                     <div class="nd-hint" id="dpStatusErr" style="margin-top:4px"></div>
