@@ -174,6 +174,15 @@ class BITMAP(ctypes.Structure):
                 ("bmBits", ctypes.c_void_p)]
 
 
+class _GdiplusStartupInput(ctypes.Structure):
+    """GdiplusStartupInput（64 位 24 字节：ULONG + 指针 + 2×BOOL）。
+    BRG-067：原 struct.pack 16 字节越界读，行为未定义（GDI+ 启动失败/异常）。"""
+    _fields_ = [("GdiplusVersion", wt.ULONG),
+                ("DebugEventCallback", ctypes.c_void_p),
+                ("SuppressBackgroundThread", wt.BOOL),
+                ("SuppressExternalCodecs", wt.BOOL)]
+
+
 class GdiplusLoader(object):
     """GDI+ flat API（OS 组件）：源图 PNG/JPG/BMP 加载与尺寸读取。"""
 
@@ -185,10 +194,16 @@ class GdiplusLoader(object):
             return True
         try:
             dll = ctypes.windll.gdiplus
-            si = struct.pack("<IIII", 1, 0, 0, 0)
-            token = wt.ULONG()
-            if dll.GdiplusStartup(ctypes.byref(token),
-                                  ctypes.c_char_p(si), None) == 0:
+            dll.GdiplusStartup.argtypes = [ctypes.POINTER(wt.ULONG),
+                                           ctypes.POINTER(
+                                               _GdiplusStartupInput),
+                                           ctypes.c_void_p]
+            dll.GdiplusStartup.restype = ctypes.c_int
+            si = _GdiplusStartupInput()
+            si.GdiplusVersion = 1
+            token = wt.ULONG(0)
+            if dll.GdiplusStartup(ctypes.byref(token), ctypes.byref(si),
+                                  None) == 0:
                 self.token = token
                 self.dll = dll
                 self.ok = True
@@ -246,7 +261,10 @@ def build_stitch(per_monitor_files, monitors, vx, vy, vw, vh):
         gdi32.PatBlt(mem, 0, 0, vw, vh, 0x00000042)
         fallback = next((p for p in per_monitor_files if p), None)
         for i, m in enumerate(monitors):
-            src = per_monitor_files[i] or fallback
+            # BRG-067：per_monitor 可少于实际屏数（服务端仅对有匹配的屏下发），
+            # 越界取 None 走 fallback，禁止 IndexError
+            src = per_monitor_files[i] if i < len(per_monitor_files) else None
+            src = src or fallback
             if not src or not os.path.exists(src):
                 log("屏%d 无可用源图" % i, "WARN")
                 continue
@@ -280,6 +298,9 @@ def build_stitch(per_monitor_files, monitors, vx, vy, vw, vh):
 
 def _png_encode(buf32, w, h, dest):
     """GDI 内存 BGRA(top-down) → PNG(RGB)。"""
+    if not isinstance(buf32, (bytes, bytearray)):
+        # BRG-067：c_char_Array 索引返回单字节 bytes（非 int），统一转 bytes
+        buf32 = bytes(buf32)
     s_stride, d_stride = w * 4, w * 3
     raw = bytearray(h * (d_stride + 1))
     pos = 0
