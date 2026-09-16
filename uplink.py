@@ -309,9 +309,17 @@ def _hwinfo_fallback(asset):
 
 
 def _asset_detail():
-    """完整结构化资产明细（schema 1）：os/cpu/memory/disks/gpu/network/temps。
-    注册时随 payload 上报，服务端存 terminals.asset_detail 供资产清单明细查看。"""
-    detail = {"schema": 1, "ts": int(time.time())}
+    """完整结构化资产明细（schema 2，2026-09-16 P1 顺带：新增 machine 块——
+    厂商/型号/系列复用 power-control 引擎采集，消除控制台对 power_snapshots
+    的跨模块依赖；schema 1 为 os/cpu/memory/disks/gpu/network/temps，
+    服务端与控制台对缺失块兜底）。注册时随 payload 上报，服务端存
+    terminals.asset_detail 供资产清单明细查看。"""
+    detail = {"schema": 2, "ts": int(time.time())}
+    try:
+        from power_control import collect_machine
+        detail["machine"] = collect_machine()
+    except Exception:
+        detail["machine"] = {}
     try:
         from perf_service import handle_perf_hwinfo
         hw = (handle_perf_hwinfo({}).get("hwinfo") or {})
@@ -349,6 +357,12 @@ def _register_payload(cfg):
     except Exception:
         hostname = None
     asset = _hwinfo_fallback(_asset_detail())
+    # 心跳间隔配置值（P1 顺带：控制台展示「配置值」而非推断观测值）
+    try:
+        asset["heartbeat_interval"] = int(
+            cfg.get("heartbeat_interval") or DEFAULT_HEARTBEAT_INTERVAL)
+    except (TypeError, ValueError):
+        asset["heartbeat_interval"] = DEFAULT_HEARTBEAT_INTERVAL
     payload = {
         "terminal_id": tid,
         "terminal_type": TERMINAL_TYPE,
@@ -679,6 +693,27 @@ def _cmd_collect_logs(args):
 @command_handler("ai_context")
 def _cmd_ai_context(args):
     return False, {"task_id": args.get("task_id"), "error": "ai_disabled"}
+
+
+# ---------- pc_apply_policy（自动开关机平台下发执行面，ADR-038 侧协议；main 定稿） ----------
+
+
+@command_handler("pc_apply_policy")
+def _cmd_pc_apply_policy(args):
+    """args={policy_id, op:"apply", boot?:{enabled,mode daily|weekly|single|disabled,
+    time "HH:MM", weekdays?:[7x0/1 周一~周日], date?}, shutdown?:{enabled,mode,time,date}}
+    （协议 main 定稿，server-platform 同款）。执行链复用 power-control P1a/P1b
+    引擎（写前快照→写入→回读校验；schtasks EyeTermAutoShutdown）。无人值守提权
+    （UAC）限制如实回执（power-control ADR-009），成功后落 policy_state 供
+    「自动开关机」页展示当前生效策略。"""
+    from power_control import apply_policy   # 延迟导入（引擎零第三方依赖）
+    try:
+        data = apply_policy(args or {})
+    except Exception as e:
+        return False, {"policy_id": (args or {}).get("policy_id"),
+                       "op": "apply", "ok": False,
+                       "steps": {}, "error": str(e)[:200]}
+    return bool(data.get("ok")), data
 
 
 # ============================================================

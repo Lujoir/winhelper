@@ -14,6 +14,13 @@ import sys
 import ctypes
 import socketserver
 
+# power-control P1：提权子进程拦截（单操作 worker，UAC runas 拉起；最小职责
+# 见 power-control/docs/DECISIONS.md ADR-008）——必须在任何 UI/服务初始化之前
+# 执行并退出；非提权调用零开销。
+if len(sys.argv) > 1 and sys.argv[1] == "--pc-elevated-worker":
+    from power_control import elevated_worker_entry
+    sys.exit(elevated_worker_entry(sys.argv[2:]))
+
 # pywebview 6.x 本地资源改走内置 HTTP 服务（wsgiref/TCPServer，默认 backlog=5）：
 # 首帧并发加载多个静态资源时会随机丢弃请求（症状：某模块 js 整文件未执行、该页功能全断、
 # reload 后自愈——disk-cleaner ADR-016 活体取证定案）。在服务实例化前扩大队列根治。

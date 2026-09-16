@@ -57,7 +57,11 @@ from desktop_policy import (
     handle_dp_task_status, handle_dp_logs,
     handle_dp_powercfg_read, handle_dp_powercfg_set,
 )
-from power_control import handle_pc_snapshot, handle_pc_report
+from power_control import (
+    handle_pc_snapshot, handle_pc_report, handle_pc_bios_apply,
+    handle_pc_bios_restore, handle_pc_shutdown_set, handle_pc_shutdown_remove,
+    handle_pc_shutdown_toggle, handle_pc_task_status,
+)
 
 # 路由表：前端请求路径 -> 业务处理器
 ROUTES = {
@@ -143,6 +147,12 @@ ROUTES = {
     # 自动开关机（power-control）
     "/api/powercontrol/snapshot": handle_pc_snapshot,
     "/api/powercontrol/report": handle_pc_report,
+    "/api/powercontrol/bios-apply": handle_pc_bios_apply,
+    "/api/powercontrol/bios-restore": handle_pc_bios_restore,
+    "/api/powercontrol/shutdown-set": handle_pc_shutdown_set,
+    "/api/powercontrol/shutdown-remove": handle_pc_shutdown_remove,
+    "/api/powercontrol/shutdown-toggle": handle_pc_shutdown_toggle,
+    "/api/powercontrol/task-status": handle_pc_task_status,
 }
 
 
@@ -175,6 +185,13 @@ class ApiBridge:
                 except Exception:
                     data = {}
                 return handle_dp_powercfg_set(data)
+            # 自动开关机 P1：带 body 的路由双参透传（params + data）
+            if parsed.path.startswith("/api/powercontrol/") and body:
+                try:
+                    data = json.loads(body) if body else None
+                except Exception:
+                    data = None
+                return handler(params, data)
             return handler(params)
         except Exception as e:
             return {"success": False, "error": str(e)}

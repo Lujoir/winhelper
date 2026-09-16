@@ -32,18 +32,26 @@ function waitPywebviewBridge(timeout = 2500) {
  * @param {string} path 例如 '/api/analyze?type=System&max=1000'
  * @returns {Promise<object>} 后端返回的JSON对象
  */
-async function apiFetch(path) {
+async function apiFetch(path, body) {
     // 2026-09-09 冻结缺陷修复：pywebview IPC 通道挂死时调用永挂起，
     // 上层静默 catch 导致 UI 永冻首帧。此处统一加超时保护（默认 15s，
     // window.__apiFetchTimeout 可覆盖供 E2E 注入），超时 reject 交上层错误路径。
+    // 2026-09-16 P1：补 body 透传（此前 body 被丢弃——desktoppolicy 电源修改
+    // 与 powercontrol 写操作在主应用内参数全丢，独立页正常、主应用静默失效）。
     const timeoutMs = window.__apiFetchTimeout || 15000;
     const hasBridge = await waitPywebviewBridge(1500);
     let call;
     if (hasBridge) {
-        call = window.pywebview.api.call(path);
+        call = window.pywebview.api.call(
+            path, body !== undefined ? JSON.stringify(body) : undefined);
         call.catch(() => {});   // 挂起原 promise 落超时后 reject，防 unhandledrejection
     } else {
-        call = fetch(path).then(r => r.json());
+        call = fetch(path, {
+            method: body !== undefined ? "POST" : "GET",
+            headers: body !== undefined
+                ? { "Content-Type": "application/json" } : undefined,
+            body: body !== undefined ? JSON.stringify(body) : undefined,
+        }).then(r => r.json());
     }
     return await Promise.race([
         call,

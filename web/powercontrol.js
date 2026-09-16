@@ -5,7 +5,9 @@
  */
 "use strict";
 
-var pcState = { busy: false, loaded: false, lastSnap: null };
+var pcState = { busy: false, loaded: false, lastSnap: null,
+                reportState: null, opBusy: false, sdTask: null,
+                activePolicy: null };
 
 /* DOM 辅助（自包含，不依赖宿主 $） */
 function pc$(sel) { return document.querySelector(sel); }
@@ -70,6 +72,8 @@ function pcLoadSnapshot() {
     }
     pcState.loaded = true;
     pcState.lastSnap = data.snapshot;
+    pcState.reportState = data.report_state || null;
+    pcState.activePolicy = data.active_policy || null;
     pcRenderSnapshot(data.snapshot);
   }).catch(function (e) {
     ["pcBiosBody", "pcWakeBody", "pcTasksBody", "pcFastBody"]
@@ -99,10 +103,74 @@ function pcRenderSnapshot(snap) {
   }
   var ct = pc$("#pcCollectTime");
   if (ct) ct.textContent = snap.collected_at || "—";
+  var cfgCard = pc$("#pcBiosCfgCard");
+  if (cfgCard) {
+    cfgCard.style.display =
+        (m.capability === "enterprise_configurable") ? "" : "none";
+  }
   pcRenderBios(snap);
   pcRenderWake(snap);
   pcRenderTasks(snap);
   pcRenderFast(snap);
+  pcRenderReportState();
+  pcRenderShutdownCurrent(snap);
+  pcRenderPolicy();
+}
+
+function pcRenderPolicy() {
+  var el = pc$("#pcPolicyLine");
+  if (!el) return;
+  var pol = pcState.activePolicy;
+  if (pol && pol.policy_id) {
+    el.style.display = "";
+    var tail = String(pol.policy_id).slice(-8);
+    el.innerHTML = pcBadge("平台下发生效", "nd-info") +
+      '<span class="nd-hint" style="margin-left:6px">' +
+      pcEsc(pcTrunc(pol.summary || "", 80)) +
+      " · 策略尾号 " + pcEsc(tail) +
+      (pol.applied_at ? " · " + pcEsc(pol.applied_at) : "") +
+      "（本机设置与平台下发，后到者生效）</span>";
+  } else {
+    el.style.display = "none";
+    el.textContent = "";
+  }
+}
+
+function pcRenderReportState() {
+  var rs = pc$("#pcReportState");
+  if (!rs) return;
+  var st = pcState.reportState;
+  if (st && st.last_ok) {
+    var hhmm = (st.last_at || "").split(" ").pop() || st.last_at;
+    rs.textContent = "已存档 " + hhmm;
+  } else if (st && st.last_error) {
+    rs.textContent = "上次上报未成功（打开本页自动重试）";
+  } else {
+    rs.textContent = "未上报（打开本页自动上报，需已接入平台）";
+  }
+}
+
+function pcRenderShutdownCurrent(snap) {
+  var el = pc$("#pcSdCurrent");
+  if (!el) return;
+  var items = ((snap.shutdown_tasks || {}).items) || [];
+  var hit = null;
+  for (var i = 0; i < items.length; i++) {
+    if (String(items[i].name || "").indexOf("EyeTermAutoShutdown") === 0) {
+      hit = items[i];
+      break;
+    }
+  }
+  pcState.sdTask = hit;
+  if (!hit) {
+    el.innerHTML = pcBadge("未创建", "nd-muted");
+    return;
+  }
+  var on = (hit.status || "").indexOf("就绪") >= 0 ||
+           (hit.status || "").indexOf("Ready") >= 0 ||
+           (hit.status || "").indexOf("运行") >= 0;
+  el.innerHTML = pcBadge(on ? "已启用" : "已停用", on ? "nd-ok" : "nd-warn") +
+    '<span class="nd-hint"> ' + pcEsc(hit.next_run || "—") + "</span>";
 }
 
 function pcRenderBios(snap) {
@@ -153,6 +221,17 @@ function pcRenderBios(snap) {
       pcEsc(b.reason || "本机不支持远程配置定时开机") + "</div>");
     html.push('<div class="nd-hint">如需定时开机：开机自检时按屏幕提示进入 BIOS 设置，' +
       "在电源管理菜单中查找「定时开机 / RTC Alarm / Wake Up on Alarm」类选项进行设置。</div>");
+    if (b.human_set_flag) {
+      html.push('<div class="nd-hint" style="margin-top:6px">' +
+        pcBadge("已登记人工设置", "nd-info") +
+        '<span style="margin-left:6px">' + pcEsc(b.human_set_at || "") +
+        "（平台可见）</span></div>");
+    } else {
+      html.push('<div style="margin-top:8px">' +
+        '<button class="nd-btn" onclick="pcRegisterHumanSet()">' +
+        "我已在 BIOS 人工设置，登记到平台</button>" +
+        '<span class="nd-hint" id="pcHumanTip" style="margin-left:8px"></span></div>');
+    }
   }
   host.innerHTML = html.join("");
 }
@@ -253,7 +332,228 @@ function pcReportNow() {
     }
     var rs = pc$("#pcReportState");
     if (rs) rs.textContent = "已存档";
+    pcState.reportState = { last_ok: true,
+                            last_at: new Date().toLocaleString("zh-CN",
+                                { hour12: false }) };
+    pcRenderReportState();
   }).catch(function (e) {
     if (tip) tip.textContent = pcTrunc((e && e.message) || "上报失败", 140);
   }).then(function () { pcSetBusy(false); });
+}
+
+/* ======================================================================
+ * P1 · 定时开机配置 / 定时关机操作（提权异步任务；UAC 确认制）
+ * ==================================================================== */
+
+var _PC_OP_BTNS = ["#pcBtnBiosApply", "#pcBtnBiosRestore", "#pcBtnSdSave",
+                   "#pcBtnSdToggle", "#pcBtnSdRemove"];
+
+function pcSetOpBusy(b) {
+  pcState.opBusy = b;
+  _PC_OP_BTNS.forEach(function (sel) {
+    var el = pc$(sel);
+    if (el) el.disabled = b;
+  });
+}
+
+function pcOnBootModeChange() {
+  var m = pc$("#pcBootMode"), d = pc$("#pcBootDate");
+  if (d) d.style.display = (m && m.value === "single") ? "" : "none";
+}
+
+function pcOnSdModeChange() {
+  var m = pc$("#pcSdMode"), d = pc$("#pcSdDate");
+  if (d) d.style.display = (m && m.value === "single") ? "" : "none";
+}
+
+function pcPollTask(tid, tip, doneText) {
+  return new Promise(function (resolve) {
+    var poll = function () {
+      pcApiFetch("/api/powercontrol/task-status?task_id=" +
+        encodeURIComponent(tid)).then(function (data) {
+        var t = (data && data.task) || {};
+        if (data && data.success === false) {
+          tip.textContent = pcTrunc(data.error || "任务查询失败", 140);
+          pcSetOpBusy(false);
+          return resolve(null);
+        }
+        if (t.status === "running") { setTimeout(poll, 1500); return; }
+        pcSetOpBusy(false);
+        var r = t.result || {};
+        if (t.status === "done") {
+          tip.textContent = doneText;
+        } else {
+          tip.textContent = pcTrunc(r.error || "操作未成功，请重试", 160);
+        }
+        resolve(r);
+      }).catch(function (e) {
+        tip.textContent = pcTrunc((e && e.message) || "任务查询失败", 140);
+        pcSetOpBusy(false);
+        resolve(null);
+      });
+    };
+    setTimeout(poll, 600);
+  });
+}
+
+function pcApplyBios() {
+  if (pcState.opBusy) return;
+  var mode = (pc$("#pcBootMode") || {}).value || "daily";
+  var time = (pc$("#pcBootTime") || {}).value || "";
+  var date = (pc$("#pcBootDate") || {}).value || "";
+  if (mode !== "off" && !/^\d{1,2}:\d{2}$/.test(time.trim())) {
+    pc$("#pcBiosTip").textContent = "请填写开机时刻（如 08:00）";
+    return;
+  }
+  if (mode === "single" && !date.trim()) {
+    pc$("#pcBiosTip").textContent = "请填写指定日期（如 12/31/2026）";
+    return;
+  }
+  if (!window.confirm(
+      mode === "off"
+        ? "将停用本机的定时开机（应用前自动备份当前配置）。继续？"
+        : "将按以下配置修改定时开机（应用前自动备份当前配置，需系统授权确认）：\n\n" +
+          "周期：" + pc$("#pcBootMode").selectedOptions[0].text +
+          "\n时刻：" + (mode === "off" ? "—" : time) +
+          (mode === "single" ? ("\n日期：" + date) : "") + "\n\n继续？")) {
+    return;
+  }
+  pcSetOpBusy(true);
+  var tip = pc$("#pcBiosTip");
+  tip.textContent = "已受理，等待系统授权与执行…（若未见弹窗请在任务栏确认）";
+  pcApiFetch("/api/powercontrol/bios-apply",
+             { mode: mode, time: time.trim(), date: date.trim() })
+    .then(function (data) {
+      if (!data || data.success === false) {
+        throw new Error((data && data.error) || "提交失败");
+      }
+      return pcPollTask(data.task_id, tip, "已应用：当前配置见上方卡片");
+    })
+    .then(function (r) { if (r) pcLoadSnapshot(); })
+    .catch(function (e) {
+      tip.textContent = pcTrunc((e && e.message) || "提交失败", 140);
+      pcSetOpBusy(false);
+    });
+}
+
+function pcRestoreBios() {
+  if (pcState.opBusy) return;
+  if (!window.confirm(
+      "将把定时开机配置还原为最近一次备份的初始值（需系统授权确认）。继续？")) {
+    return;
+  }
+  pcSetOpBusy(true);
+  var tip = pc$("#pcBiosTip");
+  tip.textContent = "已受理，等待系统授权与执行…";
+  pcApiFetch("/api/powercontrol/bios-restore", {})
+    .then(function (data) {
+      if (!data || data.success === false) {
+        throw new Error((data && data.error) || "提交失败");
+      }
+      return pcPollTask(data.task_id, tip, "已还原为初始值");
+    })
+    .then(function (r) { if (r) pcLoadSnapshot(); })
+    .catch(function (e) {
+      tip.textContent = pcTrunc((e && e.message) || "提交失败", 140);
+      pcSetOpBusy(false);
+    });
+}
+
+function pcSaveShutdown() {
+  if (pcState.opBusy) return;
+  var mode = (pc$("#pcSdMode") || {}).value || "daily";
+  var time = (pc$("#pcSdTime") || {}).value || "";
+  var date = (pc$("#pcSdDate") || {}).value || "";
+  if (!/^\d{1,2}:\d{2}$/.test(time.trim())) {
+    pc$("#pcSdTip").textContent = "请填写关机时刻（如 22:00）";
+    return;
+  }
+  if (mode === "single" && !date.trim()) {
+    pc$("#pcSdTip").textContent = "请填写指定日期（如 12/31/2026）";
+    return;
+  }
+  if (!window.confirm(
+      "将创建/更新定时关机任务（需系统授权确认）：\n\n" +
+      "周期：" + pc$("#pcSdMode").selectedOptions[0].text +
+      "\n时刻：" + time +
+      (mode === "single" ? ("\n日期：" + date) : "") +
+      "\n\n到点后倒计时 60 秒关机。继续？")) {
+    return;
+  }
+  pcSetOpBusy(true);
+  var tip = pc$("#pcSdTip");
+  tip.textContent = "已受理，等待系统授权与执行…";
+  pcApiFetch("/api/powercontrol/shutdown-set",
+             { mode: mode, time: time.trim(), date: date.trim() })
+    .then(function (data) {
+      if (!data || data.success === false) {
+        throw new Error((data && data.error) || "提交失败");
+      }
+      return pcPollTask(data.task_id, tip, "定时关机已保存并启用");
+    })
+    .then(function (r) { if (r) pcLoadSnapshot(); })
+    .catch(function (e) {
+      tip.textContent = pcTrunc((e && e.message) || "提交失败", 140);
+      pcSetOpBusy(false);
+    });
+}
+
+function pcToggleShutdown() {
+  if (pcState.opBusy) return;
+  var enable = !(pcState.sdTask &&
+                 ((pcState.sdTask.status || "").indexOf("就绪") >= 0 ||
+                  (pcState.sdTask.status || "").indexOf("Ready") >= 0 ||
+                  (pcState.sdTask.status || "").indexOf("运行") >= 0));
+  pcSetOpBusy(true);
+  var tip = pc$("#pcSdTip");
+  tip.textContent = "已受理，等待系统授权与执行…";
+  pcApiFetch("/api/powercontrol/shutdown-toggle", { enable: enable })
+    .then(function (data) {
+      if (!data || data.success === false) {
+        throw new Error((data && data.error) || "提交失败");
+      }
+      return pcPollTask(data.task_id, tip,
+                        enable ? "定时关机任务已启用" : "定时关机任务已停用");
+    })
+    .then(function (r) { if (r) pcLoadSnapshot(); })
+    .catch(function (e) {
+      tip.textContent = pcTrunc((e && e.message) || "提交失败", 140);
+      pcSetOpBusy(false);
+    });
+}
+
+function pcRemoveShutdown() {
+  if (pcState.opBusy) return;
+  if (!window.confirm("将删除定时关机任务。继续？")) return;
+  pcSetOpBusy(true);
+  var tip = pc$("#pcSdTip");
+  tip.textContent = "已受理，等待系统授权与执行…";
+  pcApiFetch("/api/powercontrol/shutdown-remove", {})
+    .then(function (data) {
+      if (!data || data.success === false) {
+        throw new Error((data && data.error) || "提交失败");
+      }
+      return pcPollTask(data.task_id, tip, "定时关机任务已删除");
+    })
+    .then(function (r) { if (r) pcLoadSnapshot(); })
+    .catch(function (e) {
+      tip.textContent = pcTrunc((e && e.message) || "提交失败", 140);
+      pcSetOpBusy(false);
+    });
+}
+
+function pcRegisterHumanSet() {
+  var tip = pc$("#pcHumanTip");
+  if (tip) tip.textContent = "正在登记…";
+  return pcApiFetch("/api/powercontrol/report", { human_set: true })
+    .then(function (data) {
+      if (!data || data.success === false) {
+        throw new Error((data && data.error) || "登记失败");
+      }
+      if (tip) tip.textContent = "已登记（平台可见）";
+      pcLoadSnapshot();
+    })
+    .catch(function (e) {
+      if (tip) tip.textContent = pcTrunc((e && e.message) || "登记失败", 120);
+    });
 }
