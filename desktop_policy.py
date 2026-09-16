@@ -857,22 +857,55 @@ class Transport(object):
 
 
 class PlatformTransport(Transport):
-    """平台 HTTPS + X-ETP-Token（语义对齐 uplink，复制不 import）。"""
+    """平台 HTTPS + X-ETP-Token（语义对齐 uplink）。
+
+    terminal_id 解析顺序（BRG-064 定向，ADR-006）：
+    ① uplink_config.json 配置值 → ② 进程内 uplink 内存状态（单进程同源，
+    经 handle_uplink_status 公共访问器，含注册成功后的内存 tid）→
+    ③ 同源 hostname 兜底（复刻 uplink._default_terminal_id 的 WIN-<host> 规则，
+    服务端注册记录默认口径）→ 仍为空则 _request 抛 not_registered（轮询跳过
+    并如实上报，不静默失败）。"""
 
     def __init__(self, config_path=None):
         self.cfg_path = config_path or os.path.join(
             os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
             "winhelper", "uplink_config.json")
 
+    def _uplink_tid_inproc(self):
+        """进程内直取 uplink 内存 tid（winhelper 单进程内 uplink 线程与引擎同源）；
+        框架无关环境（独立单测/E2E）import 失败静默返回 None。"""
+        try:
+            import uplink
+            r = uplink.handle_uplink_status(None) or {}
+            u = r.get("uplink") or {}
+            return (str(u.get("terminal_id") or "").strip() or None)
+        except Exception:
+            return None
+
+    def _hostname_tid(self):
+        """同源兜底：复刻 uplink._default_terminal_id 规则（服务端注册默认口径）。"""
+        try:
+            import socket
+            host = socket.gethostname() or os.environ.get("COMPUTERNAME") \
+                or "UNKNOWN"
+        except Exception:
+            host = os.environ.get("COMPUTERNAME") or "UNKNOWN"
+        import re as _re
+        return "WIN-" + _re.sub(r"[^A-Za-z0-9_.\-]", "_", host).strip("_")[:40]
+
     def _cfg(self):
+        base = token = tid = ""
         try:
             with open(self.cfg_path, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
-            return (str(cfg.get("server_url") or ""),
-                    str(cfg.get("token") or ""),
-                    str(cfg.get("terminal_id") or ""))
+            base = str(cfg.get("server_url") or "")
+            token = str(cfg.get("token") or "")
+            tid = str(cfg.get("terminal_id") or "").strip()
         except (OSError, ValueError):
-            return "", "", ""
+            pass
+        if not tid:
+            tid = self._uplink_tid_inproc() or self._hostname_tid()
+        return base, token, tid
 
     def _request(self, method, path, body=None, binary_dest=None,
                  timeout=30):
@@ -995,6 +1028,8 @@ class Engine(object):
         self.poll_sec = int(poll_sec or POLL_DEFAULT_SEC)
         self.elevated_helper = elevated_helper
         self.idle_checker = idle_checker
+        self.last_poll_error = None      # 最近一次轮询失败原因（如实上报状态）
+        self.last_poll_ok_ts = None      # 最近一次轮询成功时间
         self._stop = threading.Event()
         self._threads = []
         self._idle_stop = None
@@ -1011,10 +1046,14 @@ class Engine(object):
             resp = self.transport.fetch_policy(
                 state.get("revision", -1), monitors_brief(monitors))
         except Exception as exc:
+            self.last_poll_error = str(exc)
             log("策略拉取失败（离线兜底，保持现有配置）: %r" % exc, "WARN")
             return {"ok": False, "offline": True}
         if not isinstance(resp, dict):
+            self.last_poll_error = "policy 响应非对象"
             return {"ok": False, "offline": True}
+        self.last_poll_ok_ts = time.time()
+        self.last_poll_error = None
         if resp.get("unchanged") and not sig_changed:
             return {"ok": True, "unchanged": True}
         if resp.get("unchanged"):
@@ -1250,10 +1289,16 @@ def handle_dp_status(params):
     state = eng.store.load_state()
     monitors = enum_monitors()
     results = state.get("last_results") or {}
+    base, _token, tid = eng.transport._cfg() \
+        if isinstance(eng.transport, PlatformTransport) else ("", "", None)
     return {
         "success": True,
         "engine_running": True,
         "poll_sec": eng.poll_sec,
+        "terminal_id_ready": bool(tid),
+        "terminal_id": tid,
+        "last_poll_error": eng.last_poll_error,
+        "last_poll_ok_ts": eng.last_poll_ok_ts,
         "revision": state.get("revision", -1),
         "reported_at": state.get("reported_at"),
         "session_type": session_type(),

@@ -67,6 +67,22 @@ function dpRenderStatus(data) {
   dp$("#dpRev").textContent = rev;
   dp$("#dpSession").textContent = data.session_type === "console" ? "本机会话" : "远程会话";
   dp$("#dpReported").textContent = dpFmtTime(data.reported_at);
+  var link = dp$("#dpLink");
+  if (link) {
+    if (data.terminal_id_ready === false) {
+      link.textContent = "未接入平台";
+      link.className = "nd-badge nd-warn";
+    } else if (data.last_poll_error) {
+      link.textContent = "平台连接异常（自动重试）";
+      link.className = "nd-badge nd-warn";
+    } else if (data.last_poll_ok_ts) {
+      link.textContent = "平台连接正常";
+      link.className = "nd-badge nd-ok";
+    } else {
+      link.textContent = "等待首个轮询周期";
+      link.className = "nd-badge nd-muted";
+    }
+  }
   var r = data.results || {};
   dp$("#dpResWallpaper").innerHTML = dpResultBadge(r.desktop_wallpaper);
   dp$("#dpResLock").innerHTML = dpResultBadge(r.lock_screen);
