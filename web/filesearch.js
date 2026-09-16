@@ -12,7 +12,11 @@ var fsState = {
     searching: false,
     sortCol: "",       /* 表头排序列：name/size/date_modified（服务端重查）| ext（前端排）| 空=默认 */
     sortAsc: true,     /* 正序/倒序（换列复位正序） */
-    exts: []           /* 类型预筛选中后缀（多选 OR，空=全部） */
+    exts: [],          /* 类型预筛选中后缀（多选 OR，空=全部） */
+    advExts: [],       /* 从索引统计手动选择的扩展名 */
+    dateFrom: "",     /* 修改时间起（YYYY-MM-DD） */
+    dateTo: "",       /* 修改时间止（YYYY-MM-DD） */
+    typeLoaded: false /* 是否已加载类型统计 */
 };
 
 /* 常用后缀快捷筛选（走 Everything 原生 ext: 语法拼接，多选=OR 分号多值） */
@@ -78,8 +82,12 @@ function fsSyncChips() {
 
 function fsBuildQuery(base) {
     /* 检索词 + 类型筛选拼接（Everything 原生语法：空格 AND，ext:a;b 分号 OR） */
-    if (!fsState.exts.length) { return base; }
-    return base + " ext:" + fsState.exts.join(";");
+    var merged = fsState.exts.slice();
+    for (var i = 0; i < fsState.advExts.length; i++) {
+        if (merged.indexOf(fsState.advExts[i]) < 0) { merged.push(fsState.advExts[i]); }
+    }
+    if (!merged.length) { return base; }
+    return base + " ext:" + merged.join(";");
 }
 
 function fsApiFetch(path) {
@@ -146,6 +154,72 @@ function fsInitCollapsible() {
     }
 }
 
+function fsLoadStats() {
+    /* 加载索引库中的扩展名统计，用于手动类型筛选 */
+    if (fsState.typeLoaded) { return; }
+    var panel = document.getElementById("fsTypeFilterPanel");
+    if (!panel) { return; }
+    fsApiFetch("/api/filesearch/stats").then(function (d) {
+        fsState.typeLoaded = true;
+        if (!d || d.success === false || !d.exts || !d.exts.length) {
+            panel.innerHTML = '<div class="nd-hint">暂无可选类型</div>';
+            return;
+        }
+        fsState._typeStats = d.exts;
+        fsRenderTypeFilter();
+    }).catch(function () {
+        panel.innerHTML = '<div class="nd-hint">类型加载失败</div>';
+    });
+}
+
+function fsRenderTypeFilter() {
+    var panel = document.getElementById("fsTypeFilterPanel");
+    var btn = document.getElementById("fsTypeFilterBtn");
+    if (!panel) { return; }
+    var exts = fsState._typeStats || [];
+    if (!exts.length) { panel.innerHTML = '<div class="nd-hint">暂无可选类型</div>'; return; }
+    var html = '';
+    for (var i = 0; i < exts.length; i++) {
+        var e = exts[i].ext, c = exts[i].count;
+        var on = fsState.advExts.indexOf(e) >= 0;
+        html += '<label class="nd-type-item" title="' + fsEscapeHtml(e) + '">'
+            + '<input type="checkbox" data-ext="' + fsEscapeHtml(e) + '" ' + (on ? 'checked' : '') + '>'
+            + '<span>' + fsEscapeHtml(e.toUpperCase()) + ' (' + Number(c).toLocaleString() + ')</span>'
+            + '</label>';
+    }
+    panel.innerHTML = html;
+    var checks = panel.querySelectorAll("input[type=checkbox]");
+    for (var j = 0; j < checks.length; j++) {
+        checks[j].addEventListener("change", function () {
+            fsToggleTypeFilter(this.getAttribute("data-ext"), this.checked);
+        });
+    }
+    if (btn) {
+        var n = fsState.advExts.length;
+        btn.textContent = n ? '已选 ' + n + ' 类型' : '选择类型';
+    }
+}
+
+function fsToggleTypeFilter(ext, on) {
+    var idx = fsState.advExts.indexOf(ext);
+    if (on) {
+        if (idx < 0) { fsState.advExts.push(ext); }
+    } else {
+        if (idx >= 0) { fsState.advExts.splice(idx, 1); }
+    }
+    var btn = document.getElementById("fsTypeFilterBtn");
+    if (btn) {
+        var n = fsState.advExts.length;
+        btn.textContent = n ? '已选 ' + n + ' 类型' : '选择类型';
+    }
+}
+
+function fsFmtInputDate(d) {
+    if (!d) { return ""; }
+    var s = String(d).slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
+}
+
 function fsFmtSize(n) {
     if (n === null || n === undefined) { return "--"; }
     if (n < 1024) { return n + " B"; }
@@ -188,8 +262,11 @@ function fsDoSearch(q) {
     if (body) { body.innerHTML = '<div class="nd-empty">检索中…</div>'; }
     var url = "/api/filesearch/query?q=" + encodeURIComponent(fsBuildQuery(q)) + "&count=200";
     if (fsState.sortCol === "name" || fsState.sortCol === "size" || fsState.sortCol === "date_modified") {
-        url += "&sort=" + fsState.sortCol + "&ascending=" + (fsState.sortAsc ? "1" : "0");
+        url += "&sort=" + (fsState.sortCol === "date_modified" ? "mtime" : fsState.sortCol)
+            + "&ascending=" + (fsState.sortAsc ? "1" : "0");
     }
+    if (fsState.dateFrom) { url += "&date_from=" + encodeURIComponent(fsState.dateFrom); }
+    if (fsState.dateTo) { url += "&date_to=" + encodeURIComponent(fsState.dateTo); }
     fsApiFetch(url)
         .then(function (d) {
             fsState.searching = false;
@@ -219,6 +296,138 @@ function fsSortBy(col) {
 function fsExtOf(name) {
     var i = String(name || "").lastIndexOf(".");
     return i > 0 ? String(name).slice(i + 1).toLowerCase() : "";
+}
+
+/* ---- 文件资源管理器风格：类型图标（内联 SVG 零外部资源）+ 友好类型名 ---- */
+var FS_ICON_COLORS = {
+    folder: "#f0b429", doc: "#2b7cd3", xls: "#1e7145", ppt: "#d24726",
+    pdf: "#e53935", image: "#9c5bd8", video: "#3f51b5", audio: "#e91e63",
+    archive: "#8d6e63", exe: "#607d8b", code: "#00acc1", text: "#78909c",
+    mail: "#5c6bc0", key: "#a1887f", unknown: "#9e9e9e"
+};
+
+function fsFileIconSvg(cat) {
+    /* 类别 → 16px 内联 SVG（类别着色 + data 类供 E2E 断言），零外部资源零依赖 */
+    var c = FS_ICON_COLORS[cat] || FS_ICON_COLORS.unknown;
+    var cls = "fs-ic fs-ic-" + cat;
+    var body;
+    if (cat === "folder") {
+        body = '<path d="M1.5 3.5h4.2l1.3 1.6h7.5v7.4a1 1 0 0 1-1 1H1.5z" fill="' + c + '"/>';
+    } else if (cat === "xls") {
+        body = '<path d="M2 1.5h8.2L13.6 5v9.5H2z" fill="' + c + '" opacity=".16"/>'
+            + '<path d="M2 1.5h8.2L13.6 5v9.5H2z" fill="none" stroke="' + c + '" stroke-width="1.2"/>'
+            + '<path d="M4.4 6.4h6.8M4.4 8.7h6.8M4.4 11h6.8M6.2 6.4v6.2M9.4 6.4v6.2" stroke="' + c + '" stroke-width="1"/>';
+    } else if (cat === "video") {
+        body = '<rect x="1.8" y="3" width="12.4" height="10" rx="1.4" fill="none" stroke="' + c + '" stroke-width="1.3"/>'
+            + '<path d="M6.8 5.8l4.2 2.2-4.2 2.2z" fill="' + c + '"/>';
+    } else if (cat === "audio") {
+        body = '<path d="M6.2 12.2V4l6-1.2v8" fill="none" stroke="' + c + '" stroke-width="1.3"/>'
+            + '<circle cx="4.7" cy="12.3" r="1.6" fill="' + c + '"/><circle cx="10.7" cy="10.9" r="1.6" fill="' + c + '"/>';
+    } else if (cat === "archive") {
+        body = '<rect x="2.4" y="2.2" width="11.2" height="11.6" rx="1.2" fill="' + c + '" opacity=".18"/>'
+            + '<rect x="2.4" y="2.2" width="11.2" height="11.6" rx="1.2" fill="none" stroke="' + c + '" stroke-width="1.2"/>'
+            + '<path d="M8 2.4v3.2M8 6.4v1.6M8 9v1.6" stroke="' + c + '" stroke-width="1.2" stroke-dasharray="1.6 1"/>';
+    } else if (cat === "exe") {
+        body = '<circle cx="8" cy="8" r="5.6" fill="none" stroke="' + c + '" stroke-width="1.3"/>'
+            + '<circle cx="8" cy="8" r="1.8" fill="' + c + '"/>'
+            + '<path d="M8 2.4v2M8 11.6v2M2.4 8h2M11.6 8h2" stroke="' + c + '" stroke-width="1.3"/>';
+    } else if (cat === "image") {
+        body = '<rect x="2" y="2.6" width="12" height="10.8" rx="1.2" fill="none" stroke="' + c + '" stroke-width="1.2"/>'
+            + '<circle cx="5.6" cy="6.2" r="1.2" fill="' + c + '"/>'
+            + '<path d="M3.4 12.4l3.4-3.6 2.2 2.2 2-2 3.4 3.4" fill="none" stroke="' + c + '" stroke-width="1.2"/>';
+    } else if (cat === "code") {
+        body = '<path d="M5.6 4.6L2.2 8l3.4 3.4M10.4 4.6L13.8 8l-3.4 3.4M9 2.8l-2 10.4" fill="none" stroke="'
+            + c + '" stroke-width="1.3" stroke-linecap="round"/>';
+    } else if (cat === "mail") {
+        body = '<rect x="1.8" y="3.4" width="12.4" height="9.2" rx="1.2" fill="none" stroke="' + c + '" stroke-width="1.2"/>'
+            + '<path d="M2.2 4.2L8 9l5.8-4.8" fill="none" stroke="' + c + '" stroke-width="1.2"/>';
+    } else if (cat === "key") {
+        body = '<circle cx="6" cy="6" r="3.2" fill="none" stroke="' + c + '" stroke-width="1.4"/>'
+            + '<path d="M8.4 8.4l5 5M11 11l1.6-1.6" stroke="' + c + '" stroke-width="1.4"/>';
+    } else {
+        /* 文档底形：doc/ppt/pdf/text/unknown 通用 */
+        body = '<path d="M3.4 1.6h6L13 5.2v9.2H3.4z" fill="' + c + '" opacity=".16"/>'
+            + '<path d="M3.4 1.6h6L13 5.2v9.2H3.4z" fill="none" stroke="' + c + '" stroke-width="1.2"/>'
+            + '<path d="M9.4 1.6v3.6H13" fill="none" stroke="' + c + '" stroke-width="1.2"/>';
+        if (cat === "doc" || cat === "text") {
+            body += '<path d="M5.4 8.4h5.2M5.4 10.6h5.2" stroke="' + c + '" stroke-width="1"/>';
+        }
+    }
+    return '<svg class="' + cls + '" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">' + body + "</svg>";
+}
+
+var FS_TYPE_NAMES = {
+    folder: "文件夹",
+    image: "图片文件",
+    pdf: "PDF 文档",
+    doc: "文档",
+    ppt: "演示文稿",
+    xls: "工作表",
+    archive: "压缩文件",
+    exe: "可执行文件",
+    code: "代码文件",
+    text: "文本文件",
+    audio: "音频文件",
+    video: "视频",
+    mail: "邮件",
+    key: "密钥文件",
+    unknown: "文件"
+};
+
+var FS_EXT_CATEGORY = {
+    /* images */
+    png: "image", jpg: "image", jpeg: "image", gif: "image", bmp: "image", webp: "image", svg: "image", ico: "image", tiff: "image", tif: "image",
+    /* pdf */
+    pdf: "pdf",
+    /* documents */
+    doc: "doc", docx: "doc", odt: "doc", rtf: "doc", wps: "doc",
+    /* presentations */
+    ppt: "ppt", pptx: "ppt", odp: "ppt", pps: "ppt", ppsx: "ppt",
+    /* spreadsheets */
+    xls: "xls", xlsx: "xls", csv: "xls", ods: "xls", xlsm: "xls",
+    /* archives */
+    zip: "archive", rar: "archive", "7z": "archive", tar: "archive", gz: "archive", bz2: "archive", xz: "archive", cab: "archive", iso: "archive",
+    /* executables */
+    exe: "exe", msi: "exe", dll: "exe", sys: "exe",
+    /* code */
+    js: "code", py: "code", html: "code", htm: "code", css: "code", java: "code", cpp: "code", c: "code", h: "code", hpp: "code", cs: "code", go: "code", rs: "code", php: "code", swift: "code", kt: "code", sql: "code", json: "code", xml: "code", yaml: "code", yml: "code", ts: "code", jsx: "code", tsx: "code", vue: "code", scss: "code", sass: "code", less: "code",
+    /* text */
+    txt: "text", md: "text", log: "text", ini: "text", conf: "text", cfg: "text", env: "text", properties: "text", nfo: "text",
+    /* audio */
+    mp3: "audio", wav: "audio", flac: "audio", ogg: "audio", aac: "audio", m4a: "audio", wma: "audio", ape: "audio",
+    /* video */
+    mp4: "video", avi: "video", mkv: "video", mov: "video", wmv: "video", flv: "video", webm: "video", mpeg: "video", mpg: "video", ts: "video",
+    /* mail */
+    eml: "mail", msg: "mail", pst: "mail", ost: "mail",
+    /* license/keys */
+    lic: "key", key: "key", license: "key"
+};
+
+function fsFileCategory(name, isDir) {
+    if (isDir) { return "folder"; }
+    var ext = fsExtOf(name);
+    return FS_EXT_CATEGORY[ext] || "unknown";
+}
+
+function fsFileIcon(name, isDir) {
+    return fsFileIconSvg(fsFileCategory(name, isDir));
+}
+
+function fsFileTypeName(name, isDir) {
+    /* 资源管理器式友好类型名：目录一律「文件夹」；带扩展名类别=「EXT + 类别名」；
+       压缩/可执行/文本/PDF/代码等固定名；未知扩展名「XXX 文件」兜底，无扩展名「文件」。 */
+    var cat = fsFileCategory(name, isDir);
+    var ext = fsExtOf(name);
+    if (cat === "folder") { return "文件夹"; }
+    if (cat === "unknown") {
+        return ext ? ext.toUpperCase() + " " + FS_TYPE_NAMES.unknown : "文件";
+    }
+    var base = FS_TYPE_NAMES[cat] || FS_TYPE_NAMES.unknown;
+    if (cat === "image" || cat === "video" || cat === "audio"
+            || cat === "doc" || cat === "ppt" || cat === "xls") {
+        return ext ? ext.toUpperCase() + " " + base : base;
+    }
+    return base;
 }
 
 function fsRenderError(d) {
@@ -262,13 +471,17 @@ function fsRenderResults(d) {
     var rows = "";
     for (var i = 0; i < shown.length; i++) {
         var r = shown[i];
+        var isDir = !!r.is_dir;
         var full = (r.path ? r.path + "\\" : "") + (r.name || "");
-        rows += '<tr oncontextmenu="fsRowMenu(event,this)">'
-            + '<td>' + fsEscapeHtml(r.name || "--") + '</td>'
-            + '<td>' + fsEscapeHtml(fsExtOf(r.name) || "--") + '</td>'
+        var typeName = fsFileTypeName(r.name, isDir);
+        var icon = fsFileIcon(r.name, isDir);
+        rows += '<tr class="' + (isDir ? "fs-dir" : "fs-file") + '" oncontextmenu="fsRowMenu(event,this)">'
+            + '<td class="fs-name-cell"><span class="fs-icon">' + icon + '</span><span class="fs-name" title="' + fsEscapeHtml(r.name) + '">'
+            + fsEscapeHtml(r.name || "--") + '</span></td>'
+            + '<td class="fs-type-cell" title="' + fsEscapeHtml(typeName) + '">' + fsEscapeHtml(typeName) + '</td>'
             + '<td title="' + fsEscapeHtml(full) + '" data-path="' + fsEscapeHtml(r.path || "") + '">'
             + fsEscapeHtml(r.path || "--") + '</td>'
-            + '<td class="nd-num">' + fsEscapeHtml(fsFmtSize(r.size)) + '</td>'
+            + '<td class="nd-num">' + (isDir ? "--" : fsEscapeHtml(fsFmtSize(r.size))) + '</td>'
             + '<td class="nd-num">' + fsEscapeHtml(fsFmtDate(r.date_modified)) + '</td>'
             + '<td><button class="nd-btn" onclick="fsOpenLocation(this)">打开位置</button></td>'
             + '</tr>';
@@ -286,15 +499,16 @@ function fsRenderResults(d) {
 }
 
 function fsOpenLocation(btn) {
-    /* 行内打开位置：取同行路径单元格（data-path 纯目录）+ 名称拼接完整路径 */
+    /* 行内打开位置：取同行路径单元格（data-path 纯目录）+ fs-name 拼接完整路径 */
     if (!btn) { return; }
     var tr = btn.closest("tr");
     if (!tr) { return; }
     var tds = tr.querySelectorAll("td");
     var path = tds[2] ? (tds[2].getAttribute("data-path") || tds[2].textContent) : "";
-    var name = tds[0] ? tds[0].textContent : "";
+    var nameCell = tds[0] ? tds[0].querySelector(".fs-name") : null;
+    var name = nameCell ? nameCell.textContent : (tds[0] ? tds[0].textContent : "");
     if (!path || !name) { return; }
-    fsOpenPath(path.replace(/\\+$/, "") + "\\" + name);
+    fsOpenPath(path.replace(/\\+$/, "") + "\\" + name.trim());
 }
 
 function fsOpenPath(full) {
@@ -310,10 +524,11 @@ function fsOpenPath(full) {
 function fsRowMenu(e, tr) {
     if (!e || !tr) { return; }
     var tds = tr.querySelectorAll("td");
-    var name = tds[0] ? tds[0].textContent : "";
+    var nameCell = tds[0] ? tds[0].querySelector(".fs-name") : null;
+    var name = nameCell ? nameCell.textContent : (tds[0] ? tds[0].textContent : "");
     var path = tds[2] ? (tds[2].getAttribute("data-path") || tds[2].textContent) : "";
     if (!name) { return; }
-    fsShowCtxMenu(e, name, path);
+    fsShowCtxMenu(e, name.trim(), path);
 }
 
 function fsShowCtxMenu(e, name, path) {
@@ -375,6 +590,7 @@ function fsLoadStatus() {
             return;
         }
         var ready = d.db_exists && d.file_count > 0;
+        var partial = d.partial_volumes || [];
         var bits = [];
         bits.push(ready ? fsBadge("索引就绪", "nd-ok") : fsBadge("索引未就绪", "nd-warn"));
         bits.push('<span class="nd-hint">'
@@ -384,6 +600,10 @@ function fsLoadStatus() {
                   + (d.volumes && d.volumes.length ? " · 卷 " + d.volumes.join(" / ") : "")
                 : "索引器首次运行需要数分钟，期间检索暂不可用；如长时间未就绪请联系管理员检查索引器状态")
             + "</span>");
+        if (partial.length) {
+            bits.push('<div class="nd-hint">部分卷索引未完成（' + fsEscapeHtml(partial.join(" / "))
+                + '），这些卷的文件暂不可检索，索引器将在下次运行时继续补全</div>');
+        }
         el.innerHTML = bits.join(" ");
     }).catch(function (e) {
         window.__fsStatusErr = "catch: " + String(e).slice(0, 160);
@@ -400,12 +620,21 @@ function initFileSearchTab() {
     fsState.inited = true;
     fsInitCollapsible();
     fsLoadStatus();
+    fsLoadStats();
     document.addEventListener("click", fsHideCtxMenu);
     var input = document.getElementById("fsQuery");
     if (input) {
         input.addEventListener("keydown", function (e) {
             if (e.key === "Enter") { fsStartSearch(); }
         });
+    }
+    var df = document.getElementById("fsDateFrom");
+    var dt = document.getElementById("fsDateTo");
+    if (df) {
+        df.addEventListener("change", function () { fsState.dateFrom = fsFmtInputDate(this.value); });
+    }
+    if (dt) {
+        dt.addEventListener("change", function () { fsState.dateTo = fsFmtInputDate(this.value); });
     }
 }
 
