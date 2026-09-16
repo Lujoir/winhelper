@@ -59,7 +59,9 @@ def set_log_dir(path):
 
 def log(msg, level="INFO"):
     with _log_lock:
-        d = _log_dir or data_dir()
+        # 默认目录 = data_dir()/logs（CONTRACT §4，与 handle_dp_logs 读取端一致；
+        # BRG-063 修复：主应用运行态未调 set_log_dir 时不再写到 data_dir 根）
+        d = _log_dir or os.path.join(data_dir(), "logs")
         os.makedirs(d, exist_ok=True)
         path = os.path.join(d, "dp_%s.log" % time.strftime("%Y%m%d"))
         try:
@@ -1312,7 +1314,7 @@ def handle_dp_task_status(params):
             return {"success": False, "error": "任务不存在"}
         out = {"success": True, "status": task["status"],
                "result": task["result"]}
-    # 任务清理：done/error 且已取走结果 60s 后移除
+    # 任务清理：done/error 且发起超 600s（10 分钟）后移除（BRG-062：注释与代码对齐）
     with _DP_TASK_LOCK:
         stale = [k for k, v in _DP_TASKS.items()
                  if v["status"] in ("done", "error")
