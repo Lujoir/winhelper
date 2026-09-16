@@ -120,6 +120,8 @@ function switchTab(tab) {
     /* AI 诊断卡宿主在主页（2026-09-10 自网络排障移入）：home 激活同样触发
        netdoctor 初始化（幂等）与中心连接状态刷新 */
     if ((tab === "netdoctor" || tab === "home") && typeof initNetDoctorTab === "function") initNetDoctorTab();
+    if (tab === "filesearch" && typeof initFileSearchTab === "function") initFileSearchTab();
+    if (tab === "desktoppolicy" && typeof initDesktopPolicyTab === "function") initDesktopPolicyTab();
 }
 
 /* 旧 仪表盘/日志查看/故障分析/知识库 四标签的专属逻辑已随菜单合并移除

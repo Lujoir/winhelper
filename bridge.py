@@ -51,6 +51,10 @@ from net_service import (
     handle_net_task_status, handle_net_task_cancel, handle_net_ai_diagnose,
     handle_net_ai_personal_test,
 )
+from desktop_policy import (
+    handle_dp_status, handle_dp_policy_now, handle_dp_apply_now,
+    handle_dp_task_status, handle_dp_logs,
+)
 
 # 路由表：前端请求路径 -> 业务处理器
 ROUTES = {
@@ -123,6 +127,12 @@ ROUTES = {
     "/api/netdoctor/task-cancel": handle_net_task_cancel,
     "/api/netdoctor/ai-diagnose": handle_net_ai_diagnose,
     "/api/netdoctor/ai-personal-test": handle_net_ai_personal_test,
+    # 锁屏及壁纸管理（desktop-policy）
+    "/api/desktoppolicy/status": handle_dp_status,
+    "/api/desktoppolicy/policy-now": handle_dp_policy_now,
+    "/api/desktoppolicy/apply-now": handle_dp_apply_now,
+    "/api/desktoppolicy/task-status": handle_dp_task_status,
+    "/api/desktoppolicy/logs": handle_dp_logs,
 }
 
 

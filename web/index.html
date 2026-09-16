@@ -42,6 +42,10 @@
                 <svg viewBox="0 0 24 24" width="16" height="16"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill="currentColor"/></svg>
                 文件检索
             </button>
+            <button class="nav-tab" data-tab="desktoppolicy" onclick="switchTab('desktoppolicy')">
+                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 7a5 5 0 0 1 5 5h-2a3 3 0 0 0-3-3V7zm0-4a9 9 0 0 1 9 9h-2a7 7 0 0 0-7-7V3zm-1.5 11.5L7 11l-1.5 1.5 5 5L19 9l-1.5-1.5-7 7z" fill="currentColor" opacity=".9"/></svg>
+                锁屏及壁纸管理
+            </button>
         </div>
         <div class="nav-actions">
             <span class="mode-badge" id="modeBadge" title="终端类型：Windows（点击查看本机基础信息）" onclick="liShowSystemPanel()">Windows</span>
@@ -1151,6 +1155,60 @@
                 </div>
             </div>
         </div>
+
+        <!-- ==================== 锁屏及壁纸管理 ==================== -->
+        <div id="tab-desktoppolicy" class="tab-content">
+            <div class="page-header">
+                <h2>锁屏及壁纸管理</h2>
+                <p class="page-subtitle">统一管理这台电脑的桌面壁纸、锁屏界面、电源方案与空闲锁屏策略</p>
+            </div>
+
+            <div class="nd-statusbar">
+                <b>管控状态</b>
+                <span class="nd-hint">策略版本：<span id="dpRev">—</span></span>
+                <span class="nd-hint">最近应用：<span id="dpReported">—</span></span>
+                <span class="nd-hint">会话：<span id="dpSession">—</span></span>
+                <button class="nd-btn primary" id="dpBtnPoll">立即获取最新策略</button>
+            </div>
+
+            <div class="section-card nd-styled collapsed" data-collapse>
+                <div class="card-header">
+                    <h3>策略执行状态</h3>
+                    <div class="disk-toolbar">
+                        <button class="nd-btn" onclick="dpLoadStatus()">刷新</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="nd-summary">四类策略在本机各自的最新执行结果。</div>
+                    <div class="hm-row"><span class="hm-row-label">桌面壁纸</span><span class="hm-row-value" id="dpResWallpaper">—</span></div>
+                    <div class="hm-row"><span class="hm-row-label">锁屏界面</span><span class="hm-row-value" id="dpResLock">—</span></div>
+                    <div class="hm-row"><span class="hm-row-label">电源方案</span><span class="hm-row-value" id="dpResPower">—</span></div>
+                    <div class="hm-row"><span class="hm-row-label">空闲自动锁屏</span><span class="hm-row-value" id="dpResIdle">—</span></div>
+                    <div id="dpNotes" style="margin-top:8px"></div>
+                    <div class="nd-hint" id="dpStatusErr" style="margin-top:4px"></div>
+                </div>
+            </div>
+
+            <div class="section-card nd-styled collapsed" data-collapse>
+                <div class="card-header"><h3>显示器布局</h3></div>
+                <div class="card-body">
+                    <div class="nd-summary">壁纸将按每个屏幕的分辨率与位置分别适配，内容不变形、不留黑边。</div>
+                    <div id="dpMonBody"><div class="nd-empty">正在读取显示器信息…</div></div>
+                </div>
+            </div>
+
+            <div class="section-card nd-styled collapsed" data-collapse>
+                <div class="card-header"><h3>手动操作</h3></div>
+                <div class="card-body">
+                    <div class="nd-summary">联网获取并应用最新策略；断网时可将已保存的策略重新应用到本机。</div>
+                    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center">
+                        <button class="nd-btn" id="dpBtnReapply">重新应用当前策略</button>
+                        <button class="nd-btn" id="dpBtnLogs">打开执行日志位置</button>
+                        <span class="nd-hint" id="dpTaskTip"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
     </main>
     <script src="app.js"></script>
     <script src="filesearch.js"></script>
@@ -1160,6 +1218,7 @@
     <script src="appdata.js"></script>
     <script src="perf.js"></script>
     <script src="netdoctor.js"></script>
+    <script src="desktoppolicy.js"></script>
     <script>
     /* 首帧资源丢失自愈（pywebview 内置 HTTP 服务首帧并发竞态，disk-cleaner ADR-016）：
        任一模块 init 函数缺失说明其 js 整文件未加载（加载层丢请求，非代码缺陷），
