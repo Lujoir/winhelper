@@ -1825,18 +1825,19 @@
 
 **附：文档-实际偏差清单汇总（2026-09-17 增设，供厂商一次性书面确认）**
 
-> 背板：产出自 2026-09-09 首次接入（37 页说明解析+生产实测）与 2026-09-17 1547 台 term/get 实测（983e7bc）；与《新版本NAD对外接口说明》20251231 版逐条对照。spanbanip 接真立项与「IP 在线日志」规格索取时，本清单随附请厂商确认。
+> 背板：产出自 2026-09-09 首次接入（37 页说明解析+生产实测）与 2026-09-17 1547 台 term/get 实测（983e7bc）；与《新版本NAD对外接口说明》20251231 版逐条对照。编号 **DEV-001~008**，后续新增偏差续号；规格索取函直接整节引用。
+> **状态约定**：每条初始【待厂商确认】；厂商书面确认（邮件/工单/对接记录，来源落备注）后转【已确认】；确认前台账语义仍以实测为准。
 
 - **形态偏差（文档暗示形态 ≠ 实际，消费者必踩）**：
-  1. `list` 实际为 dict 形态（键=序号字符串）而非文档数组——`_norm_macs` 归一（nad_client.py:94-95）
-  2. `macs` 条目实际为对象 `{"0":{mac,ips,macports}}` 且 `macports` 可为 null（nad_client.py:88-92）
-  3. `macports` 实际为**数字键 dict**（`{"0":{nasoid,nasif,nasname,manip}}`，与 ips 同构）而非文档暗示 list——漏归一致接入位置恒空，983e7bc 根修（nad_client.py:89-108）
-  4. 单页上限实际 **1000** 而非文档 limit≤10000——实测 1588 台需翻页（`NAD_PAGE_LIMIT=1000`+`NAD_MAX_PAGES=50` 防御，nad_client.py:28-29）
+  - **DEV-001**【待厂商确认】`list` 实际为 dict 形态（键=序号字符串）而非文档数组——`_norm_macs` 归一（nad_client.py:94-95）
+  - **DEV-002**【待厂商确认】`macs` 条目实际为对象 `{"0":{mac,ips,macports}}` 且 `macports` 可为 null（nad_client.py:88-92）
+  - **DEV-003**【待厂商确认】`macports` 实际为**数字键 dict**（`{"0":{nasoid,nasif,nasname,manip}}`，与 ips 同构）而非文档暗示 list——漏归一致接入位置恒空，983e7bc 根修（nad_client.py:89-108）
+  - **DEV-004**【待厂商确认】单页上限实际 **1000** 而非文档 limit≤10000——实测 1588 台需翻页（`NAD_PAGE_LIMIT=1000`+`NAD_MAX_PAGES=50` 防御，nad_client.py:28-29）
 - **语义缺口（缺文档/待厂商确认）**：
-  5. `reginfo.stat` 完整枚举缺失——仅 stat=2「已注册」单点实证
-  6. macports→IP 归属映射在 term/get 中不存在
-  7. per-port 在线态在 term/get 中不存在（画方 UI 在线点应为其它接口维度，需指认端点）
-  8. 文档未载但实测存在字段：`owner`={name,uuid:工号}、`onlts`（最后在线 epoch）、`expired`/`first`/`listinfo.stat`
+  - **DEV-005**【待厂商确认】`reginfo.stat` 完整枚举缺失——仅 stat=2「已注册」单点实证
+  - **DEV-006**【待厂商确认】macports→IP 归属映射在 term/get 中不存在
+  - **DEV-007**【待厂商确认】per-port 在线态在 term/get 中不存在（画方 UI 在线点应为其它接口维度，需厂商指认端点）
+  - **DEV-008**【待厂商确认】文档未载但实测存在字段：`owner`={name,uuid:工号}、`onlts`（最后在线 epoch）、`expired`/`first`/`listinfo.stat`
 
 #### EXT-007 火绒终端安全管理系统 API v1（终端安全维度，调研阶段）
 - **用途**：EyeTerm「终端安全」维度数据源（方案场景：S1 终端安全状态聚合 / S2 高危漏洞风险 KPI / S3 病毒事件看板 / S4 分组-设备映射同步 / S5 软件资产统计；S6 远程处置为**破坏性**接口，EyeTerm 侧默认硬门禁禁用 `enable_tasks=False`，开启须另行审批立项）
