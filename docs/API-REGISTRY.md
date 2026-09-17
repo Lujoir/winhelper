@@ -1124,8 +1124,8 @@
 - **与 SRV-086 形状区分**：本条顶层扁平（键恒在）；SRV-086 嵌套 `{ok,manifest:{...}}`（无 current 时 manifest=null）——两条端点同数据源不同形状，混用形状会导致消费侧解析失败
 - **调用方式**：`curl "http://<server>/api/v1/client/update-manifest?version=4.0.0" -H "X-ETP-Token: <token>"`
 - **代码出处**：api.py 双路径分支(:303-323，扁平构造 :313-322) + `_scope_allowed` 白名单(:216-222)；消费方 power-control updater.check_async（TBC-002 对齐）
-- **状态**：在用
-- **登记记录**：2026-09-17，代码实证（server-platform-dev 实施，commit 327a69b/ADR-042 follow-up；冒烟 33/33 含 +3 扁平两态/401，e2e 139/139 零回归，api-registrar-dev 复核登记）
+- **状态**：在用（**已部署生产**：327a69b 随 2026-09-17 晚部署批次上线，probe 401 路由生效——power-control-dev 代跑 deploy 确认；下游生产 current=4.1.0/release id=1，同版本语义不触发更新，发布 4.1.1 起客户端全流程〔心跳 latest_version → 提示条 → apply〕生效）
+- **登记记录**：2026-09-17，代码实证（server-platform-dev 实施，commit 327a69b/ADR-042 follow-up；冒烟 33/33 含 +3 扁平两态/401，e2e 139/139 零回归，api-registrar-dev 复核登记）> 更新 2026-09-17（晚）：补部署状态注记（power-control-dev 显式知会，api-registrar-dev 对账确认）
 
 ### 1.15 第三方数据源（thirdparty，ADR-043，2026-09-17 新增）
 
@@ -1776,8 +1776,8 @@
 - **用途**：三大改造③——更新引擎状态透出（前端提示条 30s 轮询，web/appui.js ub 前缀）
 - **响应**：`{"success":true,"update":{"status":"idle|downloading|ready|failed","version","error"}}`
 - **代码出处**：appctl.py `update_status` → updater.py 状态机（ADR-012）；bridge.py ROUTES
-- **状态**：在用（清单端点 TBC-002 等 server-platform 联调）
-- **登记记录**：2026-09-17，代码实证（同批）
+- **状态**：在用（清单端点 TBC-002 已消项：server-platform 327a69b `/api/v1/client/update-manifest` 扁平形状已部署生产并实测，updater.fetch_manifest 已对齐）
+- **登记记录**：2026-09-17，代码实证（同批）> 更新 2026-09-17（晚）：TBC-002 消项（发布链代跑 + 扁平形状四态单测 26/26）> 更新 2026-09-17（晚 2）：power-control-dev 补发显式知会（按常设约定），api-registrar-dev 对账确认直改注记准确——消项依据：server-platform 327a69b update-manifest 已部署生产（deploy 代跑 + probe 401 路由生效）+ updater.fetch_manifest 形状对齐（扁平/相对路径拼接/null·401 静默）
 
 #### BRG-069 立即更新 `GET|POST /api/app/update-apply`
 - **用途**：拉起 updater 子进程（--et-updater：等主进程退出 → /SILENT 安装 → 安装器 postinstall 自启新客户端）→ bridge `_request_exit()` 主进程退出
