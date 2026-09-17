@@ -41,10 +41,10 @@ import urllib.request
 # GUI（无控制台）程序中调用控制台子进程（ping/route/iperf3）必须隐藏窗口（ADR-013）
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-CLIENT_VERSION = "4.1.2"
+CLIENT_VERSION = "4.1.3"
 TERMINAL_TYPE = "windows"
 DEFAULT_HEARTBEAT_INTERVAL = 30          # 秒（ADR 可调）
-_BACKOFF_CAP = 20                        # 失败退避倍数上限（30s*20=600s）
+_BACKOFF_CAP = 2                         # 失败退避倍数上限（30s*2=60s；4.1.3 main 批准 ADR-004 变更：联调期快速重连）
 _RESULT_RETRIES = 3                      # 命令回执重试（409 终态不重试）
 
 
@@ -131,9 +131,33 @@ _stop = threading.Event()
 _wakeup = threading.Event()   # 手动注册/配置变更提前唤醒心跳拍
 
 
+def _ulog(msg):
+    """uplink 状态迁移日志（4.1.3 缺陷 F）：写 power-control 同目录 ul_*.log，
+    供 pc_diag 取数（此前 uplink 零日志=排障黑盒）。失败静默不影响心跳。"""
+    try:
+        d = os.path.join(_data_dir(), "power-control", "logs")
+        os.makedirs(d, exist_ok=True)
+        p = os.path.join(d, time.strftime("ul_%Y%m%d.log"))
+        with open(p, "a", encoding="utf-8") as f:
+            f.write("%s %s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), msg))
+    except OSError:
+        pass
+
+
+_UL_KEYS = ("state", "last_error", "registered", "enabled", "started",
+            "terminal_id")   # 噪声键（last_hb_ts/last_ok）不入日志
+
+
 def _set_state(**kw):
+    changed = []
     with _lock:
-        _state.update(kw)
+        for k, v in kw.items():
+            old = _state.get(k)
+            _state[k] = v
+            if k in _UL_KEYS and old != v:
+                changed.append("%s: %s -> %s" % (k, old, v))
+    if changed:
+        _ulog("state " + "; ".join(changed))
 
 
 # ============================================================
@@ -728,6 +752,16 @@ def _cmd_pc_diag(args):
     try:
         data = collect_diag()
         data["client_version"] = CLIENT_VERSION
+        with _lock:
+            data["uplink"] = {
+                "state": _state.get("state"),
+                "registered": _state.get("registered"),
+                "last_error": _state.get("last_error"),
+                "last_hb_ts": _state.get("last_hb_ts"),
+                "heartbeat_interval": int(
+                    load_config().get("heartbeat_interval")
+                    or DEFAULT_HEARTBEAT_INTERVAL),
+            }
         return True, data
     except Exception as e:
         return False, {"error": str(e)[:200]}
@@ -809,7 +843,18 @@ def _heartbeat_once():
     tid = _terminal_id(cfg)
     code, resp = _post("/api/v1/terminals/%s/heartbeat" % tid, {})
     if code == 401:
+        # 4.1.3 缺陷 B：401=token 失效或终端已被服务端删除 → registered 复位，
+        # 下轮循环重走 register（原实现 registered 永不复位 → 心跳 401 卡死）
+        with _lock:
+            _state["registered"] = False
         _set_state(state="error", last_ok=False, last_error="auth_failed_check_token")
+        return False, resp
+    if code == 404:
+        # 缺陷 B 同源：终端不存在（服务端丢库）→ 重注册
+        with _lock:
+            _state["registered"] = False
+        _set_state(state="error", last_ok=False,
+                   last_error="heartbeat_404_terminal_gone")
         return False, resp
     if not (200 <= code < 300):
         _set_state(state="error", last_ok=False,
@@ -877,10 +922,22 @@ def _loop():
             except Exception:
                 pass
             # 自动更新（三大改造③，ADR-012）：心跳响应 latest_version →
-            # 版本比对 + 清单下载（后台线程；状态经 /api/app/update-status 出提示条）
+            # 版本比对 + 清单下载（后台线程；状态经 /api/app/update-status 出提示条）。
+            # 4.1.3 候选修复（缺陷 C）：下载失败终态（failed）后原实现不再重触发
+            # ——现改为 failed 状态即重新武装（5 分钟节流防风暴）。
             try:
                 lv = hb_resp.get("latest_version")
-                if lv and lv != _state.get("_last_seen_version"):
+                retry_needed = False
+                try:
+                    import updater as _upd
+                    if _upd.load_state().get("status") == "failed":
+                        retry_needed = (time.time() -
+                                        float(_upd.load_state().get("ts") or 0)
+                                        ) >= 300
+                except Exception:
+                    pass
+                if lv and (retry_needed or
+                           lv != _state.get("_last_seen_version")):
                     with _lock:
                         _state["_last_seen_version"] = str(lv)
                     import updater as _upd
@@ -957,6 +1014,7 @@ def handle_uplink_status(params=None):
             "last_hb_ts": st.get("last_hb_ts") or 0,
             "last_error": st.get("last_error"),
             "has_token": bool(cfg.get("token")),
+            "version": CLIENT_VERSION,
             "executed_count": len(st.get("executed") or ()),
             "iperf3_available": _iperf3_available(),
             "heartbeat_interval": int(cfg.get("heartbeat_interval") or DEFAULT_HEARTBEAT_INTERVAL),

@@ -204,9 +204,35 @@ def collect_machine(runner=None, timeout=30):
 # ======================================================================
 # ② BIOS 企业线探测（root\wmi Lenovo_BiosSetting）与解析
 # ======================================================================
+def _ps_bios_write_iface_probe():
+    return ("$old = Get-CimClass -Namespace root/wmi -ClassName "
+            "Lenovo_SetBiosSetting -ErrorAction SilentlyContinue; "
+            "if ($old) { Write-Output 'PCIF=old' } else { "
+            "$inst = Get-CimInstance -Namespace root/wmi -ClassName "
+            "Lenovo_BiosSetting -ErrorAction SilentlyContinue | "
+            "Select-Object -First 1; "
+            "if ($inst -and $inst.CimClass -and "
+            "$inst.CimClass.CimClassMethods['SetBiosSetting']) "
+            "{ Write-Output 'PCIF=new' } else { Write-Output 'PCIF=none' } }")
+
+
+def probe_write_iface(runner=None, timeout=25):
+    """写接口形态只读探测（ADR-006 附注③，不做任何 Set 调用）：
+    old=老接口 Lenovo_SetBiosSetting 类存在；
+    new=新一代接口（Lenovo_BiosSetting 实例自带 SetBiosSetting 方法）；
+    none=两者皆无（如实上报不可写）；unknown=探测失败。"""
+    rc, out, err = _run_cmd(_ps(_ps_bios_write_iface_probe()),
+                            runner=runner, timeout=timeout)
+    m = re.search(r"PCIF=(old|new|none)", out or "")
+    if rc != 0 or not m:
+        return "unknown"
+    return m.group(1)
+
+
 def probe_lenovo_bios(runner=None, timeout=30):
     """探测 root/wmi Lenovo_BiosSetting：类不存在 → class_found=False；
     存在 → 全量读取 CurrentSetting（"ItemName,Value" 列表）。
+    同时探测写接口形态（write_iface：old/new/none/unknown，ADR-006 附注③）。
     只读探测，不做任何 Set 调用。"""
     rc, out, err = _run_cmd(_ps(
         "ConvertTo-Json -Compress -InputObject "
@@ -216,7 +242,12 @@ def probe_lenovo_bios(runner=None, timeout=30):
         raise RuntimeError((err or out or "探测失败").strip()[:200])
     classes = _ps_json(out)
     if not classes:
-        return {"class_found": False, "items_raw": []}
+        return {"class_found": False, "items_raw": [], "write_iface": "none"}
+    write_iface = None
+    try:
+        write_iface = probe_write_iface(runner=runner, timeout=timeout)
+    except Exception:
+        write_iface = "unknown"
     rc, out, err = _run_cmd(_ps(
         "ConvertTo-Json -Compress -InputObject "
         "@(Get-CimInstance -Namespace root/wmi -ClassName Lenovo_BiosSetting "
@@ -224,6 +255,7 @@ def probe_lenovo_bios(runner=None, timeout=30):
         runner=runner, timeout=timeout)
     if rc != 0:
         return {"class_found": True, "items_raw": [],
+                "write_iface": write_iface or "unknown",
                 "error": (err or out or "读取失败").strip()[:200]}
     data = _ps_json(out)
     if data is None:
@@ -232,7 +264,8 @@ def probe_lenovo_bios(runner=None, timeout=30):
         items = data
     else:
         items = [data]
-    return {"class_found": True, "items_raw": items}
+    return {"class_found": True, "items_raw": items,
+            "write_iface": write_iface or "unknown"}
 
 
 def _norm_item(name):
@@ -599,11 +632,14 @@ def collect_snapshot(runner=None, probe_bios=True):
 
     # ② BIOS 企业线
     bios = {"remote_configurable": False, "wmi_class_found": False,
+            "write_iface": None,
             "reason": "", "items": [], "rtc": {}}
     try:
         if probe_bios:
             probe = probe_lenovo_bios(runner=runner)
             bios["wmi_class_found"] = probe["class_found"]
+            if probe.get("write_iface"):
+                bios["write_iface"] = probe["write_iface"]
             if probe.get("error"):
                 errors.append("BIOS 项读取: %s" % probe["error"])
             if probe["class_found"]:
@@ -622,7 +658,15 @@ def collect_snapshot(runner=None, probe_bios=True):
     machine["capability_text"] = cap_text
     if cap == "enterprise_configurable":
         bios["remote_configurable"] = True
-        bios["reason"] = "检测到企业线 BIOS 配置接口，可读取自动开机项"
+        wi = bios.get("write_iface")
+        if wi == "new":
+            bios["reason"] = ("检测到企业线 BIOS 配置接口（新一代实例级），"
+                              "可读取自动开机项")
+        elif wi == "old":
+            bios["reason"] = "检测到企业线 BIOS 配置接口，可读取自动开机项"
+        else:
+            bios["reason"] = ("检测到企业线 BIOS 配置接口，可读取自动开机项"
+                              "（远程写入通道待确认）")
     else:
         bios["reason"] = ("本机 BIOS 未提供企业线远程配置接口，"
                           "如需定时开机请在开机时进入 BIOS 菜单人工设置"
@@ -759,13 +803,46 @@ def build_bios_targets(config):
 
 # --- 写入命令构造（仅提权 worker / 真机验证脚本执行；单测 mock runner）---
 def _ps_bios_write(item, value):
-    """Lenovo_SetBiosSetting.SetBiosSetting("Item,Value") 单条写入；
-    返回 PCSET=<ReturnValue>（0=成功）。项名/值均来自受控集合，仍做引号防御。"""
+    """BIOS 单条写入：老接口优先 → 新一代实例级接口回退（ADR-006 附注③）。
+
+    老接口 Lenovo_SetBiosSetting.SetBiosSetting("Item,Value")：类存在且
+    rv=0 直接成功；类不存在（异常）或 rv!=0 → 枚举 root/wmi
+    Lenovo_BiosSetting 实例，按 CurrentSetting 前缀匹配目标项，调用该
+    实例自带的 SetBiosSetting 方法（新一代接口，无需 SaveBiosSetting
+    提交，落盘与否由调用方回读校验兜底）。
+    输出 PCSET=<rv|NA> / PCVIA=<old|new> / 可选 PCERR=<异常摘要>——
+    rv=null（命令从未执行成功）不再静默，err 透传真实异常消息。
+    项名/值均来自受控集合，仍做单引号防御；老/新两处调用内联同一
+    字面量（单测 mock 按 request = '...' 提取）。"""
     req = ("%s,%s" % (item, value)).replace("'", "''")
-    return ("$r = Invoke-CimMethod -Namespace 'root/wmi' "
-            "-ClassName 'Lenovo_SetBiosSetting' -MethodName 'SetBiosSetting' "
-            "-Arguments @{ request = '%s' }; "
-            "Write-Output ('PCSET=' + $r.ReturnValue)" % req)
+    pref = item.replace("'", "''")
+    return (
+        "$via = 'old'; $errtxt = ''; $rv = $null; "
+        "try { $r = Invoke-CimMethod -Namespace 'root/wmi' "
+        "-ClassName 'Lenovo_SetBiosSetting' -MethodName 'SetBiosSetting' "
+        "-Arguments @{ request = '%(req)s' } -ErrorAction Stop; "
+        "$rv = $r.ReturnValue } "
+        "catch { $errtxt = $_.Exception.Message } "
+        "if ($null -eq $rv -or $rv -ne 0) { "
+        "$via = 'new'; "
+        "$inst = Get-CimInstance -Namespace root/wmi "
+        "-ClassName Lenovo_BiosSetting -ErrorAction SilentlyContinue | "
+        "Where-Object { $_.CurrentSetting -and "
+        "$_.CurrentSetting.StartsWith('%(pref)s,') } | "
+        "Select-Object -First 1; "
+        "if ($inst) { "
+        "try { $r2 = Invoke-CimMethod -InputObject $inst "
+        "-MethodName 'SetBiosSetting' -Arguments @{ request = '%(req)s' } "
+        "-ErrorAction Stop; $rv = $r2.ReturnValue } "
+        "catch { $errtxt = $_.Exception.Message; $rv = $null } } "
+        "else { $errtxt = ($errtxt + ' no-instance').Trim(); "
+        "$rv = $null } } "
+        "$errtxt = ($errtxt -replace '\\r?\\n', ' '); "
+        "Write-Output ('PCSET=' + $(if ($null -ne $rv) { $rv } "
+        "else { 'NA' })); "
+        "Write-Output ('PCVIA=' + $via); "
+        "if ($errtxt) { Write-Output ('PCERR=' + $errtxt) }"
+    ) % {"req": req, "pref": pref}
 
 
 def _ps_bios_read():
@@ -775,8 +852,23 @@ def _ps_bios_read():
 
 
 def _parse_set_rv(out):
-    m = re.search(r"PCSET=(-?\d+)", out or "")
-    return int(m.group(1)) if m else None
+    """PCSET=<rv|NA>；NA = 老/新接口均未成功执行（命令级失败，非 BIOS 拒绝）。"""
+    m = re.search(r"PCSET=(-?\d+|NA)", out or "")
+    if not m or m.group(1) == "NA":
+        return None
+    return int(m.group(1))
+
+
+def _parse_set_via(out):
+    """实际生效的写入接口形态：old=老接口；new=新一代实例级接口。"""
+    m = re.search(r"PCVIA=(old|new)", out or "")
+    return m.group(1) if m else None
+
+
+def _parse_set_err(out):
+    """PCERR= 异常摘要（invalid class / 无实例 / 实例方法异常），截断 160 字符。"""
+    m = re.search(r"PCERR=(.*)", out or "", re.S)
+    return m.group(1).strip()[:160] if m else None
 
 
 def read_rtc_map(runner=None, timeout=40):
@@ -836,7 +928,10 @@ def bios_apply_targets(targets, runner=None, timeout=40):
         rc, out, err = _run_cmd(_ps(_ps_bios_write(item, want)),
                                 runner=runner, timeout=timeout)
         attempts.append({"item": item, "sent": want, "format": "plain",
-                         "rc": rc, "rv": _parse_set_rv(out)})
+                         "rc": rc, "rv": _parse_set_rv(out),
+                         "via": _parse_set_via(out),
+                         "err": _parse_set_err(out)
+                                or (err or "").strip()[:160] or None})
     committed, note = _bios_commit(runner=runner, timeout=timeout)
     attempts.append({"item": "__commit__", "sent": "Lenovo_SaveBiosSetting",
                      "format": "commit", "rc": 0, "rv": note})
@@ -851,7 +946,10 @@ def bios_apply_targets(targets, runner=None, timeout=40):
         rc, out, err = _run_cmd(_ps(_ps_bios_write(item, "[%s]" % want)),
                                 runner=runner, timeout=timeout)
         attempts.append({"item": item, "sent": "[%s]" % want,
-                         "format": "bracket", "rc": rc, "rv": _parse_set_rv(out)})
+                         "format": "bracket", "rc": rc, "rv": _parse_set_rv(out),
+                         "via": _parse_set_via(out),
+                         "err": _parse_set_err(out)
+                                or (err or "").strip()[:160] or None})
     if bad:
         committed2, note2 = _bios_commit(runner=runner, timeout=timeout)
         attempts.append({"item": "__commit__",
@@ -1354,12 +1452,104 @@ def _pc_spawn_task(kind, job):
 
 
 # --- 任务体：BIOS 应用 / 还原 / 关机任务管理（真实写入仅在此路径） ---
+_LAST_APPLY = {"data": None, "kind": None, "ts": 0}
+
+
+def _record_apply(kind, res):
+    """最近一次 BIOS apply/restore 结果运行态缓存（pc_diag 采集源）。"""
+    _LAST_APPLY["data"] = res
+    _LAST_APPLY["kind"] = kind
+    _LAST_APPLY["ts"] = int(time.time())
+
+
+def _ps_probe_save_class():
+    return ("$c = Get-CimClass -Namespace root/wmi "
+            "-ClassName Lenovo_SaveBiosSetting -ErrorAction SilentlyContinue; "
+            "Write-Output ('PCSC=' + [bool]$c)")
+
+
+def _ps_probe_pwd_state():
+    return ("try { $p = Get-CimInstance -Namespace root/wmi "
+            "-ClassName Lenovo_BiosPasswordSettings -ErrorAction Stop | "
+            "Select-Object -First 1; Write-Output ('PCPWD=' + $p.PasswordState) } "
+            "catch { Write-Output 'PCPWD=NA' }")
+
+
+def collect_diag():
+    """pc_diag 只读诊断采集（ADR-006 定案工具；纯只读零写入，各段失败不阻断）。
+
+    返回：{schema, hostname, ts, save_class, password_state, rtc_readback,
+    last_apply, log_tail[200 行]}；client_version 由 uplink 回执层补齐。"""
+    data = {"schema": 1,
+            "hostname": None, "ts": int(time.time()),
+            "save_class": None, "password_state": None,
+            "rtc_readback": {}, "last_apply": None, "log_tail": []}
+    try:
+        import socket
+        data["hostname"] = socket.gethostname()
+    except Exception:
+        pass
+    try:
+        rc, out, _ = _run_cmd(_ps(_ps_probe_save_class()))
+        m = re.search(r"PCSC=(True|False)", out or "")
+        data["save_class"] = (m.group(1) == "True") if m else None
+    except Exception:
+        pass
+    try:
+        data["write_iface"] = probe_write_iface()
+    except Exception:
+        pass
+    try:
+        rc, out, _ = _run_cmd(_ps(_ps_probe_pwd_state()))
+        m = re.search(r"PCPWD=(-?\d+|NA)", out or "")
+        data["password_state"] = m.group(1) if m else None
+    except Exception:
+        pass
+    try:
+        data["rtc_readback"] = read_rtc_map()
+    except Exception as e:
+        data["rtc_readback"] = {"error": str(e)[:120]}
+    if _LAST_APPLY.get("data"):
+        data["last_apply"] = {"kind": _LAST_APPLY.get("kind"),
+                              "ts": _LAST_APPLY.get("ts"),
+                              "result": _LAST_APPLY.get("data")}
+    try:
+        data["log_tail"] = _log_tail(200)
+    except Exception:
+        pass
+    return data
+
+
+def _log_tail(lines):
+    """当日+前一日 pc_*.log 尾部 lines 行（诊断用，读失败返回空）。"""
+    d = os.path.join(data_dir(), "logs")
+    if not os.path.isdir(d):
+        return []
+    days = [time.strftime("pc_%Y%m%d.log", time.localtime(time.time() - 86400 * i))
+            for i in range(2)]
+    buf = []
+    for name in days:
+        p = os.path.join(d, name)
+        if not os.path.exists(p):
+            continue
+        try:
+            with open(p, "r", encoding="utf-8", errors="replace") as f:
+                buf.extend(f.read().splitlines())
+        except OSError:
+            continue
+    return buf[-lines:]
+
+
 def _job_bios_apply(config):
     targets, summary = build_bios_targets(config)
     probe = probe_lenovo_bios()
     if not probe.get("class_found"):
         return {"ok": False, "rejected": "capability",
                 "error": "本机不支持远程配置定时开机（可在开机自检时进入 BIOS 人工设置）"}
+    if probe.get("write_iface") == "none":
+        return {"ok": False, "rejected": "capability",
+                "error": "本机 BIOS 无远程写入通道（老/新接口均缺失），"
+                         "请开机自检时进入 BIOS 人工设置"}
     try:
         machine = collect_machine()
         items = read_rtc_map()
@@ -1390,6 +1580,7 @@ def _job_bios_apply(config):
         log("BIOS 应用失败: %s | attempts=%s"
             % (res.get("error"),
                json.dumps(res.get("attempts"), ensure_ascii=False)[:400]))
+    _record_apply("bios_apply", res)
     return res
 
 
@@ -1415,6 +1606,7 @@ def _job_bios_restore():
         except OSError:
             pass
         log("BIOS 配置已还原为初始值（%d 项）" % len(targets))
+    _record_apply("bios_restore", res)
     return res
 
 

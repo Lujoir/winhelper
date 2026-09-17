@@ -24,6 +24,7 @@
                 <path d="M4 3h7v7H4V3z" fill="currentColor" opacity="0.6"/>
             </svg>
             <span class="nav-title">观枢终端平台｜EyeTerm</span>
+            <span class="nav-ver" id="navVer" title="客户端版本"></span>
         </div>
         <div class="nav-tabs">
             <button class="nav-tab active" data-tab="home" onclick="switchTab('home')">
@@ -1290,6 +1291,7 @@
                 <b>本机快照</b>
                 <span class="nd-badge nd-muted" id="pcMachineBadge">—</span>
                 <span class="nd-badge nd-warn" id="pcCapBadge">检测中</span>
+                <span class="nd-badge nd-warn" id="pcWriteBadge" style="display:none">写入：—</span>
                 <span class="nd-hint">采集时间：<span id="pcCollectTime">—</span></span>
                 <span class="nd-hint">平台存档：<span id="pcReportState">—</span></span>
                 <button class="nd-btn primary" id="pcBtnRefresh" onclick="pcLoadSnapshot()">刷新快照</button>

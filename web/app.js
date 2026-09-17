@@ -83,6 +83,9 @@ async function appCheckUplinkForDesktopPolicy() {
         var d = await apiFetch("/api/perf/uplink/status");
         var u = d && d.uplink ? d.uplink : null;
         updateDesktopPolicyNavVisibility(u ? u.state : null);
+        /* navbar 版本号（logo 旁，v + CLIENT_VERSION；缺字段静默） */
+        var verEl = document.getElementById("navVer");
+        if (verEl && u && u.version) { verEl.textContent = "v" + u.version; }
     } catch (e) {
         updateDesktopPolicyNavVisibility(null);
     }

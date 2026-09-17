@@ -179,6 +179,26 @@ function pcRenderSnapshot(snap) {
       cb.className = "nd-badge nd-warn";
     }
   }
+  /* 写入通道徽章（ADR-006 附注③：老/新接口形态随探测口径，缺失即如实提示） */
+  var wb = pc$("#pcWriteBadge");
+  if (wb) {
+    var wi = (snap.bios || {}).write_iface;
+    if (m.capability === "enterprise_configurable" && wi === "new") {
+      wb.textContent = "写入：新一代通道";
+      wb.className = "nd-badge nd-ok";
+      wb.style.display = "";
+    } else if (m.capability === "enterprise_configurable" && wi === "old") {
+      wb.textContent = "写入：标准通道";
+      wb.className = "nd-badge nd-ok";
+      wb.style.display = "";
+    } else if (m.capability === "enterprise_configurable") {
+      wb.textContent = "写入：待确认";
+      wb.className = "nd-badge nd-warn";
+      wb.style.display = "";
+    } else {
+      wb.style.display = "none";
+    }
+  }
   var ct = pc$("#pcCollectTime");
   if (ct) ct.textContent = snap.collected_at || "—";
   var cfgCard = pc$("#pcBiosCfgCard");
