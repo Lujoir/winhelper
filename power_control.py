@@ -795,9 +795,39 @@ def read_rtc_map(runner=None, timeout=40):
     return items
 
 
-def bios_apply_targets(targets, runner=None, timeout=40):
-    """逐项写入 + 回读校验（两轮值格式尝试，ADR-007）。
+def _ps_bios_commit():
+    return ("try { $r = Invoke-CimMethod -Namespace root/wmi "
+            "-ClassName Lenovo_SaveBiosSetting -MethodName SaveBiosSetting "
+            "-ErrorAction Stop; Write-Output ('PCSAVE=' + $r.ReturnValue) } "
+            "catch { Write-Output 'PCSAVE=NA' }")
 
+
+def _bios_commit(runner=None, timeout=40):
+    """写入后显式提交（ADR-006 附注：M720t 实机症状「rv=0 接受但不落盘、
+    读回旧值」最高概率为部分联想固件需 Lenovo_SaveBiosSetting.SaveBiosSetting()
+    提交 pending 写入）。
+
+    探测与提交合一：类不存在 → PCSAVE=NA → 跳过（向后兼容）；提交成功
+    PCSAVE=0；提交失败 rv 非 0 如实返回。返回 (committed:bool, note:str)。"""
+    rc, out, err = _run_cmd(_ps(_ps_bios_commit()), runner=runner,
+                            timeout=timeout)
+    m = re.search(r"PCSAVE=(-?\d+|NA)", (out or "").strip())
+    if not m:
+        return False, "commit probe failed (rc=%s out=%s)" % (
+            rc, (out or "").strip()[:60])
+    v = m.group(1)
+    if v == "NA":
+        return False, "no-save-class"
+    if v == "0":
+        return True, "committed"
+    return False, "commit rv=%s" % v
+
+
+def bios_apply_targets(targets, runner=None, timeout=40):
+    """逐项写入 + 显式提交 + 回读校验（两轮值格式尝试，ADR-007）。
+
+    每轮写入后调用 Lenovo_SaveBiosSetting.SaveBiosSetting() 提交 pending
+    （类不存在自动跳过，向后兼容，ADR-006 附注）。
     第一轮无括号值；回读不匹配的项第二轮带括号值（读取形态 [V]）。
     读回≠目标即计入 failed，整体 ok=False——绝不静默成功。
     真实执行仅发生在提权 worker / 真机验证脚本；单测传 mock runner。"""
@@ -807,6 +837,9 @@ def bios_apply_targets(targets, runner=None, timeout=40):
                                 runner=runner, timeout=timeout)
         attempts.append({"item": item, "sent": want, "format": "plain",
                          "rc": rc, "rv": _parse_set_rv(out)})
+    committed, note = _bios_commit(runner=runner, timeout=timeout)
+    attempts.append({"item": "__commit__", "sent": "Lenovo_SaveBiosSetting",
+                     "format": "commit", "rc": 0, "rv": note})
     try:
         readback = read_rtc_map(runner=runner, timeout=timeout)
     except Exception as e:
@@ -820,6 +853,10 @@ def bios_apply_targets(targets, runner=None, timeout=40):
         attempts.append({"item": item, "sent": "[%s]" % want,
                          "format": "bracket", "rc": rc, "rv": _parse_set_rv(out)})
     if bad:
+        committed2, note2 = _bios_commit(runner=runner, timeout=timeout)
+        attempts.append({"item": "__commit__",
+                         "sent": "Lenovo_SaveBiosSetting",
+                         "format": "commit", "rc": 0, "rv": note2})
         try:
             readback = read_rtc_map(runner=runner, timeout=timeout)
         except Exception as e:
@@ -1009,8 +1046,10 @@ def elevated_worker_entry(args):
     except Exception as e:
         res = {"ok": False, "error": str(e)}
     try:
-        with open(str(args[1]) + ".result", "w", encoding="utf-8") as f:
+        rf = str(args[1]) + ".result"
+        with open(rf + ".tmp", "w", encoding="utf-8") as f:
             json.dump(res, f, ensure_ascii=False)
+        os.replace(rf + ".tmp", rf)   # 原子写：父进程 0.5s 轮询不读半截
     except OSError:
         pass
     log("提权 worker 完成: op=%s ok=%s" % (args[0], res.get("ok")))
@@ -1333,9 +1372,24 @@ def _job_bios_apply(config):
         log("备份的平台存档失败（不阻断）: %s" % e, "WARN")
     res = run_elevated("bios_apply",
                        {"targets": [[i, v] for i, v in targets]})
+    # P1a 首轮实机迭代：失败回执步骤化（用户反馈问题④——此前 failed 明细
+    # 不含 error 键，UI 只能显示笼统「操作未成功」）
+    if not res.get("ok") and not res.get("error"):
+        failed = res.get("failed") or []
+        if failed:
+            parts = ["「%s」写入未生效：读回为「%s」（目标「%s」）"
+                     % (f.get("item"), f.get("got"), f.get("want"))
+                     for f in failed]
+            res["error"] = "回读校验不符：" + "；".join(parts)
+        else:
+            res["error"] = "写入未生效（详见日志的尝试明细）"
     res["summary"] = summary
     if res.get("ok"):
         log("BIOS 定时开机已应用: %s" % summary)
+    else:
+        log("BIOS 应用失败: %s | attempts=%s"
+            % (res.get("error"),
+               json.dumps(res.get("attempts"), ensure_ascii=False)[:400]))
     return res
 
 

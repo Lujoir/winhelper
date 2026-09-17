@@ -12,6 +12,84 @@ var pcState = { busy: false, loaded: false, lastSnap: null,
 /* DOM 辅助（自包含，不依赖宿主 $） */
 function pc$(sel) { return document.querySelector(sel); }
 
+/* pcConfirm — 统一确认对话框（2026-09-17 废除原生 confirm，对齐 app.js uiConfirm 规范）
+ * 主应用：委托 app.js 的 uiConfirm（ui-confirm-* 深色样式）；
+ * 独立页：无 app.js，走下方内联样式兜底（DOM 类名与 uiConfirm 一致，便于 E2E 复用）。 */
+function pcConfirm(opts) {
+  if (typeof window.uiConfirm === "function") return window.uiConfirm(opts);
+  return new Promise(function (resolve) {
+    var o = opts || {};
+    var mask = document.createElement("div");
+    mask.className = "ui-confirm-mask";
+    mask.style.cssText = "position:fixed;inset:0;z-index:1200;background:rgba(6,8,12,.72);" +
+      "display:flex;align-items:center;justify-content:center;";
+    var card = document.createElement("div");
+    card.className = "ui-confirm-card";
+    card.setAttribute("role", "dialog");
+    card.setAttribute("aria-modal", "true");
+    card.style.cssText = "background:#171a23;border:1px solid #262b3a;border-radius:10px;" +
+      "min-width:320px;max-width:460px;max-height:70vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,.5);";
+    var head = document.createElement("div");
+    head.className = "ui-confirm-head";
+    head.style.cssText = "padding:12px 16px;border-bottom:1px solid #262b3a;" +
+      "font-size:13.5px;font-weight:600;color:#4fc3f7;letter-spacing:.5px;";
+    head.textContent = o.title || "确认";
+    var body = document.createElement("div");
+    body.className = "ui-confirm-body";
+    body.style.cssText = "padding:14px 16px;font-size:13px;line-height:1.7;" +
+      "color:#e8ebf2;white-space:pre-line;";
+    body.textContent = o.message || "";
+    var foot = document.createElement("div");
+    foot.className = "ui-confirm-foot";
+    foot.style.cssText = "display:flex;justify-content:flex-end;gap:8px;" +
+      "padding:12px 16px;border-top:1px solid #262b3a;";
+    var done = false;
+    function close(result) {
+      if (done) return;
+      done = true;
+      document.removeEventListener("keydown", onKey, true);
+      mask.remove();
+      resolve(result);
+    }
+    function onKey(e) {
+      if (e.key === "Escape") { e.stopPropagation(); close(false); }
+      else if (e.key === "Enter") { e.stopPropagation(); close(true); }
+    }
+    var cancelText = (o.cancelText !== undefined) ? o.cancelText : "取消";
+    if (cancelText) {
+      var bC = document.createElement("button");
+      bC.type = "button";
+      bC.className = "btn btn-ghost ui-confirm-btn";
+      bC.style.cssText = "background:#1d212e;color:#8a93a5;border:1px solid #262b3a;" +
+        "border-radius:8px;padding:6px 16px;cursor:pointer;font-size:12.5px;";
+      bC.textContent = cancelText;
+      bC.addEventListener("click", function () { close(false); });
+      foot.appendChild(bC);
+    }
+    var bO = document.createElement("button");
+    bO.type = "button";
+    bO.className = "btn btn-primary ui-confirm-btn" + (o.danger ? " ui-confirm-ok-danger" : "");
+    bO.style.cssText = o.danger
+      ? "background:rgba(239,83,80,.16);color:#ef5350;border:1px solid rgba(239,83,80,.5);" +
+        "border-radius:8px;padding:6px 16px;cursor:pointer;font-size:12.5px;"
+      : "background:rgba(79,195,247,.14);color:#4fc3f7;border:1px solid rgba(79,195,247,.45);" +
+        "border-radius:8px;padding:6px 16px;cursor:pointer;font-size:12.5px;";
+    bO.textContent = o.okText || "确定";
+    bO.addEventListener("click", function () { close(true); });
+    foot.appendChild(bO);
+    mask.addEventListener("mousedown", function (e) {
+      if (e.target === mask) close(false);   // 仅遮罩本体，卡片内点击不关闭
+    });
+    document.addEventListener("keydown", onKey, true);
+    card.appendChild(head);
+    card.appendChild(body);
+    card.appendChild(foot);
+    mask.appendChild(card);
+    document.body.appendChild(mask);
+    setTimeout(function () { bO.focus(); }, 0);
+  });
+}
+
 function pcEsc(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
     return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
@@ -59,7 +137,7 @@ function pcSetBusy(b) {
 function pcLoadSnapshot() {
   if (pcState.busy) return Promise.resolve();
   pcSetBusy(true);
-  ["pcBiosBody", "pcWakeBody", "pcTasksBody", "pcFastBody"]
+  ["pcBiosBody", "pcSdTasksBody"]
     .forEach(function (id) {
       var el = pc$("#" + id);
       if (el) el.innerHTML = '<div class="nd-empty">正在读取本机配置…</div>';
@@ -76,7 +154,7 @@ function pcLoadSnapshot() {
     pcState.activePolicy = data.active_policy || null;
     pcRenderSnapshot(data.snapshot);
   }).catch(function (e) {
-    ["pcBiosBody", "pcWakeBody", "pcTasksBody", "pcFastBody"]
+    ["pcBiosBody", "pcSdTasksBody"]
       .forEach(function (id) {
         var el = pc$("#" + id);
         if (el) el.innerHTML = '<div class="nd-empty">读取失败（可点击刷新重试）</div>';
@@ -109,9 +187,7 @@ function pcRenderSnapshot(snap) {
         (m.capability === "enterprise_configurable") ? "" : "none";
   }
   pcRenderBios(snap);
-  pcRenderWake(snap);
-  pcRenderTasks(snap);
-  pcRenderFast(snap);
+  pcRenderShutdownTasks(snap);
   pcRenderReportState();
   pcRenderShutdownCurrent(snap);
   pcRenderPolicy();
@@ -216,6 +292,7 @@ function pcRenderBios(snap) {
         '<span class="hm-row-value">' + pcEsc(rtc.wake_on_lan) + "</span></div>");
     }
     html.push('<div class="nd-hint" style="margin-top:8px">以上为开机配置的当前状态（只读展示）。</div>');
+    pcFillBootForm(snap);   // P1a 实机迭代②：配置卡自动回填当前值
   } else {
     html.push('<div class="nd-empty">' +
       pcEsc(b.reason || "本机不支持远程配置定时开机") + "</div>");
@@ -236,44 +313,11 @@ function pcRenderBios(snap) {
   host.innerHTML = html.join("");
 }
 
-function pcRenderWake(snap) {
-  var host = pc$("#pcWakeBody");
-  if (!host) return;
-  var w = snap.wake_timers || {};
-  if (w.need_admin) {
-    host.innerHTML = '<div class="nd-empty">需管理员权限查看（当前会话未提权，不影响其它检测）</div>';
-    return;
-  }
-  if (w.error) {
-    host.innerHTML = '<div class="nd-empty">读取失败：' +
-      pcEsc(pcTrunc(w.error, 120)) + "</div>";
-    return;
-  }
-  var items = w.items || [];
-  if (!items.length) {
-    host.innerHTML = '<div class="nd-empty">当前没有活动的唤醒定时器</div>';
-    return;
-  }
-  var typeText = function (t) {
-    if (t === "SERVICE") return "系统服务";
-    if (t === "PROCESS") return "进程";
-    if (t === "DEVICE") return "设备";
-    return "—";
-  };
-  var rows = items.map(function (t, i) {
-    return "<tr><td class=\"nd-num\">" + (i + 1) + "</td><td>" +
-      pcEsc(typeText(t.type)) + "</td><td>" +
-      pcEsc(pcTrunc(t.owner || "—", 64)) + "</td><td class=\"nd-num\">" +
-      pcEsc(t.wake_time || "—") + "</td><td>" +
-      pcEsc(pcTrunc(t.reason || t.description || "—", 80)) + "</td></tr>";
-  }).join("");
-  host.innerHTML = '<p class="nd-summary">允许把电脑从睡眠中唤醒的计划（系统与软件登记的唤醒来源）。</p>' +
-    '<table class="nd-table"><thead><tr><th>#</th><th>来源类型</th><th>发起方</th>' +
-    '<th>唤醒时间</th><th>说明</th></tr></thead><tbody>' + rows + "</tbody></table>";
-}
-
-function pcRenderTasks(snap) {
-  var host = pc$("#pcTasksBody");
+function pcRenderShutdownTasks(snap) {
+  /* 2026-09-17 三卡结构调整：原「关机计划任务」独立卡并入「定时关机」卡
+     （渲染目标 #pcSdTasksBody）；唤醒定时器/快速启动快照数据仍在采集上报，
+     仅 UI 不再渲染。 */
+  var host = pc$("#pcSdTasksBody");
   if (!host) return;
   var t = snap.shutdown_tasks || {};
   if (t.error) {
@@ -294,27 +338,9 @@ function pcRenderTasks(snap) {
       pcEsc(x.status || "—") + "</td><td>" +
       pcEsc(pcTrunc(x.action || "—", 60)) + "</td></tr>";
   }).join("");
-  host.innerHTML = '<p class="nd-summary">本机已登记的关机类计划任务（只读列表，不会改动）。</p>' +
-    '<table class="nd-table"><thead><tr><th>#</th><th>任务名</th><th>重复</th>' +
+  host.innerHTML = '<table class="nd-table"><thead><tr><th>#</th><th>任务名</th><th>重复</th>' +
     '<th>下次运行</th><th>状态</th><th>执行内容</th></tr></thead><tbody>' +
     rows + "</tbody></table>";
-}
-
-function pcRenderFast(snap) {
-  var host = pc$("#pcFastBody");
-  if (!host) return;
-  var f = snap.fast_startup || {};
-  var cls, text;
-  if (f.enabled === true) { cls = "nd-ok"; text = "已开启"; }
-  else if (f.enabled === false) { cls = "nd-warn"; text = "已关闭"; }
-  else { cls = "nd-muted"; text = "未知"; }
-  var html = ['<div class="hm-row"><span class="hm-row-label">快速启动</span>' +
-    '<span class="hm-row-value">' + pcBadge(text, cls) + "</span></div>"];
-  if (f.note) {
-    html.push('<div class="nd-hint" style="margin-top:6px">' + pcEsc(f.note) + "</div>");
-  }
-  html.push('<div class="nd-hint" style="margin-top:2px">快速开启会让「关机」进入混合休眠：部分场景下定时开机与网络唤醒可能不生效，按需关闭。</div>');
-  host.innerHTML = html.join("");
 }
 
 function pcReportNow() {
@@ -357,13 +383,70 @@ function pcSetOpBusy(b) {
 }
 
 function pcOnBootModeChange() {
-  var m = pc$("#pcBootMode"), d = pc$("#pcBootDate");
-  if (d) d.style.display = (m && m.value === "single") ? "" : "none";
+  var sel = pc$("#pcBootMode");
+  var m = sel ? sel.value : "";
+  var showTime = m === "daily" || m === "weekly" || m === "single";
+  var tRow = pc$("#pcBootTimeRow");
+  var dRow = pc$("#pcBootDateRow");
+  var wRow = pc$("#pcWeekdaysRow");
+  if (tRow) tRow.style.display = showTime ? "" : "none";
+  if (dRow) dRow.style.display = m === "single" ? "" : "none";
+  if (wRow) wRow.style.display = m === "weekly" ? "" : "none";
 }
 
 function pcOnSdModeChange() {
-  var m = pc$("#pcSdMode"), d = pc$("#pcSdDate");
-  if (d) d.style.display = (m && m.value === "single") ? "" : "none";
+  var m = pc$("#pcSdMode").value || "daily";
+  pc$("#pcSdDate").style.display = m === "single" ? "" : "none";
+}
+
+/* P1a 实机迭代②：打开页面自动回填当前 BIOS 定时开机设置（ADR-005 v2 rtc） */
+function pcMmddToIso(s) {
+  /* BIOS "MM/DD/YYYY" → <input type=date> "YYYY-MM-DD"；其它形态原样返回空 */
+  var m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(String(s || "").trim());
+  if (!m) return "";
+  var p2 = function (x) { return ("0" + x).slice(-2); };
+  return m[3] + "-" + p2(m[1]) + "-" + p2(m[2]);
+}
+
+function pcFillBootForm(snap) {
+  var m = (snap.machine || {});
+  if (m.capability !== "enterprise_configurable") return;
+  var rtc = (snap.bios || {}).rtc || {};
+  var mode = "off", time = "", date = "", hint = "";
+  var on = !!rtc.alarm_on;
+  switch (rtc.alarm) {
+    case "Daily Event":
+      mode = "daily";
+      time = rtc.time || ""; break;
+    case "Weekly Event":
+      mode = "weekly";
+      time = rtc.time || ""; break;
+    case "Single Event":
+      mode = "single";
+      time = rtc.time || ""; date = rtc.date || ""; break;
+    case "User Defined":
+      mode = "daily";
+      time = rtc.user_time || rtc.time || "";
+      hint = "当前 BIOS 为自定义时刻（User Defined）模式；应用所选模式将覆盖。";
+      break;
+    default:
+      mode = on ? "daily" : "off";
+      time = rtc.time || "";
+  }
+  var sel = pc$("#pcBootMode");
+  if (sel) sel.value = mode;
+  var t = pc$("#pcBootTime");
+  if (t) t.value = time ? String(time).substring(0, 5) : "";
+  var d = pc$("#pcBootDate");
+  if (d) d.value = pcMmddToIso(date);
+  var wd = rtc.weekdays || {};
+  var boxes = document.querySelectorAll(".pc-wd");
+  for (var i = 0; i < boxes.length; i++) {
+    boxes[i].checked = (wd[boxes[i].value] === "Enabled");
+  }
+  pcOnBootModeChange();
+  var tip = pc$("#pcBiosTip");
+  if (tip && hint) tip.textContent = hint;
 }
 
 function pcPollTask(tid, tip, doneText) {
@@ -396,33 +479,62 @@ function pcPollTask(tid, tip, doneText) {
   });
 }
 
-function pcApplyBios() {
+async function pcApplyBios() {
   if (pcState.opBusy) return;
-  var mode = (pc$("#pcBootMode") || {}).value || "daily";
+  var mode = (pc$("#pcBootMode") || {}).value || "";
   var time = (pc$("#pcBootTime") || {}).value || "";
   var date = (pc$("#pcBootDate") || {}).value || "";
-  if (mode !== "off" && !/^\d{1,2}:\d{2}$/.test(time.trim())) {
-    pc$("#pcBiosTip").textContent = "请填写开机时刻（如 08:00）";
+  if (!mode) {
+    pc$("#pcBiosTip").textContent = "请先选择重复周期";
     return;
   }
-  if (mode === "single" && !date.trim()) {
-    pc$("#pcBiosTip").textContent = "请填写指定日期（如 12/31/2026）";
+  if (mode !== "off" && !time) {
+    pc$("#pcBiosTip").textContent = "请填写开机时刻";
     return;
   }
-  if (!window.confirm(
-      mode === "off"
-        ? "将停用本机的定时开机（应用前自动备份当前配置）。继续？"
-        : "将按以下配置修改定时开机（应用前自动备份当前配置，需系统授权确认）：\n\n" +
-          "周期：" + pc$("#pcBootMode").selectedOptions[0].text +
-          "\n时刻：" + (mode === "off" ? "—" : time) +
-          (mode === "single" ? ("\n日期：" + date) : "") + "\n\n继续？")) {
+  if (mode === "single" && !date) {
+    pc$("#pcBiosTip").textContent = "请填写指定日期";
     return;
   }
+  var weekdays = null;
+  if (mode === "weekly") {
+    weekdays = [];
+    var boxes = document.querySelectorAll(".pc-wd");
+    for (var i = 0; i < boxes.length; i++) {
+      weekdays.push(boxes[i].checked ? 1 : 0);
+    }
+    if (weekdays.indexOf(1) < 0) {
+      pc$("#pcBiosTip").textContent = "每周模式请至少勾选一天";
+      return;
+    }
+  }
+  var modeText = "";
+  if (mode === "weekly") {
+    var names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+    var picked = [];
+    for (var j = 0; j < weekdays.length; j++) {
+      if (weekdays[j]) picked.push(names[j]);
+    }
+    modeText = "每周（" + picked.join("、") + "）";
+  } else {
+    var sel = pc$("#pcBootMode");
+    modeText = sel.selectedOptions[0].text;
+  }
+  if (!(await pcConfirm({
+    title: "应用定时开机配置",
+    message: mode === "off"
+      ? "将停用本机的定时开机（应用前自动备份当前配置）。继续？"
+      : "将按以下配置修改定时开机（应用前自动备份当前配置，需系统授权确认）：\n\n" +
+        "周期：" + modeText +
+        "\n时刻：" + (mode === "off" ? "—" : time) +
+        (mode === "single" ? ("\n日期：" + date) : "") + "\n\n继续？"
+  }))) return;
   pcSetOpBusy(true);
   var tip = pc$("#pcBiosTip");
   tip.textContent = "已受理，等待系统授权与执行…（若未见弹窗请在任务栏确认）";
-  pcApiFetch("/api/powercontrol/bios-apply",
-             { mode: mode, time: time.trim(), date: date.trim() })
+  var payload = { mode: mode, time: time, date: date };
+  if (mode === "weekly") payload.weekdays = weekdays;
+  pcApiFetch("/api/powercontrol/bios-apply", payload)
     .then(function (data) {
       if (!data || data.success === false) {
         throw new Error((data && data.error) || "提交失败");
@@ -431,17 +543,18 @@ function pcApplyBios() {
     })
     .then(function (r) { if (r) pcLoadSnapshot(); })
     .catch(function (e) {
-      tip.textContent = pcTrunc((e && e.message) || "提交失败", 140);
+      tip.textContent = pcTrunc((e && e.message) || "提交失败", 180);
       pcSetOpBusy(false);
     });
 }
 
-function pcRestoreBios() {
+async function pcRestoreBios() {
   if (pcState.opBusy) return;
-  if (!window.confirm(
-      "将把定时开机配置还原为最近一次备份的初始值（需系统授权确认）。继续？")) {
-    return;
-  }
+  if (!(await pcConfirm({
+    title: "还原定时开机配置",
+    message: "将把定时开机配置还原为最近一次备份的初始值（需系统授权确认）。继续？",
+    danger: true
+  }))) return;
   pcSetOpBusy(true);
   var tip = pc$("#pcBiosTip");
   tip.textContent = "已受理，等待系统授权与执行…";
@@ -459,27 +572,27 @@ function pcRestoreBios() {
     });
 }
 
-function pcSaveShutdown() {
+async function pcSaveShutdown() {
   if (pcState.opBusy) return;
   var mode = (pc$("#pcSdMode") || {}).value || "daily";
   var time = (pc$("#pcSdTime") || {}).value || "";
   var date = (pc$("#pcSdDate") || {}).value || "";
-  if (!/^\d{1,2}:\d{2}$/.test(time.trim())) {
-    pc$("#pcSdTip").textContent = "请填写关机时刻（如 22:00）";
+  if (!time) {
+    pc$("#pcSdTip").textContent = "请填写关机时刻";
     return;
   }
-  if (mode === "single" && !date.trim()) {
-    pc$("#pcSdTip").textContent = "请填写指定日期（如 12/31/2026）";
+  if (mode === "single" && !date) {
+    pc$("#pcSdTip").textContent = "请填写指定日期";
     return;
   }
-  if (!window.confirm(
-      "将创建/更新定时关机任务（需系统授权确认）：\n\n" +
+  if (!(await pcConfirm({
+    title: "保存定时关机任务",
+    message: "将创建/更新定时关机任务（需系统授权确认）：\n\n" +
       "周期：" + pc$("#pcSdMode").selectedOptions[0].text +
       "\n时刻：" + time +
       (mode === "single" ? ("\n日期：" + date) : "") +
-      "\n\n到点后倒计时 60 秒关机。继续？")) {
-    return;
-  }
+      "\n\n到点后倒计时 60 秒关机。继续？"
+  }))) return;
   pcSetOpBusy(true);
   var tip = pc$("#pcSdTip");
   tip.textContent = "已受理，等待系统授权与执行…";
@@ -522,9 +635,13 @@ function pcToggleShutdown() {
     });
 }
 
-function pcRemoveShutdown() {
+async function pcRemoveShutdown() {
   if (pcState.opBusy) return;
-  if (!window.confirm("将删除定时关机任务。继续？")) return;
+  if (!(await pcConfirm({
+    title: "删除定时关机任务",
+    message: "将删除定时关机任务。继续？",
+    danger: true
+  }))) return;
   pcSetOpBusy(true);
   var tip = pc$("#pcSdTip");
   tip.textContent = "已受理，等待系统授权与执行…";

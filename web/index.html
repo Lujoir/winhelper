@@ -1279,6 +1279,7 @@
                 .pc-form-label { color: var(--text-secondary, #8a93a5); font-size: 12.5px; min-width: 64px; flex-shrink: 0; }
                 #pcBootTime, #pcSdTime { width: 92px; text-align: center; }
                 #pcBootDate, #pcSdDate { width: 130px; }
+                #tab-powercontrol input[type="time"], #tab-powercontrol input[type="date"] { color-scheme: dark; }
             </style>
             <div class="page-header">
                 <h2>自动开关机</h2>
@@ -1307,46 +1308,41 @@
                 <div class="card-header"><h3>定时开机配置</h3></div>
                 <div class="card-body">
                     <div class="pc-form-row">
-                        <span class="pc-form-label">开机时刻</span>
-                        <input class="nd-input" id="pcBootTime" placeholder="如 08:00" maxlength="5" autocomplete="off">
-                    </div>
-                    <div class="pc-form-row">
                         <span class="pc-form-label">重复周期</span>
                         <select class="nd-select" id="pcBootMode" onchange="pcOnBootModeChange()">
+                            <option value="">请选择…</option>
                             <option value="daily">每天</option>
-                            <option value="workday">工作日（周一至周五）</option>
+                            <option value="weekly">每周（勾选星期）</option>
                             <option value="single">指定日期（单次）</option>
                             <option value="off">停用定时开机</option>
                         </select>
-                        <input class="nd-input" id="pcBootDate" placeholder="如 12/31/2026" style="display:none" autocomplete="off">
+                    </div>
+                    <div class="pc-form-row" id="pcBootTimeRow" style="display:none">
+                        <span class="pc-form-label">开机时刻</span>
+                        <input class="nd-input" type="time" id="pcBootTime" autocomplete="off">
+                    </div>
+                    <div class="pc-form-row" id="pcBootDateRow" style="display:none">
+                        <span class="pc-form-label">指定日期</span>
+                        <input class="nd-input" type="date" id="pcBootDate" autocomplete="off">
+                    </div>
+                    <div class="pc-form-row" id="pcWeekdaysRow" style="display:none">
+                        <span class="pc-form-label">重复在</span>
+                        <span style="display:flex;gap:8px;flex-wrap:wrap;font-size:12px">
+                            <label><input type="checkbox" class="pc-wd" value="Monday">周一</label>
+                            <label><input type="checkbox" class="pc-wd" value="Tuesday">周二</label>
+                            <label><input type="checkbox" class="pc-wd" value="Wednesday">周三</label>
+                            <label><input type="checkbox" class="pc-wd" value="Thursday">周四</label>
+                            <label><input type="checkbox" class="pc-wd" value="Friday">周五</label>
+                            <label><input type="checkbox" class="pc-wd" value="Saturday">周六</label>
+                            <label><input type="checkbox" class="pc-wd" value="Sunday">周日</label>
+                        </span>
                     </div>
                     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px">
                         <button class="nd-btn primary" id="pcBtnBiosApply" onclick="pcApplyBios()">应用</button>
                         <button class="nd-btn" id="pcBtnBiosRestore" onclick="pcRestoreBios()">还原原值</button>
                         <span class="nd-hint" id="pcBiosTip"></span>
                     </div>
-                    <div class="nd-hint" style="margin-top:8px">应用前会自动备份当前配置（本机与平台双存档），并弹出系统授权确认；修改立即生效。本机设置与平台下发后到者生效。</div>
-                </div>
-            </div>
-
-            <div class="section-card nd-styled" data-collapse>
-                <div class="card-header"><h3>唤醒定时器</h3></div>
-                <div class="card-body" id="pcWakeBody">
-                    <div class="nd-empty">正在读取本机配置…</div>
-                </div>
-            </div>
-
-            <div class="section-card nd-styled" data-collapse>
-                <div class="card-header"><h3>关机计划任务</h3></div>
-                <div class="card-body" id="pcTasksBody">
-                    <div class="nd-empty">正在读取本机配置…</div>
-                </div>
-            </div>
-
-            <div class="section-card nd-styled" data-collapse>
-                <div class="card-header"><h3>快速启动</h3></div>
-                <div class="card-body" id="pcFastBody">
-                    <div class="nd-empty">正在读取本机配置…</div>
+                    <div class="nd-hint" style="margin-top:8px">打开本页自动回填当前 BIOS 设置；应用前会自动备份当前配置（本机与平台双存档）并弹出系统授权确认，修改立即生效。本机设置与平台下发后到者生效。</div>
                 </div>
             </div>
 
@@ -1357,26 +1353,32 @@
                         <span class="hm-row-label">平台管理任务</span>
                         <span class="hm-row-value" id="pcSdCurrent">—</span>
                     </div>
-                    <div class="pc-form-row">
-                        <span class="pc-form-label">关机时刻</span>
-                        <input class="nd-input" id="pcSdTime" placeholder="如 22:00" maxlength="5" autocomplete="off">
-                    </div>
-                    <div class="pc-form-row">
-                        <span class="pc-form-label">重复周期</span>
-                        <select class="nd-select" id="pcSdMode" onchange="pcOnSdModeChange()">
-                            <option value="daily">每天</option>
-                            <option value="workday">工作日（周一至周五）</option>
-                            <option value="single">指定日期（单次）</option>
-                        </select>
-                        <input class="nd-input" id="pcSdDate" placeholder="如 12/31/2026" style="display:none" autocomplete="off">
-                    </div>
+                <div class="pc-form-row">
+                    <span class="pc-form-label">关机时刻</span>
+                    <input class="nd-input" type="time" id="pcSdTime" autocomplete="off">
+                </div>
+                <div class="pc-form-row">
+                    <span class="pc-form-label">重复周期</span>
+                    <select class="nd-select" id="pcSdMode" onchange="pcOnSdModeChange()">
+                        <option value="daily">每天</option>
+                        <option value="workday">工作日（周一至周五）</option>
+                        <option value="single">指定日期（单次）</option>
+                    </select>
+                    <input class="nd-input" type="date" id="pcSdDate" style="display:none" autocomplete="off">
+                </div>
                     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px">
                         <button class="nd-btn primary" id="pcBtnSdSave" onclick="pcSaveShutdown()">保存并启用</button>
                         <button class="nd-btn" id="pcBtnSdToggle" onclick="pcToggleShutdown()">停用</button>
                         <button class="nd-btn" id="pcBtnSdRemove" onclick="pcRemoveShutdown()">删除</button>
                         <span class="nd-hint" id="pcSdTip"></span>
                     </div>
-                    <div class="nd-hint" style="margin-top:8px">到点后系统将倒计时 60 秒执行关机（本版本暂无关机前提醒弹窗）。当前任务状态见上方「关机计划任务」卡。</div>
+                    <div class="pc-form-row" style="margin-top:12px">
+                        <span class="pc-form-label">当前关机任务</span>
+                    </div>
+                    <div id="pcSdTasksBody">
+                        <div class="nd-empty">正在读取本机配置…</div>
+                    </div>
+                    <div class="nd-hint" style="margin-top:8px">到点后系统将倒计时 60 秒执行关机（本版本暂无关机前提醒弹窗）。</div>
                 </div>
             </div>
 
