@@ -26,6 +26,7 @@ FS_SORTABLE = {
     "size": "size",
     "mtime": "mtime",
     "date_modified": "mtime",   # 前端列名兼容
+    "ext": "LOWER(SUBSTR(name, INSTR(name, '.') + 1))",   # 扩展名字典序（目录固定排最前，见 handle_fs_query）
 }
 _FS_EXT_RE = re.compile(r"(?:^|\s)ext:([A-Za-z0-9_;]+)", re.IGNORECASE)
 
@@ -71,7 +72,7 @@ def _connect_ro():
 
 
 def _parse_query(q):
-    """拆 ext: 筛选段与关键词（Everything 原生语法前端拼接，服务端转为 sqlite 条件）。"""
+    """拆 ext: 筛选段与关键词（前端语法拼接，服务端转为 sqlite 条件）。"""
     exts = []
     m = _FS_EXT_RE.search(q)
     if m:
@@ -114,9 +115,10 @@ def handle_fs_query(params=None):
             where.append("(" + " OR ".join(["name LIKE ? ESCAPE '\\'"] * len(exts)) + ")")
             args.extend("%." + _like_escape(e) for e in exts)
 
-        # 修改时间区间过滤（date_from/date_to 接受 YYYY-MM-DD 或时间戳）
-        date_from = _parse_date_param(params.get("date_from"))
-        date_to = _parse_date_param(params.get("date_to"), end_of_day=True)
+        # 修改时间区间过滤（mtime_from/mtime_to 为规范参数名；date_from/date_to 兼容别名。
+        # 均接受 YYYY-MM-DD 或时间戳；日期串止端按 23:59:59 对齐天边界，闭区间）
+        date_from = _parse_date_param(params.get("mtime_from") or params.get("date_from"))
+        date_to = _parse_date_param(params.get("mtime_to") or params.get("date_to"), end_of_day=True)
         if date_from is not None:
             where.append("mtime >= ?")
             args.append(date_from)
@@ -129,9 +131,16 @@ def handle_fs_query(params=None):
         sort = str(params.get("sort") or "").strip()
         order_col = FS_SORTABLE.get(sort)
         asc = str(params.get("ascending") or "").strip() != "0"
-        if not order_col:   # 默认：名称升序（与 Everything 默认一致）
-            order_col, asc = FS_SORTABLE["name"], True
-        order = " ORDER BY " + order_col + (" ASC" if asc else " DESC")
+        if not order_col:   # 默认：名称升序
+            order_col, asc, sort = FS_SORTABLE["name"], True, "name"
+        if sort == "ext":
+            # ext 排序语义（2026-09-16 定案）：目录固定排最前（不随正倒序翻转，组内按名称稳定序）；
+            # 文件按扩展名字典序（无扩展名文件的扩展名段=文件名整体，自然参与字典序），
+            # 同扩展名按名称稳定序。服务端全量排序，前端不再只排当页 200 条。
+            order = (" ORDER BY is_dir DESC, " + order_col + (" ASC" if asc else " DESC")
+                     + ", name COLLATE NOCASE ASC")
+        else:
+            order = " ORDER BY " + order_col + (" ASC" if asc else " DESC")
 
         limit = FS_MAX_RESULTS
         try:
@@ -160,22 +169,24 @@ def handle_fs_query(params=None):
             p = p[: -len(suffix)] if p.endswith(suffix) else p.rstrip("\\")
             idx = p.rfind("\\")
             p = (p[: idx + 1] if idx >= 0 else p + "\\")   # 根目录下 → "C:\"
-        results.append({"name": name, "path": p, "size": size, "date_modified": mtime})
+        results.append({"name": name, "path": p, "is_dir": bool(is_dir), "size": size, "date_modified": mtime})
     return {"success": True, "q": q, "total": total, "count": len(results), "results": results}
 
 
 def handle_fs_status(params=None):
-    """状态：索引库就绪情况（设置卡/指引依据）。"""
+    """状态：索引库就绪情况（设置卡/指引依据）。partial 卷如实透出（部分索引常态展示）。"""
     path = _fs_db_path()
     out = {"success": True, "db_exists": os.path.isfile(path), "db_path": path,
-           "file_count": 0, "dir_count": 0, "volumes": []}
+           "file_count": 0, "dir_count": 0, "volumes": [], "partial_volumes": []}
     conn = _connect_ro()
     if conn is not None:
         try:
             out["file_count"] = conn.execute("SELECT COUNT(*) FROM files WHERE is_dir=0").fetchone()[0]
             out["dir_count"] = conn.execute("SELECT COUNT(*) FROM files WHERE is_dir=1").fetchone()[0]
-            out["volumes"] = [r[0] + ":" for r in
-                              conn.execute("SELECT DISTINCT volume FROM usn_state").fetchall()]
+            st = conn.execute("SELECT DISTINCT volume FROM usn_state").fetchall()
+            out["volumes"] = [r[0] + ":" for r in st]
+            out["partial_volumes"] = [r[0] + ":" for r in
+                                      conn.execute("SELECT volume FROM usn_state WHERE partial=1").fetchall()]
         except sqlite3.Exception:
             pass
         finally:
@@ -212,8 +223,8 @@ def handle_fs_stats(params=None):
             "GROUP BY ext ORDER BY c DESC LIMIT 30"
         ).fetchall()
         exts = [{"ext": r[0], "count": r[1]} for r in rows]
-        r = conn.execute("SELECT MIN(mtime), MAX(mtime) FROM files WHERE is_dir=0").fetchone()
-        return {"success": True, "exts": exts, "date_min": r[0], "date_max": r[1]}
+        r = conn.execute("SELECT MIN(mtime), MAX(mtime) FROM files WHERE is_dir=0").fetchall()
+        return {"success": True, "exts": exts, "date_min": r[0][0], "date_max": r[0][1]}
     except sqlite3.Exception:
         return {"success": False, "error": "indexer_not_running",
                 "hint": "文件索引未就绪：索引器首次运行需要数分钟，请稍后重试"}
