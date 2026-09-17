@@ -62,6 +62,35 @@ from power_control import (
     handle_pc_bios_restore, handle_pc_shutdown_set, handle_pc_shutdown_remove,
     handle_pc_shutdown_toggle, handle_pc_task_status,
 )
+from appctl import (
+    get_autostart, set_autostart, update_status, update_apply,
+)
+
+# exit hook（desktop.py 注册 window.destroy）：更新安装路径与性能「以管理员
+# 重启」共用。既有缺陷补齐：desktop.py 此前调 _bridge_mod.register_exit_hook
+# 但 bridge 未定义该函数（AttributeError 被静默吞掉，hook 从未生效）。
+_exit_hook = {"fn": None}
+
+
+def register_exit_hook(fn):
+    _exit_hook["fn"] = fn
+
+
+def _request_exit():
+    fn = _exit_hook.get("fn")
+    if fn is not None:
+        try:
+            fn()
+        except Exception:
+            pass
+
+
+def handle_app_update_apply(params=None, data=None):
+    """立即更新：拉起 updater 子进程 → 主进程退出（updater 等待后静默安装）。"""
+    r = update_apply()
+    if r.get("exiting"):
+        _request_exit()
+    return r
 
 # 路由表：前端请求路径 -> 业务处理器
 ROUTES = {
@@ -153,6 +182,11 @@ ROUTES = {
     "/api/powercontrol/shutdown-remove": handle_pc_shutdown_remove,
     "/api/powercontrol/shutdown-toggle": handle_pc_shutdown_toggle,
     "/api/powercontrol/task-status": handle_pc_task_status,
+    # 客户端控制（三大改造②③）：开机自启 + 更新引擎
+    "/api/app/autostart": get_autostart,
+    "/api/app/autostart-set": set_autostart,
+    "/api/app/update-status": update_status,
+    "/api/app/update-apply": handle_app_update_apply,
 }
 
 
@@ -185,8 +219,9 @@ class ApiBridge:
                 except Exception:
                     data = {}
                 return handle_dp_powercfg_set(data)
-            # 自动开关机 P1：带 body 的路由双参透传（params + data）
-            if parsed.path.startswith("/api/powercontrol/") and body:
+            # 自动开关机 P1 / 客户端控制：带 body 的路由双参透传（params + data）
+            if (parsed.path.startswith("/api/powercontrol/")
+                    or parsed.path.startswith("/api/app/")) and body:
                 try:
                     data = json.loads(body) if body else None
                 except Exception:

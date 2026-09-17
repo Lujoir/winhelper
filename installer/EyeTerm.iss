@@ -1,18 +1,24 @@
 ﻿; EyeTerm Setup (Win10/11 x64) - build: ISCC.exe installer\EyeTerm.iss
+; 2026-09-17 三大改造①③：文件名可携带预置注册配置（EyeTerm_Setup_x64_{ver}_{cfg64}.exe，
+; cfg64=base64url(zlib(json{"s":server,"t":token}))，协议 main 定稿）——安装器从自身
+; 文件名提取 cfg64 原样写入 {app}\config_bootstrap.json（raw 透传，解码在客户端
+; bootstrap.py，解析失败/字段不全 → 客户端完全回退手动流程，零行为变化）。
 #define MyAppName 'guanshuhu-terminal'
 #define MyAppExeName 'winhelper.exe'
+#define MyAppVersion '4.1.0'
 
 [Setup]
 AppId={{8E6C2A70-91D4-4B7E-9A3F-1E4E7B9C0D55}
 AppName=EyeTerm - guanshuhu-terminal
-AppVersion=4.0.0
-AppVerName=EyeTerm 4.0.0
+AppVersion={#MyAppVersion}
+AppVerName=EyeTerm {#MyAppVersion}
 DefaultDirName={autopf}\EyeTerm
 UninstallDisplayName=EyeTerm
 UninstallDisplayIcon={app}\{#MyAppExeName}
 DefaultGroupName=EyeTerm
 OutputDir=Output
-OutputBaseFilename=EyeTerm_Setup_x64
+; 2026-09-16：安装包命名带版本号与时间戳（用户要求），不再固定名覆盖
+OutputBaseFilename=EyeTerm_Setup_x64_{#MyAppVersion}_{#GetDateTimeString("yyyymmdd_hhnn","","")}
 SetupIconFile=..\app.ico
 Compression=lzma2/max
 SolidCompression=yes
@@ -26,11 +32,14 @@ Name: english; MessagesFile: compiler:Default.isl
 
 [Tasks]
 Name: desktopicon; Description: {cm:CreateDesktopIcon}; GroupDescription: {cm:AdditionalIcons}
-Name: autostart; Description: '开机自动启动（静默运行）'; Flags: unchecked
+; 2026-09-17 三大改造②：开机自启改默认勾选（HKCU Run 同一键，客户端设置弹窗可改）
+Name: autostart; Description: '开机自动启动（静默运行）'
 
 [Files]
 Source: ..\dist\winhelper.exe; DestDir: {app}; Flags: ignoreversion
 Source: MicrosoftEdgeWebView2RuntimeInstallerX64.exe; DestDir: {tmp}; Flags: deleteafterinstall
+; 托盘图标（三大改造②：Shell_NotifyIconW 读取 exe 同目录 app.ico）
+Source: ..\app.ico; DestDir: {app}; Flags: ignoreversion
 ; EyeTerm 平台自建根证书（公开文件，私钥在服务器）：安装时自动导入系统"受信任的根证书颁发机构"，
 ; 使本机浏览器可直接信任 https 管理端（8443）。卸载不移除该信任（保留平台访问能力）。
 Source: ..\assets\platform_ca.pem; DestDir: {app}\assets; DestName: eyeterm_root_ca.crt; Flags: ignoreversion
@@ -105,6 +114,38 @@ begin
   end;
 end;
 
+// ---- 三大改造①：安装包文件名解析（协议 main 定稿）----
+// EyeTerm_Setup_x64_{ver}_{cfg64}.exe → cfg64 = 去掉固定前缀与 .exe 后的剩余段
+// （base64url 字符集含下划线，故不能按末个下划线切分；固定前缀切分与客户端
+// bootstrap.py 正则语义一致）。cfg64 原样写入 config_bootstrap.json（raw 透传），
+// 解码与校验统一在客户端（Inno 不做 zlib/base64 解压）。
+function WriteBootstrapFromName(): Boolean;
+var
+  ExeName, Prefix, Cfg, Json: String;
+begin
+  Result := False;
+  try
+    Prefix := 'EyeTerm_Setup_x64_';
+    ExeName := ExtractFileName(ExpandConstant('{srcexe}'));
+    if Pos(Prefix, ExeName) <> 1 then
+      Exit;
+    Cfg := Copy(ExeName, Length(Prefix) + 1, Length(ExeName));
+    // 去掉 .exe 尾（大小写不敏感）
+    if Length(Cfg) > 4 then
+    begin
+      if (Copy(Cfg, Length(Cfg) - 3, 4) = '.exe') or (Copy(Cfg, Length(Cfg) - 3, 4) = '.EXE') then
+        Cfg := Copy(Cfg, 1, Length(Cfg) - 4);
+    end;
+    if Length(Cfg) < 8 then
+      Exit;
+    Json := '{"cfg64":"' + Cfg + '"}';
+    SaveStringToFile(ExpandConstant('{app}\config_bootstrap.json'), Json, False);
+    Result := True;
+  except
+    Result := False;
+  end;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Rc: Integer;
@@ -125,5 +166,8 @@ begin
     // 服务模式为主路径：安装并启动 Everything 服务（SYSTEM 权限读 MFT + 由服务承载 HTTP 127.0.0.1:5700），
     // 终端侧无需提权；EyeTerm 首用时拉起实例仅作服务不在时的兜底。
     Exec(ExpandConstant('{app}\everything\Everything.exe'), '-install-service', '', SW_HIDE, ewWaitUntilTerminated, Rc);
+    // 三大改造①：文件名携带预置注册配置 → {app}\config_bootstrap.json（raw 透传）；
+    // 任何失败静默跳过（不写文件 → 客户端完全回退手动流程，零行为变化）。
+    WriteBootstrapFromName();
   end;
 end;

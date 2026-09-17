@@ -41,7 +41,7 @@ import urllib.request
 # GUI（无控制台）程序中调用控制台子进程（ping/route/iperf3）必须隐藏窗口（ADR-013）
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-CLIENT_VERSION = "4.0.0"
+CLIENT_VERSION = "4.1.0"
 TERMINAL_TYPE = "windows"
 DEFAULT_HEARTBEAT_INTERVAL = 30          # 秒（ADR 可调）
 _BACKOFF_CAP = 20                        # 失败退避倍数上限（30s*20=600s）
@@ -857,6 +857,19 @@ def _loop():
                 srv_interval = int(hb_resp.get("interval") or 0)
                 if srv_interval >= 5:
                     delay = srv_interval
+            except Exception:
+                pass
+            # 自动更新（三大改造③，ADR-012）：心跳响应 latest_version →
+            # 版本比对 + 清单下载（后台线程；状态经 /api/app/update-status 出提示条）
+            try:
+                lv = hb_resp.get("latest_version")
+                if lv and lv != _state.get("_last_seen_version"):
+                    with _lock:
+                        _state["_last_seen_version"] = str(lv)
+                    import updater as _upd
+                    _upd.check_async(CLIENT_VERSION,
+                                     cfg.get("server_url") or "",
+                                     cfg.get("token") or "")
             except Exception:
                 pass
         else:

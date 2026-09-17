@@ -8,6 +8,14 @@
     <script src="vendor/chart.umd.min.js"></script>
 </head>
 <body>
+    <!-- 自动更新提示条（三大改造③，appui.js 控制；30s 轮询 /api/app/update-status） -->
+    <div id="ubBanner" style="display:none; position:fixed; top:0; left:0; right:0; z-index:1200; align-items:center; gap:12px; padding:10px 18px; background:rgba(255,183,77,.12); border-bottom:1px solid rgba(255,183,77,.45); color:#ffd54f; font-size:12.5px; flex-wrap:wrap;">
+        <b>发现新版本 <span id="ubVer">—</span></b>
+        <span>建议更新到最新版（更新过程中会自动完成安装与重启）。</span>
+        <button class="btn btn-primary" id="ubApplyBtn" onclick="ubApplyNow()">立即更新</button>
+        <button class="btn" onclick="ubDismiss()">稍后</button>
+        <span class="nd-hint" id="ubTip"></span>
+    </div>
     <!-- 顶部导航 -->
     <nav class="navbar">
         <div class="nav-brand">
@@ -1088,6 +1096,18 @@
                         <button class="btn btn-primary" id="perfSaveAppConfigBtn" onclick="saveTempsInterval()">保存</button>
                     </div>
                 </div>
+                <!-- 客户端（三大改造②：开机自启；托盘常驻说明） -->
+                <div class="settings-card" id="settingsCardApp">
+                    <div class="settings-card-head">
+                        <h4 class="settings-card-title">客户端</h4>
+                        <span class="nd-badge nd-muted" id="acAutostartBadge">读取中…</span>
+                    </div>
+                    <p class="settings-card-desc">开机自动启动 EyeTerm（托盘常驻；关闭窗口仅收纳到托盘，托盘菜单可退出）。</p>
+                    <div class="settings-row">
+                        <button class="btn" id="acAutostartBtn" onclick="acToggleAutostart()">开启/关闭自启</button>
+                        <span class="settings-label" id="acAutostartTip"></span>
+                    </div>
+                </div>
                 <!-- 网络排障（net-doctor：渲染于 web/netdoctor.js ndRenderSettings） -->
                 <div class="settings-card" id="ndSettingsHost"></div>
             </div>
@@ -1382,13 +1402,15 @@
     <script src="netdoctor.js"></script>
     <script src="desktoppolicy.js"></script>
     <script src="powercontrol.js"></script>
+    <script src="appui.js"></script>
     <script>
     /* 首帧资源丢失自愈（pywebview 内置 HTTP 服务首帧并发竞态，disk-cleaner ADR-016）：
        任一模块 init 函数缺失说明其 js 整文件未加载（加载层丢请求，非代码缺陷），
        自动重载一次即可恢复；最多重试 2 次，成功加载后计数归零。 */
     (function () {
         var INITS = ["initHomeTab", "initLogInspectorTab", "initDiskTab",
-                     "initPerfTab", "initNetDoctorTab", "initPowerControlTab"];
+                     "initPerfTab", "initNetDoctorTab", "initPowerControlTab",
+                     "initAppUi"];
         function __selfHeal() {
             var missing = [];
             for (var i = 0; i < INITS.length; i++) {
