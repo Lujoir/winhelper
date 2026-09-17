@@ -18,6 +18,8 @@ import time
 import traceback
 import zlib
 
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)   # GUI 无控制台程序子进程必须隐藏窗口（2026-09-16 弹窗缺陷修复）
+
 APP_DIR_NAME = "desktop_policy"
 POLL_DEFAULT_SEC = 120
 BACKOFF_SEC = (2, 8, 32)
@@ -628,7 +630,8 @@ GUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
 
 
 def _run_powercfg(*args):
-    proc = subprocess.run(["powercfg", *args], capture_output=True)
+    proc = subprocess.run(["powercfg", *args], capture_output=True,
+                          creationflags=_NO_WINDOW)
     out = proc.stdout or b""
     err = proc.stderr or b""
     text = None

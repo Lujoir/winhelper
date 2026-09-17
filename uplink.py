@@ -41,7 +41,7 @@ import urllib.request
 # GUI（无控制台）程序中调用控制台子进程（ping/route/iperf3）必须隐藏窗口（ADR-013）
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-CLIENT_VERSION = "4.1.1"
+CLIENT_VERSION = "4.1.2"
 TERMINAL_TYPE = "windows"
 DEFAULT_HEARTBEAT_INTERVAL = 30          # 秒（ADR 可调）
 _BACKOFF_CAP = 20                        # 失败退避倍数上限（30s*20=600s）
@@ -714,6 +714,23 @@ def _cmd_pc_apply_policy(args):
                        "op": "apply", "ok": False,
                        "steps": {}, "error": str(e)[:200]}
     return bool(data.get("ok")), data
+
+
+# ---------- pc_diag（自动开关机只读诊断，ADR-006 定案工具；2026-09-17）----------
+
+
+@command_handler("pc_diag")
+def _cmd_pc_diag(args):
+    """只读诊断：SaveBiosSetting 类存在性 / PasswordState / RTC 读回 /
+    最近一次 BIOS apply 完整结果（attempts 含写入 rv 与 __commit__ note）/
+    日志尾 200 行 / client_version。纯只读零写入（power-control ADR-006 定案）。"""
+    from power_control import collect_diag   # 延迟导入
+    try:
+        data = collect_diag()
+        data["client_version"] = CLIENT_VERSION
+        return True, data
+    except Exception as e:
+        return False, {"error": str(e)[:200]}
 
 
 # ============================================================

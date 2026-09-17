@@ -5,7 +5,7 @@
 ; bootstrap.py，解析失败/字段不全 → 客户端完全回退手动流程，零行为变化）。
 #define MyAppName 'guanshuhu-terminal'
 #define MyAppExeName 'winhelper.exe'
-#define MyAppVersion '4.1.1'
+#define MyAppVersion '4.1.2'
 
 [Setup]
 AppId={{8E6C2A70-91D4-4B7E-9A3F-1E4E7B9C0D55}
@@ -128,15 +128,13 @@ end;
 // taskkill /IM Everything.exe 覆盖（在 {app} 覆盖范围内），不在此重复。
 function AppRunning(): Boolean;
 var
-  Tmp: String; Rc: Integer;
+  Rc: Integer;
 begin
-  Tmp := ExpandConstant('{tmp}\_proc_check.txt');
-  Rc := 0;
+  // tasklist|find 命中返回 0、未命中返回 1（避免 Inno FileSize 形态差异）
   Exec(ExpandConstant('{cmd}'),
-       '/C tasklist /FI "IMAGENAME eq winhelper.exe" | find /I "winhelper.exe" > "' + Tmp + '"',
+       '/C tasklist /FI "IMAGENAME eq winhelper.exe" | find /I "winhelper.exe" > NUL',
        '', SW_HIDE, ewWaitUntilTerminated, Rc);
-  Result := FileExists(Tmp) and (FileSize(Tmp) > 0);
-  DeleteFile(Tmp);
+  Result := (Rc = 0);
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
