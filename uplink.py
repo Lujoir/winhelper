@@ -41,7 +41,7 @@ import urllib.request
 # GUI（无控制台）程序中调用控制台子进程（ping/route/iperf3）必须隐藏窗口（ADR-013）
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-CLIENT_VERSION = "4.1.3"
+CLIENT_VERSION = "4.1.4"
 TERMINAL_TYPE = "windows"
 DEFAULT_HEARTBEAT_INTERVAL = 30          # 秒（ADR 可调）
 _BACKOFF_CAP = 2                         # 失败退避倍数上限（30s*2=60s；4.1.3 main 批准 ADR-004 变更：联调期快速重连）
@@ -124,11 +124,33 @@ _state = {
     "last_hb_ts": 0.0,
     "last_ok": False,
     "last_error": None,
+    "effective_interval": None,   # 实际生效心跳间隔（服务端下发覆盖后写入）
     "executed": set(),      # 命令 id 幂等集合（服务端单次下发不重发，内存集合足够）
 }
 _loop_thread = {"obj": None}
 _stop = threading.Event()
 _wakeup = threading.Event()   # 手动注册/配置变更提前唤醒心跳拍
+
+
+def _effective_heartbeat_interval(cfg=None):
+    """实际生效心跳间隔：服务端下发覆盖值 > 本地配置 > 默认（4.1.4 观察修正：
+    此前自报一律读本地配置，实际心跳按服务端覆盖值跑，自报 30/实际 60
+    双值来源不一致——统一取生效值，供 pc_diag/asset/status 远程核验）。"""
+    with _lock:
+        eff = _state.get("effective_interval")
+    try:
+        eff = int(eff) if eff else 0
+    except (TypeError, ValueError):
+        eff = 0
+    if eff >= 5:
+        return eff
+    if not isinstance(cfg, dict):
+        cfg = load_config()
+    try:
+        v = int(cfg.get("heartbeat_interval") or 0)
+    except (TypeError, ValueError):
+        v = 0
+    return v if v >= 5 else DEFAULT_HEARTBEAT_INTERVAL
 
 
 def _ulog(msg):
@@ -381,12 +403,8 @@ def _register_payload(cfg):
     except Exception:
         hostname = None
     asset = _hwinfo_fallback(_asset_detail())
-    # 心跳间隔配置值（P1 顺带：控制台展示「配置值」而非推断观测值）
-    try:
-        asset["heartbeat_interval"] = int(
-            cfg.get("heartbeat_interval") or DEFAULT_HEARTBEAT_INTERVAL)
-    except (TypeError, ValueError):
-        asset["heartbeat_interval"] = DEFAULT_HEARTBEAT_INTERVAL
+    # 心跳间隔生效值（4.1.4：服务端下发覆盖优先，自报=实际生效口径）
+    asset["heartbeat_interval"] = _effective_heartbeat_interval(cfg)
     payload = {
         "terminal_id": tid,
         "terminal_type": TERMINAL_TYPE,
@@ -752,15 +770,15 @@ def _cmd_pc_diag(args):
     try:
         data = collect_diag()
         data["client_version"] = CLIENT_VERSION
+        # 生效间隔在锁外取值（helper 内部取 _lock，Lock 不可重入，锁内调用=死锁）
+        eff_interval = _effective_heartbeat_interval()
         with _lock:
             data["uplink"] = {
                 "state": _state.get("state"),
                 "registered": _state.get("registered"),
                 "last_error": _state.get("last_error"),
                 "last_hb_ts": _state.get("last_hb_ts"),
-                "heartbeat_interval": int(
-                    load_config().get("heartbeat_interval")
-                    or DEFAULT_HEARTBEAT_INTERVAL),
+                "heartbeat_interval": eff_interval,
             }
         return True, data
     except Exception as e:
@@ -890,6 +908,7 @@ def _loop():
         tid = _terminal_id(cfg)
         _set_state(terminal_id=tid, enabled=True)
         delay = max(1, int(cfg.get("heartbeat_interval") or DEFAULT_HEARTBEAT_INTERVAL))
+        _set_state(effective_interval=delay)
 
         if not _state.get("registered"):
             _set_state(state="connecting")
@@ -919,6 +938,7 @@ def _loop():
                 srv_interval = int(hb_resp.get("interval") or 0)
                 if srv_interval >= 5:
                     delay = srv_interval
+                    _set_state(effective_interval=srv_interval)
             except Exception:
                 pass
             # 自动更新（三大改造③，ADR-012）：心跳响应 latest_version →
@@ -1017,7 +1037,7 @@ def handle_uplink_status(params=None):
             "version": CLIENT_VERSION,
             "executed_count": len(st.get("executed") or ()),
             "iperf3_available": _iperf3_available(),
-            "heartbeat_interval": int(cfg.get("heartbeat_interval") or DEFAULT_HEARTBEAT_INTERVAL),
+            "heartbeat_interval": _effective_heartbeat_interval(cfg),
             "client_version": CLIENT_VERSION,
         },
     }

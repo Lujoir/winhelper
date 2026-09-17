@@ -803,28 +803,33 @@ def build_bios_targets(config):
 
 # --- 写入命令构造（仅提权 worker / 真机验证脚本执行；单测 mock runner）---
 def _ps_bios_write(item, value):
-    """BIOS 单条写入：老接口优先 → 新一代实例级接口回退（ADR-006 附注③）。
+    """BIOS 单条写入：老接口优先 → 新一代实例级接口回退（ADR-006 附注③④）。
 
     老接口 Lenovo_SetBiosSetting.SetBiosSetting("Item,Value")：类存在且
     rv=0 直接成功；类不存在（异常）或 rv!=0 → 枚举 root/wmi
     Lenovo_BiosSetting 实例，按 CurrentSetting 前缀匹配目标项，调用该
     实例自带的 SetBiosSetting 方法（新一代接口，无需 SaveBiosSetting
     提交，落盘与否由调用方回读校验兜底）。
-    输出 PCSET=<rv|NA> / PCVIA=<old|new> / 可选 PCERR=<异常摘要>——
-    rv=null（命令从未执行成功）不再静默，err 透传真实异常消息。
+
+    输出协议（ADR-006 附注④，old/new 分开记录禁止后者覆盖前者）：
+      PCOLD=<rv|ERR:msg>          老接口结果（每次都尝试，ERR: 前缀=异常）
+      PCNEW=<rv|ERR:msg|skip|no-instance>   新接口结果（skip=老成功未尝试）
+      PCSET=<rv|NA>               最终 rv（new 优先，其次 old，均无=NA）
+      PCVIA=<old|new>             生效路径
+      PCERR=<最终异常摘要>        向后兼容（new err 优先，否则 old err）
     项名/值均来自受控集合，仍做单引号防御；老/新两处调用内联同一
     字面量（单测 mock 按 request = '...' 提取）。"""
     req = ("%s,%s" % (item, value)).replace("'", "''")
     pref = item.replace("'", "''")
     return (
-        "$via = 'old'; $errtxt = ''; $rv = $null; "
+        "$oldrv = $null; $olderr = ''; $newrv = $null; $newerr = ''; "
+        "$newskip = $false; "
         "try { $r = Invoke-CimMethod -Namespace 'root/wmi' "
         "-ClassName 'Lenovo_SetBiosSetting' -MethodName 'SetBiosSetting' "
         "-Arguments @{ request = '%(req)s' } -ErrorAction Stop; "
-        "$rv = $r.ReturnValue } "
-        "catch { $errtxt = $_.Exception.Message } "
-        "if ($null -eq $rv -or $rv -ne 0) { "
-        "$via = 'new'; "
+        "$oldrv = $r.ReturnValue } "
+        "catch { $olderr = $_.Exception.Message } "
+        "if ($null -eq $oldrv -or $oldrv -ne 0) { "
         "$inst = Get-CimInstance -Namespace root/wmi "
         "-ClassName Lenovo_BiosSetting -ErrorAction SilentlyContinue | "
         "Where-Object { $_.CurrentSetting -and "
@@ -833,15 +838,29 @@ def _ps_bios_write(item, value):
         "if ($inst) { "
         "try { $r2 = Invoke-CimMethod -InputObject $inst "
         "-MethodName 'SetBiosSetting' -Arguments @{ request = '%(req)s' } "
-        "-ErrorAction Stop; $rv = $r2.ReturnValue } "
-        "catch { $errtxt = $_.Exception.Message; $rv = $null } } "
-        "else { $errtxt = ($errtxt + ' no-instance').Trim(); "
-        "$rv = $null } } "
-        "$errtxt = ($errtxt -replace '\\r?\\n', ' '); "
-        "Write-Output ('PCSET=' + $(if ($null -ne $rv) { $rv } "
+        "-ErrorAction Stop; $newrv = $r2.ReturnValue } "
+        "catch { $newerr = $_.Exception.Message } } "
+        "else { $newerr = 'no-instance' } } "
+        "else { $newskip = $true } "
+        "$oldout = if ($olderr) { 'ERR:' + $olderr } "
+        "elseif ($null -ne $oldrv) { '' + $oldrv } else { 'ERR:unknown' }; "
+        "$newout = if ($newskip) { 'skip' } "
+        "elseif ($newerr) { 'ERR:' + $newerr } "
+        "elseif ($null -ne $newrv) { '' + $newrv } else { 'ERR:unknown' }; "
+        "$oldout = ($oldout -replace '\\r?\\n', ' '); "
+        "$newout = ($newout -replace '\\r?\\n', ' '); "
+        "$finrv = if ($null -ne $newrv) { $newrv } "
+        "elseif ($null -ne $oldrv) { $oldrv } else { $null }; "
+        "$finvia = if ($null -ne $oldrv -and $oldrv -eq 0) { 'old' } "
+        "else { 'new' }; "
+        "$finerr = if ($newerr) { $newerr } else { $olderr }; "
+        "$finerr = ($finerr -replace '\\r?\\n', ' '); "
+        "Write-Output ('PCOLD=' + $oldout); "
+        "Write-Output ('PCNEW=' + $newout); "
+        "Write-Output ('PCSET=' + $(if ($null -ne $finrv) { $finrv } "
         "else { 'NA' })); "
-        "Write-Output ('PCVIA=' + $via); "
-        "if ($errtxt) { Write-Output ('PCERR=' + $errtxt) }"
+        "Write-Output ('PCVIA=' + $finvia); "
+        "if ($finerr) { Write-Output ('PCERR=' + $finerr) }"
     ) % {"req": req, "pref": pref}
 
 
@@ -869,6 +888,28 @@ def _parse_set_err(out):
     """PCERR= 异常摘要（invalid class / 无实例 / 实例方法异常），截断 160 字符。"""
     m = re.search(r"PCERR=(.*)", out or "", re.S)
     return m.group(1).strip()[:160] if m else None
+
+
+def _parse_set_line(out, key):
+    """提取 PC<key>=<value> 单行原始值（PCOLD/PCNEW 专用，值已单行化）。"""
+    m = re.search(r"^PC%s=(.*)$" % key, out or "", re.M)
+    return m.group(1).strip()[:200] if m else None
+
+
+def _parse_attempt_rv(raw):
+    """'0'/'-1' → int；ERR:xx / no-instance / skip / NA / None → None。"""
+    if raw is None:
+        return None
+    m = re.fullmatch(r"(-?\d+)", raw)
+    return int(m.group(1)) if m else None
+
+
+def _parse_attempt_iface(out, key):
+    """PC<key>= 原始值 → {"rv": int|None, "raw": str|None}（分开记录，ADR-006 附注④）。"""
+    raw = _parse_set_line(out, key)
+    if raw is None:
+        return {"rv": None, "raw": None}
+    return {"rv": _parse_attempt_rv(raw), "raw": raw}
 
 
 def read_rtc_map(runner=None, timeout=40):
@@ -931,7 +972,9 @@ def bios_apply_targets(targets, runner=None, timeout=40):
                          "rc": rc, "rv": _parse_set_rv(out),
                          "via": _parse_set_via(out),
                          "err": _parse_set_err(out)
-                                or (err or "").strip()[:160] or None})
+                                or (err or "").strip()[:160] or None,
+                         "old": _parse_attempt_iface(out, "OLD"),
+                         "new": _parse_attempt_iface(out, "NEW")})
     committed, note = _bios_commit(runner=runner, timeout=timeout)
     attempts.append({"item": "__commit__", "sent": "Lenovo_SaveBiosSetting",
                      "format": "commit", "rc": 0, "rv": note})
@@ -949,7 +992,9 @@ def bios_apply_targets(targets, runner=None, timeout=40):
                          "format": "bracket", "rc": rc, "rv": _parse_set_rv(out),
                          "via": _parse_set_via(out),
                          "err": _parse_set_err(out)
-                                or (err or "").strip()[:160] or None})
+                                or (err or "").strip()[:160] or None,
+                         "old": _parse_attempt_iface(out, "OLD"),
+                         "new": _parse_attempt_iface(out, "NEW")})
     if bad:
         committed2, note2 = _bios_commit(runner=runner, timeout=timeout)
         attempts.append({"item": "__commit__",
@@ -1475,15 +1520,50 @@ def _ps_probe_pwd_state():
             "catch { Write-Output 'PCPWD=NA' }")
 
 
+def _ps_diag_wmi_surface():
+    """穷尽枚举 root\\wmi Lenovo_* 写入面（只读，ADR-006 附注④ diag#3）：
+    全部类名清单 + 四个关键 BIOS 类的方法名清单 + probe_write_iface
+    判定依据三项原始布尔（old_class_present / instance_present /
+    inst_has_set_method）——终审证据：这台机器到底有没有任何可用的
+    BIOS 写入方法。"""
+    return (
+        "$o = [ordered]@{}; "
+        "$o.classes = @(Get-CimClass -Namespace root/wmi "
+        "-ClassName 'Lenovo_*' -ErrorAction SilentlyContinue | "
+        "ForEach-Object { $_.CimClassName }); "
+        "$keys = @('Lenovo_SetBiosSetting','Lenovo_BiosSetting',"
+        "'Lenovo_SaveBiosSetting','Lenovo_BiosSettingInterface'); "
+        "$m = @{}; "
+        "foreach ($k in $keys) { "
+        "$c = Get-CimClass -Namespace root/wmi -ClassName $k "
+        "-ErrorAction SilentlyContinue; "
+        "if ($c) { $m[$k] = @($c.CimClassMethods | "
+        "ForEach-Object { $_.Name }) } else { $m[$k] = $null } } "
+        "$o.methods = $m; "
+        "$old = Get-CimClass -Namespace root/wmi "
+        "-ClassName Lenovo_SetBiosSetting -ErrorAction SilentlyContinue; "
+        "$o.old_class_present = [bool]$old; "
+        "$inst = Get-CimInstance -Namespace root/wmi "
+        "-ClassName Lenovo_BiosSetting -ErrorAction SilentlyContinue | "
+        "Select-Object -First 1; "
+        "$o.instance_present = [bool]$inst; "
+        "$o.inst_has_set_method = [bool]($inst -and $inst.CimClass -and "
+        "$inst.CimClass.CimClassMethods['SetBiosSetting']); "
+        "ConvertTo-Json -Compress -InputObject $o"
+    )
+
+
 def collect_diag():
     """pc_diag 只读诊断采集（ADR-006 定案工具；纯只读零写入，各段失败不阻断）。
 
     返回：{schema, hostname, ts, save_class, password_state, rtc_readback,
-    last_apply, log_tail[200 行]}；client_version 由 uplink 回执层补齐。"""
+    wmi_surface, last_apply, log_tail[200 行]}；client_version 由 uplink
+    回执层补齐。"""
     data = {"schema": 1,
             "hostname": None, "ts": int(time.time()),
             "save_class": None, "password_state": None,
-            "rtc_readback": {}, "last_apply": None, "log_tail": []}
+            "rtc_readback": {}, "wmi_surface": None,
+            "last_apply": None, "log_tail": []}
     try:
         import socket
         data["hostname"] = socket.gethostname()
@@ -1499,6 +1579,16 @@ def collect_diag():
         data["write_iface"] = probe_write_iface()
     except Exception:
         pass
+    try:
+        rc, out, err = _run_cmd(_ps(_ps_diag_wmi_surface()), timeout=45)
+        ws = _ps_json(out)
+        if isinstance(ws, dict):
+            data["wmi_surface"] = ws
+        else:
+            data["wmi_surface"] = {"error": "解析失败(rc=%s)" % rc,
+                                   "raw": (out or "").strip()[:200]}
+    except Exception as e:
+        data["wmi_surface"] = {"error": str(e)[:120]}
     try:
         rc, out, _ = _run_cmd(_ps(_ps_probe_pwd_state()))
         m = re.search(r"PCPWD=(-?\d+|NA)", out or "")
@@ -1852,5 +1942,9 @@ def apply_policy(args):
 
     if summaries:
         _save_policy_state(policy_id, "；".join(summaries))
+    # 中心下发路径同步刷新 last_apply 缓存（4.1.4 缺陷修正：否则 pc_diag
+    # 看不到平台下发的失败现场，last_apply 停留在最近一次本地 UI 应用）
+    _record_apply("policy_apply", {"ok": ok_all, "policy_id": policy_id,
+                                   "capability": capability, "steps": steps})
     return {"policy_id": policy_id, "op": str(args.get("op") or "apply"),
             "ok": ok_all, "steps": steps, "capability": capability}
