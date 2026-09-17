@@ -41,7 +41,7 @@ import urllib.request
 # GUI（无控制台）程序中调用控制台子进程（ping/route/iperf3）必须隐藏窗口（ADR-013）
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-CLIENT_VERSION = "4.1.0"
+CLIENT_VERSION = "4.1.1"
 TERMINAL_TYPE = "windows"
 DEFAULT_HEARTBEAT_INTERVAL = 30          # 秒（ADR 可调）
 _BACKOFF_CAP = 20                        # 失败退避倍数上限（30s*20=600s）

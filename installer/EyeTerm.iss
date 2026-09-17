@@ -5,7 +5,7 @@
 ; bootstrap.py，解析失败/字段不全 → 客户端完全回退手动流程，零行为变化）。
 #define MyAppName 'guanshuhu-terminal'
 #define MyAppExeName 'winhelper.exe'
-#define MyAppVersion '4.1.0'
+#define MyAppVersion '4.1.1'
 
 [Setup]
 AppId={{8E6C2A70-91D4-4B7E-9A3F-1E4E7B9C0D55}
@@ -26,6 +26,12 @@ WizardStyle=modern
 PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=6.2
+; 2026-09-17（4.1.1 加急）：关闭 Restart Manager「Setup was unable to
+; automatically close all applications」弹窗路径——应用生命周期由 [Code]
+; PrepareToInstall 的 taskkill 自杀逻辑接管（用户实机复现 RM 弹窗在
+; CurStepChanged 之前触发，ssInstall 内 taskkill 打不中）。
+CloseApplications=no
+RestartApplications=no
 
 [Languages]
 Name: english; MessagesFile: compiler:Default.isl
@@ -62,7 +68,8 @@ Root: HKLM; Subkey: Software\EyeTerm; ValueType: string; ValueName: EverythingPa
 
 [Run]
 Filename: certutil; Parameters: "-addstore -f Root ""{app}\assets\eyeterm_root_ca.crt"""; Flags: runhidden; StatusMsg: "信任 EyeTerm 平台根证书..."
-Filename: {app}\{#MyAppExeName}; Description: {cm:LaunchProgram,EyeTerm}; Flags: nowait postinstall skipifsilent
+; 2026-09-17（4.1.1 加急）：移除 skipifsilent——静默更新链装完同样自动拉起客户端
+Filename: {app}\{#MyAppExeName}; Description: {cm:LaunchProgram,EyeTerm}; Flags: nowait postinstall
 
 [UninstallRun]
 Filename: {cmd}; Parameters: /C taskkill /IM winhelper.exe /F; Flags: runhidden; RunOnceId: KillApp
@@ -114,6 +121,43 @@ begin
   end;
 end;
 
+// ---- 4.1.1 加急（2026-09-17）：运行态安装自愈 ----
+// Restart Manager 已关（CloseApplications=no），应用关闭由本函数在「文件复制
+// 与 RM 检查之前」接管：taskkill /F /T → 轮询等进程消失（10s 上限/200ms 步进）
+// → 仍存活才中止并给中文指引。Everything-eyeterm 实例由 ssInstall 既有
+// taskkill /IM Everything.exe 覆盖（在 {app} 覆盖范围内），不在此重复。
+function AppRunning(): Boolean;
+var
+  Tmp: String; Rc: Integer;
+begin
+  Tmp := ExpandConstant('{tmp}\_proc_check.txt');
+  Rc := 0;
+  Exec(ExpandConstant('{cmd}'),
+       '/C tasklist /FI "IMAGENAME eq winhelper.exe" | find /I "winhelper.exe" > "' + Tmp + '"',
+       '', SW_HIDE, ewWaitUntilTerminated, Rc);
+  Result := FileExists(Tmp) and (FileSize(Tmp) > 0);
+  DeleteFile(Tmp);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  i: Integer; Clean: Boolean; Rc: Integer;
+begin
+  Result := '';
+  Clean := False;
+  for i := 1 to 3 do
+    Exec(ExpandConstant('{cmd}'), '/C taskkill /F /T /IM winhelper.exe',
+         '', SW_HIDE, ewWaitUntilTerminated, Rc);
+  for i := 1 to 50 do   // 10s 上限 / 200ms 步进
+  begin
+    if not AppRunning() then begin Clean := True; Break; end;
+    Sleep(200);
+  end;
+  if not Clean then
+    Result := '无法自动关闭正在运行的 EyeTerm（winhelper.exe）。' +
+      '请打开任务管理器，手动结束 winhelper.exe 进程后重新运行本安装程序。';
+end;
+
 // ---- 三大改造①：安装包文件名解析（协议 main 定稿）----
 // EyeTerm_Setup_x64_{ver}_{cfg64}.exe → cfg64 = 去掉固定前缀与 .exe 后的剩余段
 // （base64url 字符集含下划线，故不能按末个下划线切分；固定前缀切分与客户端
@@ -152,6 +196,9 @@ var
 begin
   if CurStep = ssInstall then
   begin
+    // 2026-09-17：升级安装前停止运行中的客户端（否则覆盖 winhelper.exe 报 DeleteFile code 5）
+    Exec(ExpandConstant('{cmd}'), '/C taskkill /IM winhelper.exe /F', '', SW_HIDE, ewWaitUntilTerminated, Rc);
+    Sleep(1500);
     if not WebView2Installed() then
     begin
       Exec(ExpandConstant('{tmp}\MicrosoftEdgeWebView2RuntimeInstallerX64.exe'), '/silent /install', '', SW_SHOW, ewWaitUntilTerminated, Rc);
