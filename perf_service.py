@@ -439,6 +439,46 @@ def handle_perf_record_report(params: dict) -> dict:
     return {"success": True, "found": False}
 
 
+def handle_perf_record_latest(params: dict) -> dict:
+    """最近一次记录（跨模块证据源，如 net-doctor AI 诊断回填）：
+    kind=analysis 性能分析记录（内存优先 → analysis_*.json 按修改时间回退）
+    kind=stress   压测记录（内存最近完成 → stress_*.json 按修改时间回退，重启后仍可取）
+    响应：{success, found, kind, record_id, report}；found=false 时不带 record_id/report。
+    """
+    kind = (params.get("kind") or "analysis").strip().lower()
+    if kind not in ("analysis", "stress"):
+        return {"success": False, "error": "kind 仅支持 analysis|stress"}
+    if kind == "analysis":
+        view = handle_perf_record_report({})
+        if view.get("found"):
+            rep = view["report"] or {}
+            return {"success": True, "found": True, "kind": "analysis",
+                    "record_id": rep.get("record_id"), "report": rep}
+        return {"success": True, "found": False, "kind": "analysis"}
+    # stress：内存最近一次完成的压测（done/cancelled 均有结果，与 stress-export 口径一致）
+    with _stress_lock:
+        done = [t for t in _stress_tasks.values()
+                if t["status"] in ("done", "cancelled") and t.get("finished_at")]
+        done.sort(key=lambda t: t.get("finished_at") or 0.0)
+        task = done[-1] if done else None
+    if task is None:
+        try:
+            d = _records_dir()
+            files = [f for f in os.listdir(d) if f.startswith("stress_") and f.endswith(".json")]
+            if files:
+                # 文件名为随机哈希，字典序≠时间序；必须按修改时间取最新
+                files.sort(key=lambda f: os.path.getmtime(os.path.join(d, f)))
+                with io.open(os.path.join(d, files[-1]), "r", encoding="utf-8") as f:
+                    payload = json.load(f)
+                return {"success": True, "found": True, "kind": "stress",
+                        "record_id": payload.get("stress_id"), "report": payload}
+        except Exception:
+            pass
+        return {"success": True, "found": False, "kind": "stress"}
+    return {"success": True, "found": True, "kind": "stress",
+            "record_id": task["id"], "report": _stress_payload(task)}
+
+
 # ============================================================
 # 3. 流式分析（坏行跳过；逐行读取不整体载入）
 # ============================================================
@@ -1406,6 +1446,35 @@ def _stress_worker(task):
     finally:
         task["need_webgl"] = False
         task["stage_detail"] = None
+        _persist_stress(task)
+
+
+def _stress_payload(task):
+    """压测任务 → 可持久化/回读的结构化载荷（record-latest 与导出口径一致）"""
+    return {
+        "stress_id": task["id"],
+        "mode": task["mode"],
+        "status": task["status"],
+        "total_seconds": task["total_seconds"],
+        "started_at": task.get("started_at"),
+        "finished_at": task.get("finished_at"),
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "result": task.get("result") or {},
+    }
+
+
+def _persist_stress(task):
+    """压测完成（done/cancelled）后把结构化结果落盘 stress_<id>.json，
+    供重启后 /api/perf/record-latest?kind=stress 回读（与 analysis_<id>.json 对称）。
+    持久化失败静默跳过，不影响内存结果返回。"""
+    try:
+        if task.get("status") not in ("done", "cancelled"):
+            return
+        path = os.path.join(_records_dir(), "stress_%s.json" % task["id"])
+        with io.open(path, "w", encoding="utf-8") as f:
+            json.dump(_stress_payload(task), f, ensure_ascii=False, indent=1)
+    except Exception:
+        pass
 
 
 def handle_perf_stress_start(params: dict) -> dict:
@@ -2339,6 +2408,7 @@ PERF_ROUTES = {
     "/api/perf/record-stop": handle_perf_record_stop,
     "/api/perf/record-report": handle_perf_record_report,
     "/api/perf/record-export": handle_perf_record_export,
+    "/api/perf/record-latest": handle_perf_record_latest,
     "/api/perf/stress-start": handle_perf_stress_start,
     "/api/perf/stress-status": handle_perf_stress_status,
     "/api/perf/stress-cancel": handle_perf_stress_cancel,
