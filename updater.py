@@ -91,13 +91,15 @@ def is_newer(latest, current):
 
 
 def fetch_manifest(server_url, token, current_version, timeout=8):
-    """拉取更新清单（GET /api/v1/client/update-manifest，X-ETP-Token）；
-    未配置/网络失败/端点未就绪 → None（TBC-002：形状联调后对齐）。"""
+    """拉取更新清单（ADR-042/TBC-002 定稿：GET /api/v1/client/update-manifest，
+    X-ETP-Token 鉴权；响应扁平 latest_version/download_url/sha256/size，
+    download_url 为相对路径拼 server_url；无 current 时值全 null → None；
+    401=token 错误 → None。注意服务端另有嵌套形状 /api/v1/client/manifest
+    （同源），本引擎认准 update-manifest 别名。"""
     base = (server_url or "").rstrip("/")
     if not base:
         return None
-    url = base + "/api/v1/client/update-manifest?version=" + \
-        urllib.request.quote(str(current_version or ""))
+    url = base + "/api/v1/client/update-manifest"
     try:
         req = urllib.request.Request(url)
         req.add_header("X-ETP-Token", token or "")
@@ -106,10 +108,18 @@ def fetch_manifest(server_url, token, current_version, timeout=8):
             data = json.loads(resp.read().decode("utf-8"))
     except Exception:
         return None
-    m = (data or {}).get("manifest") if isinstance(data, dict) else None
-    if isinstance(m, dict) and m.get("download_url") and m.get("latest_version"):
-        return m
-    return None
+    if not isinstance(data, dict):
+        return None
+    latest = data.get("latest_version")
+    if not latest:   # 无 current：值为 null → 无更新
+        return None
+    dl = str(data.get("download_url") or "")
+    if not dl:
+        return None
+    if not dl.startswith(("http://", "https://")):
+        dl = base + (dl if dl.startswith("/") else "/" + dl)
+    return {"latest_version": str(latest), "download_url": dl,
+            "sha256": str(data.get("sha256") or "")}
 
 
 def _sha256_of(path):
@@ -252,7 +262,7 @@ def run_updater(timeout_sec=_INSTALL_TIMEOUT):
     time.sleep(1.0)   # 让文件句柄完全释放
     try:
         rc = subprocess.call(
-            [installer, "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
+            [installer, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
             timeout=timeout_sec)
     except Exception:
         return 5
