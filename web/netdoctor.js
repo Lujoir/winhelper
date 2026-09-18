@@ -1937,11 +1937,7 @@ function ndAiCollectOne(key) {
     }
     var route = key === "hwinfo" ? "/api/perf/hwinfo"
         : key === "perf_analysis" ? "/api/perf/record-report"
-        : "/api/perf/stress-status";
-    if (key === "perf_stress" && ndState.perfStressLastId) {
-        /* 补采/最近一次压测的记录按 stress_id 精确回查（此前无参调用恒失败） */
-        route += "?stress_id=" + encodeURIComponent(ndState.perfStressLastId);
-    }
+        : "/api/perf/record-latest?kind=stress";   /* perf_stress：落盘记录回读，重启后仍可采（stress-status 为内存态，重启即丢） */
     return ndApiFetch(route).then(function (d) {
         var data = null, note = "已采集";
         if (key === "hwinfo") {
@@ -1949,6 +1945,9 @@ function ndAiCollectOne(key) {
             note = "实时";
         } else {
             data = (d && d.success !== false) ? (d.report || d.task || (d.result || null)) : null;
+            if (key === "perf_stress" && d && d.found && d.record_id !== undefined) {
+                note = "最近记录 #" + d.record_id;   /* record-latest 命中（found:false 未命中走不可用） */
+            }
         }
         if (!data || (typeof data === "object" && !Object.keys(data).length)) { return fail(); }
         return { ok: true, data: data, note: note };
@@ -2540,7 +2539,7 @@ function ndAiBackfillTask(key, stEl, onDone) {
                     setSt("失败：" + ((d && d.error) || "未知")); onDone(false); return;
                 }
                 var sid = d.stress_id;
-                ndState.perfStressLastId = sid;   /* 回采 stress-status 需带 stress_id（此前无参调用恒失败） */
+                ndState.perfStressLastId = sid;   /* 本会话最近一次性能压测 id（回采已改走 record-latest，此 id 仅作会话标记） */
                 var ticks = 0;
                 var t = setInterval(function () {
                     ticks++;
