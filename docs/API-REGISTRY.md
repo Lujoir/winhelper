@@ -1027,9 +1027,10 @@
 - **鉴权**：X-ETP-Console-Token（**admin-only** 403+审计 `powercontrol.wol_direct`）
 - **请求参数**：body `{"terminal_id":"...","mac"?,"broadcast"?,"port"?}`——mac/broadcast 缺省时**从资产明细自动带出**
 - **响应**：`{"ok":true,"mac":...,"sent":["broadcast:port",...],"note":...}`（ok=有任一发送成功）
+- **适用边界（2026-09-18 对照实验定案，team-lead 行动项）**：跨网段直发受三层设备 **directed-broadcast 过滤限制**——服务器→跨网段目标机对照实验：单播 3/3 秒达、定向广播 0/3 达（90s 窗，探测端口 9147；生产 IP 脱敏不录）——此前直发跨网段目标 300s 未恢复与 08:30 定时无效均由此解释；**跨网段场景以 SRV-115 wol_relay 为主通道**，服务器直发仅对与服务器同网段的部署形态有效（method=direct 显式指定时保留）；服务端 wol.py 已实现 `direct_applicable` 跳直发优化（auto+跨网段直接起步中继，调度器行为与本注记对齐，ADR-044 增补）
 - **代码出处**：api.py wol/direct 分支(:1734-1769)
-- **状态**：在用
-- **登记记录**：2026-09-18，代码实证（同 SRV-113）
+- **状态**：在用（direct_applicable 优化已随调度器生效）
+- **登记记录**：2026-09-18，代码实证（同 SRV-113）> 更新 2026-09-18（晚）：适用边界语义注记追加（对照实验定案，server-platform-dev 显式知会转达 team-lead 行动项；生产 IP 已脱敏）
 
 #### SRV-117 同网段中继选举 `GET /api/v1/console/powercontrol/wol/relays?terminal_id={目标}`
 - **用途**：为目标机选举同网段在线中继候选
