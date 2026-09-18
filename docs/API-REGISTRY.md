@@ -10,7 +10,7 @@
   - 三、终端↔平台协议（UPL）：18 条（2026-09-16 新增桌面管控契约 3 条 UPL-011~013，契约冻结/服务端未实现；2026-09-17 新增命令 UPL-014 pc_apply_policy（主仓 a099448）与 UPL-015 pc_diag（5f0ba2f/3dc7e8b 双端闭环）；2026-09-18 新增命令 UPL-016~018 power_action/power_action_abort/wol_relay（主仓 0c5f1e0/客户端 4.1.5，双端就绪））
   - 四、外部依赖接口（EXT）：7 条（2026-09-15 新增火绒终端安全 API v1，试点实证；2026-09-19 EXT-007 补记字段消费落地 commit 8f9d5ad——_list 三时间戳 + _info2 assets 无固定字段名纪律，SRV-108 响应同步扩展）
   - 五、废弃/规划接口（DEP）：5 条
-  - **合计 247 条** > 更新 2026-09-19：合计由 232 纠正为 227（api-registrar-dev 入职对账，逐条 grep 实证 SRV119/BRG78/UPL18/EXT7/DEP5，编号连续无跳号；232 为此前误记）> 更新 2026-09-19（晚）：批 A 开关机管控任务化 +18 条（SRV-120~137，commit 99f4079/ADR-047），合计 227→245 > 更新 2026-09-19（晚二）：首页资产定位 +1 条（SRV-138，asset_locate.py，commit 19694e1），合计 245→246 > 更新 2026-09-19（晚三）：首页卡片摘要补登 +1 条（SRV-139，api_home.py；登记官误报「未实现」经 main 实证更正），合计 246→247
+  - **合计 247 条** > 更新 2026-09-19：合计由 232 纠正为 227（api-registrar-dev 入职对账，逐条 grep 实证 SRV119/BRG78/UPL18/EXT7/DEP5，编号连续无跳号；232 为此前误记）> 更新 2026-09-19（晚）：批 A 开关机管控任务化 +18 条（SRV-120~137，commit 99f4079/ADR-047），合计 227→245 > 更新 2026-09-19（晚二）：首页资产定位 +1 条（SRV-138，asset_locate.py，commit 19694e1），合计 245→246 > 更新 2026-09-19（晚三）：首页卡片摘要补登 +1 条（SRV-139，api_home.py；登记官误报「未实现」经 main 实证更正），合计 246→247 > 更新 2026-09-19（晚四）：条目更新批次（条数不变）——GET /runs/{id} 撤除定案（513ffa8，作废方案残留永不启用）入 1.17 组注记；SRV-129/SRV-134 响应删 calendar_fallback；SRV-133 删 covered + 语义调整为例外标记统计（ADR-047 增补纯星期语义）
 - **通用约定**：
   - 服务端监听：ThreadingHTTPServer，`0.0.0.0:{port}`，默认 18090（app.py `_load_config` / `main`）；配置经 `$ETP_CONFIG` → `server/config.local.json` → dev 默认三级加载
   - 终端上行鉴权：请求头 `X-ETP-Token`（对照 config.json `terminal_token`）> 更新 2026-09-09：收敛为**多 token 模型**——config token 或 SQLite `terminal_tokens` 表 status='active' 命中均放行（详见 UPL-010，commit 4d2924b）
@@ -1158,7 +1158,7 @@
 > 组级约定：console 组（`/api/v1/console/powercontrol/`，api.py `_console_powercontrol`）读 operator / 写 admin（`_pc_admin`）403+审计；终端组（`/api/v1/terminals/{tid}/powercontrol/...`，api.py `_terminal_api`）鉴权 X-ETP-Token（白名单准入 `_admission`）。存储新增 **power_tasks / holidays / pc_shutdown_config** 三表，`wol_schedules` 增 `task_id` 列（boot 保存/编辑时目标展开写回，diff 保留运行态）。示例 host 统一 `http://127.0.0.1:18090`，控制台头 `-H "X-ETP-Console-Token: <token>"`、终端头 `-H "X-ETP-Token: <token>"`，下同。
 > **origin 语义（随批入档）**：`platform`=中心任务——控制台 POST /tasks 强制覆写 origin=platform（个性化走终端口），PUT 不可漂移（保留原值）；`client_personal`=终端个性化任务——仅终端口创建、**boot-only**（shutdown+client_personal 校验拒绝）、归属锁定（targets 必含本终端）、每终端上限 5 条 fail-closed（`PERSONAL_TASK_LIMIT=5`）、operator="client:{tid}"。
 > **任务载荷规范**（power_control.py `validate_task_payload` :1207-1296，API/单测共用）：`kind`=boot|shutdown；`source`=platform|huorong|nad（shutdown 仅 platform——第三方终端无客户端）；`target_type`=group|terminals（group_id>0 / targets 非空去重 ≤200 台 `_TASK_MAX_TARGETS`）；`repeat`=daily|workday|holiday|weekly|once（shutdown 仅 daily|weekly|once——本地执行）；weekly→`weekdays` 7 位 0/1（周一..周日，至少一天）；once→`once_date` 未来日期；`time`=HH:MM（time/time_hhmm 别名归一）；boot→`method`=auto|direct|relay（shutdown 固定 auto）；`name`≤60（缺省 task_gen_name 自动生成，UNIQUE(kind,name)）；PUT 增量合并（None 字段保持原值）。
-> **对账注记（2026-09-19）**：规划稿中 GET /tasks/{id}/runs 与 GET /runs/{id}/attempts 以实际路由为准——boot 执行留痕内嵌于任务详情（SRV-122 schedules/attempts）。另：api.py 存在 `GET /runs/{id}` 分支(:2286-2292，「执行详情 + per-target 明细，queued 超窗 converge」)调用 `pc.run_get`，**server-platform 全目录未见 run_get 定义**（疑似实施未闭环，触发将 AttributeError→500）——不在本批交付清单，暂不登记；待 server-platform-dev 确认（补实现或撤路由）后按实登记。
+> **对账注记（2026-09-19，已闭环）**：规划稿中 GET /tasks/{id}/runs 与 GET /runs/{id}/attempts 以实际路由为准——boot 执行留痕内嵌于任务详情（SRV-122 schedules/attempts）。**GET /runs/{id} 撤除定案（commit 513ffa8）**：该路由属 ADR-047 早期「pc_sched 中心调度 + runs 表」方案残留——方案已作废（架构修正：定时关机由终端本地执行，平台不做中心到期调度），runs 表从未建、run_get 从未实现，路由已撤、**永不启用，防未来误建**；关机任务执行历史最终形态 = ①声明下发批次（复用 pc_policy_dispatch/pc_policy_targets，SRV-097~099/ADR-040 既有登记）+ ②终端回读比对 drift（SRV-126），**无独立 runs 端点**。另 ADR-047 增补「工作日/节假日纯星期语义（日历为例外可选层，用户定案）」：calendar_fallback 响应字段删除（波及 SRV-129/SRV-134，已更新）、holiday-status 删 covered 字段（SRV-133，已更新）；/tasks 系列请求/响应无字段变化。
 
 #### SRV-120 任务列表 `GET /api/v1/console/powercontrol/tasks?kind=&origin=&q=`
 - **用途**：任务列表（附目标摘要；q 匹配名称或目标终端 tid/IP/主机名/MAC——个性化任务检索口径）
@@ -1253,7 +1253,7 @@
 - **用途**：终端详情弹窗数据源（开机=命中中心任务同执行引擎解析；关机=终端上报实际配置）
 - **鉴权**：X-ETP-Console-Token（读 operator）
 - **请求参数**：query `terminal_id`（必填）
-- **响应**：`{"ok":true,"boot":[{id,name,repeat,weekdays,once_date,time_hhmm,source,origin,method,next_ts,next_trigger}],"calendar_fallback":bool,"shutdown":{"config":{...},"version","reported_ts","stale":bool}|null}`；404 terminal not found
+- **响应**：`{"ok":true,"boot":[{id,name,repeat,weekdays,once_date,time_hhmm,source,origin,method,next_ts,next_trigger}],"shutdown":{"config":{...},"version","reported_ts","stale":bool}|null}`；404 terminal not found > 更新 2026-09-19：响应删除 `calendar_fallback` 字段（ADR-047 增补工作日/节假日纯星期语义，commit 513ffa8；代码实证——server-platform 全目录 grep 零匹配）
 - **代码出处**：api.py terminal-power-config 分支(:2422-2445) → power_control.py `boot_tasks_for_terminal`/`shutdown_config_get`
 - **状态**：在用
 - **登记记录**：2026-09-19，代码实证（同 SRV-120）
@@ -1285,20 +1285,20 @@
 - **状态**：在用
 - **登记记录**：2026-09-19，代码实证（同 SRV-120）
 
-#### SRV-133 日历覆盖状态 `GET /api/v1/console/powercontrol/holiday-status`
-- **用途**：当年日历覆盖状态（缺失年如实提示，供 UI 与运行留痕）
+#### SRV-133 节假日例外标记统计 `GET /api/v1/console/powercontrol/holiday-status`
+- **用途**：当年例外标记统计（可选层：无标记时纯星期语义，用户定案；供 UI 与运行留痕）> 更新 2026-09-19：语义由「日历覆盖状态（缺失年提示）」调整为「例外标记统计」——holidays 日历降级为纯星期基座上的可选例外层（ADR-047 增补，commit 513ffa8）
 - **鉴权**：X-ETP-Console-Token（读 operator）
 - **请求参数**：无
-- **响应**：`{"ok":true,"status":{"year":2026,"holiday_count":N,"workday_count":N,"covered":bool}}`
-- **代码出处**：api.py holiday-status 分支(:2345-2348) → power_control.py `holiday_status`(:1010-1020)
+- **响应**：`{"ok":true,"status":{"year":2026,"holiday_count":N,"workday_count":N}}` > 更新 2026-09-19：响应删除 `covered` 字段（同上；power_control.py `holiday_status`(:1009-1019) 代码实证）
+- **代码出处**：api.py holiday-status 分支(:2345-2348) → power_control.py `holiday_status`(:1009-1019)
 - **状态**：在用
-- **登记记录**：2026-09-19，代码实证（同 SRV-120）
+- **登记记录**：2026-09-19，代码实证（同 SRV-120）> 更新 2026-09-19：covered 字段删除 + 语义调整（ADR-047 增补工作日/节假日纯星期语义，server-platform-dev 对账回复交付，api-registrar-dev 代码实证核对一致——power_control.py holiday_status docstring「当年例外标记统计（可选层：无标记时纯星期语义，用户定案）」）
 
 #### SRV-134 终端拉取命中开机任务 `GET /api/v1/terminals/{tid}/powercontrol/boot-tasks`
 - **用途**：终端侧拉取命中本终端的启用中开机任务（组展开与执行引擎同源），按下次触发升序
 - **鉴权**：X-ETP-Token（白名单准入 `_admission`）
 - **请求参数**：路径 `{tid}`；body 无
-- **响应**：`{"ok":true,"terminal_id":"...","tasks":[{id,name,repeat,weekdays,once_date,time_hhmm,source,origin,method,next_ts,next_trigger}],"calendar_fallback":bool,"generated_ts":N}`；404 terminal not registered
+- **响应**：`{"ok":true,"terminal_id":"...","tasks":[{id,name,repeat,weekdays,once_date,time_hhmm,source,origin,method,next_ts,next_trigger}],"generated_ts":N}`；404 terminal not registered > 更新 2026-09-19：响应删除 `calendar_fallback` 字段（ADR-047 增补工作日/节假日纯星期语义，commit 513ffa8；代码实证——server-platform 全目录 grep 零匹配）
 - **代码出处**：api.py `_terminal_api` powercontrol 子路由 boot-tasks GET 分支(:589-605) → power_control.py `boot_tasks_for_terminal`
 - **状态**：在用
 - **登记记录**：2026-09-19，代码实证（同 SRV-120）
