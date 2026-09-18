@@ -5,12 +5,12 @@
 - **维护人**：api-registrar-dev（接口登记官）
 - **事实来源**：代码实证（server-platform/server/api.py、bridge.py、uplink.py、net-doctor/net_service.py 等），每条注明文件+函数
 - **登记统计**：
-  - 一、服务端 REST API（SRV）：137 条（2026-09-10 晚新增 ADR-029 IP 冲突深度检测 2 条；2026-09-16（晚）新增 power-control P0 2 条 SRV-080/081，服务端实现 commit ec726af/ADR-038；2026-09-17 新增客户端版本发布管理 6 条 SRV-082~087，commit e24a236/ADR-042；同日新增 update-manifest 别名 SRV-088（327a69b）与第三方数据源 4 条 SRV-089~092（b8a086b/ADR-043）；同日新增开关机管控页 7 条 SRV-093~099——其中 dispatch 批次组 3 条为 ADR-040 漏登补登，commit 95dbb1c/3645d94/983e7bc 前序，主体 a099448/3fe299e；同日晚新增火绒专项 9 条 SRV-100~108（b6a74f6/9ab89ac/7842aab，ADR-033 系，huorong-dev 按常设约定主动补知会）；同日新增 pc_diag 联调通道 4 条 SRV-109~112，commit 5f0ba2f/ADR-040 增补，已生产部署验证；2026-09-18 新增 4.1.5 电源行动与 WoL 产品化 7 条 SRV-113~119，commit 85ae733/ADR-044/045；2026-09-19 新增开关机管控任务化 18 条 SRV-120~137，commit 99f4079/ADR-046/047，server-platform-dev 按常设约定显式列清单知会）
+  - 一、服务端 REST API（SRV）：138 条（2026-09-10 晚新增 ADR-029 IP 冲突深度检测 2 条；2026-09-16（晚）新增 power-control P0 2 条 SRV-080/081，服务端实现 commit ec726af/ADR-038；2026-09-17 新增客户端版本发布管理 6 条 SRV-082~087，commit e24a236/ADR-042；同日新增 update-manifest 别名 SRV-088（327a69b）与第三方数据源 4 条 SRV-089~092（b8a086b/ADR-043）；同日新增开关机管控页 7 条 SRV-093~099——其中 dispatch 批次组 3 条为 ADR-040 漏登补登，commit 95dbb1c/3645d94/983e7bc 前序，主体 a099448/3fe299e；同日晚新增火绒专项 9 条 SRV-100~108（b6a74f6/9ab89ac/7842aab，ADR-033 系，huorong-dev 按常设约定主动补知会）；同日新增 pc_diag 联调通道 4 条 SRV-109~112，commit 5f0ba2f/ADR-040 增补，已生产部署验证；2026-09-18 新增 4.1.5 电源行动与 WoL 产品化 7 条 SRV-113~119，commit 85ae733/ADR-044/045；2026-09-19 新增开关机管控任务化 18 条 SRV-120~137，commit 99f4079/ADR-046/047，server-platform-dev 按常设约定显式列清单知会；同日新增首页资产定位 1 条 SRV-138（asset_locate.py，commit 19694e1，asset-mgmt-dev 交付经 main 转达，api-registrar-dev 审核登记，新建 1.18 中心首页组））
   - 二、终端本地桥接 API（BRG）：78 条（netdoctor 22 条：10 条 2026-09-09 合入转「在用」commit 628c210；AI 诊断 2 条 commit a892f62/bd965ae；冲突检测本地转发 3 条 commit b344bbc/40abd3f；路由追踪 AI 分析 + AI 诊断历史持久化 4 条 2026-09-11 登记，commit c4495bc/916e791；AI 证据增强 3 条 2026-09-18 登记，commit 0b3f43d/45cb17c 4.1.7；桌面管控 5 条 2026-09-16 登记，commit 08b3547/9bdfcdf；power-control 2 条 2026-09-16（晚）登记，主应用挂载 commit 2bbf881；客户端自启与更新 4 条 2026-09-17（7fe4e9b，power-control-dev 直写复核归档）；文件检索 5 条——4 条 2026-09-17 漏登补登（权威引擎 search_service.py 894f20a）+ 索引器部署 1 条 2026-09-18 登记（c598e05/9c3c680，4.1.7）；性能分析 1 条 2026-09-18 登记（record-latest，1eac1b6/8faffde））
   - 三、终端↔平台协议（UPL）：18 条（2026-09-16 新增桌面管控契约 3 条 UPL-011~013，契约冻结/服务端未实现；2026-09-17 新增命令 UPL-014 pc_apply_policy（主仓 a099448）与 UPL-015 pc_diag（5f0ba2f/3dc7e8b 双端闭环）；2026-09-18 新增命令 UPL-016~018 power_action/power_action_abort/wol_relay（主仓 0c5f1e0/客户端 4.1.5，双端就绪））
   - 四、外部依赖接口（EXT）：7 条（2026-09-15 新增火绒终端安全 API v1，调研阶段）
   - 五、废弃/规划接口（DEP）：5 条
-  - **合计 245 条** > 更新 2026-09-19：合计由 232 纠正为 227（api-registrar-dev 入职对账，逐条 grep 实证 SRV119/BRG78/UPL18/EXT7/DEP5，编号连续无跳号；232 为此前误记）> 更新 2026-09-19（晚）：批 A 开关机管控任务化 +18 条（SRV-120~137，commit 99f4079/ADR-047），合计 227→245
+  - **合计 246 条** > 更新 2026-09-19：合计由 232 纠正为 227（api-registrar-dev 入职对账，逐条 grep 实证 SRV119/BRG78/UPL18/EXT7/DEP5，编号连续无跳号；232 为此前误记）> 更新 2026-09-19（晚）：批 A 开关机管控任务化 +18 条（SRV-120~137，commit 99f4079/ADR-047），合计 227→245 > 更新 2026-09-19（晚二）：首页资产定位 +1 条（SRV-138，asset_locate.py，commit 19694e1），合计 245→246
 - **通用约定**：
   - 服务端监听：ThreadingHTTPServer，`0.0.0.0:{port}`，默认 18090（app.py `_load_config` / `main`）；配置经 `$ETP_CONFIG` → `server/config.local.json` → dev 默认三级加载
   - 终端上行鉴权：请求头 `X-ETP-Token`（对照 config.json `terminal_token`）> 更新 2026-09-09：收敛为**多 token 模型**——config token 或 SQLite `terminal_tokens` 表 status='active' 命中均放行（详见 UPL-010，commit 4d2924b）
@@ -1334,6 +1334,30 @@
 - **代码出处**：api.py shutdown-config 分支(:572-588) → power_control.py `shutdown_config_save`(:1026-1051，pc_shutdown_config 表 terminal_id 主键 UPSERT)
 - **状态**：在用
 - **登记记录**：2026-09-19，代码实证（同 SRV-120）
+
+---
+
+### 1.18 中心首页（home，api_home.py，2026-09-19 起）
+
+> 来源：home 组为 home-console-dev 辖区（api_home.py 自治演进）；本条 asset-locate 为 asset-mgmt-dev 实施（commit 19694e1），经 main 转达交付说明、api-registrar-dev 审核登记。
+> 组级约定：api.py `_console_api` 头部单点转发(:904-906，`parts[:4]==["api","v1","console","home"]` → api_home.handle(:46-49))，本组新增端点不改 api.py。鉴权：组级沿用 dispatch 层 console resolve_session（operator/admin 可读，组内 GET 不重复鉴权、不审计）；**端点级加固由各端点自理**（asset-locate 自行 admin-only + 审计，与 sysadmin 组同口径）。
+> 规划锚：`GET /api/v1/console/home/summary`（首页卡片摘要聚合，api_home.py docstring v1 规划，home-console-dev 辖区）——尚未实现（handle 目前仅分发 asset-locate），**未登记**；交付后按实补登。每卡片独立容错（单卡失败 `{"ok":false,"error":...}` 不阻塞整页，PRD 硬要求）。
+
+#### SRV-138 资产定位检索聚合 `POST /api/v1/console/home/asset-locate`
+- **用途**：首页「资产定位」卡数据供给——自由文本提取标识符 → 中心/火绒/画方三源检索聚合 →（可选 AI 推断块）→ 结构化资产画像
+- **鉴权**：X-ETP-Console-Token（**admin-only**：sess 非管理员/缺失 403「需要管理员权限」+ ACCESS_DENIED 审计 `auth.Ev.ACCESS_DENIED` reason=admin_required，与 sysadmin 组同口径）
+- **请求参数**：body `{"text": "<自由文本>"}`——缺失/空白 400 "text required"；**>2000 字符 400 "text too long (max 2000)"**（`MAX_TEXT=2000`）；非 POST 方法 404 "not found"
+- **管线四阶段**（server/asset_locate.py；各阶段独立 try/except，单阶段失败不拖垮整响应）：
+  1. **extract**：IPv4（含 /掩码、:端口 尾巴容错，非法段入 ambiguous）；MAC 四形态（冒号/连字符/裸 12 位/点分 4 段，归一 12 位小写；12 位纯数字不认 MAC 防吞工号）；计算机名（连字符或字母数字混合 token，2-31 位）；工号（**5-11 位独立纯数字 token；4 位仅认「工号/编号/职工号」前缀形态**）；无标识符时 2-64 位无空白整串兜底为 hostname 候选；不可判候选入 `ambiguous`（透明展示，不参与检索）
+  2. **search**：三源隔离检索（顺序 try/except，单源异常 status 透出不阻断）——platform=中心 terminals（ip/hostname/资产明细 mac，附在线/分组）；huorong=hr_clients 镜像（store.hr_locate_clients，含 hr_client_assets 登记信息与 hr_terminal_map 关联；条目含 first_seen/last_off/this_on 三时间戳，与 huorong-dev 批次 8f9d5ad 字段对齐）；nad=画方准入（nad_client 现行匹配模式 ip/mac + 登记名兜底；**status=not_configured 表示数据源未接入，如实标注**）
+  3. **aggregate**：MAC 主键聚类合并（无 MAC 回落 IP/hostname；每簇每源最多一员，同键多候选歧义各自成簇）；命中评分 **mac→high / ip|link→medium / 其余→low**，排序 score→keys 数→last_seen
+  4. **inference**：编排 ai_analysis 内部函数 `infer_asset_locate(ctx, raw_text, identifiers, payload)`（payload={asset_profile, matches[:3], sources 各源 status}；**AI 落库 trigger=asset_locate 入 ai_analyses，归 ai-analysis-dev 辖区**）；未提取标识符/未命中跳过（skipped_no_identifiers/skipped_not_found）；模块未落盘 not_ready；任何失败降级 available=false **不阻塞确定数据**
+- **响应**：200 + `{"ok":true,"ts":N,"query":{"text_length":N,"elapsed_ms":N},"not_found":bool,"extract":{identifiers:[{type,value,raw}],counts:{ip,mac,hostname,empid},ambiguous:[{suspect_type,value,reason}],empty:bool},"search":{"sources":{platform|huorong|nad:{status,hits}}},"matches":[{score,keys,identity:{mac,hostname,current_ip},platform,huorong,nad}],"asset_profile":{computer_name,source_platform,identity,registration:<白名单投影 楼层/具体位置/工号/姓名/使用科室>,admission,timeline:{platform_last_seen,huorong_last_seen,huorong_this_on,nad_onlts,latest},cross_check:{ip_consistent:bool|null,notes}},"inference":{available,status:ok|skipped_no_identifiers|skipped_not_found|not_ready|unavailable,model,blocks,disclaimer:"AI 推测内容，非登记数据，仅供定位参考",error}}`；**无任何命中如实 not_found=true + asset_profile=null（不虚构，HTTP 仍 200）**；当前在用 IP 口径 nad>火绒>平台；IP 交叉校验 ≥2 源不一致→false+notes、一致→true、单源→null
+- **调用方式**：`curl -X POST http://127.0.0.1:18090/api/v1/console/home/asset-locate -H "X-ETP-Console-Token: <token>" -H "Content-Type: application/json" -d '{"text":"3楼财务室 172.17.90.215 主机名 WIN-FIN-03"}'`
+- **代码出处**：server/asset_locate.py `handle`(:663-744)（分发链 api.py `_console_api` :904-906 → api_home.py `handle` :46-49）；提取 `_extract`(:81-185)/`_search_platform`(:212-255)/`_search_huorong`(:258-298)/`_search_nad`(:337-381)/`_aggregate`(:426-499)/`_build_profile`(:530-604)/`_run_inference`(:622-650)
+- **状态**：在用
+- **登记记录**：2026-09-19，代码实证（asset-mgmt-dev 实施，commit 19694e1，经 main 转达交付说明；api-registrar-dev 审核登记——条目按代码为准，审核差异 3 点见下）
+- **审核注记（2026-09-19，登记官）**：①交付说明「404/405 语义」中 405 无对应分支——代码 method≠POST 实际返回 404，以代码为准；②交付说明「工号 4-11 位」实为 5-11 位独立 token + 4 位仅前缀形态，以代码为准；③asset_locate.py 模块头注释仍写「api.py 单点转发、不进 api_home.py」，与实际链路（经 api_home.py 分发）不符，属注释过时不影响功能——已提醒 asset-mgmt-dev 顺手修正
 
 ---
 
