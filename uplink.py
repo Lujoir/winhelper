@@ -41,7 +41,7 @@ import urllib.request
 # GUI（无控制台）程序中调用控制台子进程（ping/route/iperf3）必须隐藏窗口（ADR-013）
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-CLIENT_VERSION = "4.1.4"
+CLIENT_VERSION = "4.1.5"
 TERMINAL_TYPE = "windows"
 DEFAULT_HEARTBEAT_INTERVAL = 30          # 秒（ADR 可调）
 _BACKOFF_CAP = 2                         # 失败退避倍数上限（30s*2=60s；4.1.3 main 批准 ADR-004 变更：联调期快速重连）
@@ -756,6 +756,29 @@ def _cmd_pc_apply_policy(args):
                        "op": "apply", "ok": False,
                        "steps": {}, "error": str(e)[:200]}
     return bool(data.get("ok")), data
+
+
+# ---------- power_action / power_action_abort（中心发起重启/关机；2026-09-18 main 定稿）----------
+
+
+@command_handler("power_action")
+def _cmd_power_action(args):
+    """args={action:"shutdown"|"restart", delay_sec?:uint(≤3600，缺省 60),
+    force?:bool(缺省 True 对齐参考脚本 -f)}。
+
+    管控语义：仅中心可发起（本地 UI 无任何立即关机/重启入口）；终端侧仅
+    倒计时知会弹窗、不提供本地取消；撤销走 power_action_abort；delay 上限
+    3600；执行前后写本地审计日志（服务端回执 cid 审计双存档）。
+    高危红线：命令串仅由受控白名单参数构造（power_action.py）。"""
+    import power_action   # 延迟导入（零第三方依赖）
+    return power_action.handle_power_action(args or {})
+
+
+@command_handler("power_action_abort")
+def _cmd_power_action_abort(args):
+    """中心撤销 pending 关机/重启（shutdown /a）；无 pending 如实回执。"""
+    import power_action   # 延迟导入
+    return power_action.handle_power_action_abort(args or {})
 
 
 # ---------- pc_diag（自动开关机只读诊断，ADR-006 定案工具；2026-09-17）----------
