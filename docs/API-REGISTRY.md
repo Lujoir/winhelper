@@ -1517,7 +1517,7 @@
 - **响应**：`{"success":true,"stage":"...","progress":N,...}`
 - **代码出处**：perf_service.py `handle_perf_stress_status`
 - **状态**：在用
-- **登记记录**：2026-09-09，代码实证
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-18：**消费场景收窄**（net-doctor 4.1.8 批，a843027/47a03c0）——netdoctor perf_stress 证据回采已切换至 BRG-075 record-latest?kind=stress（本端点为内存态查询，重启后 stress_id/任务态丢失回采恒失效）；剩余用途仅补采流程中任务进行中的状态轮询（带 stress_id，任务查询语义），端点保留不废弃
 
 #### BRG-030 压测取消 `GET /api/perf/stress-cancel`
 - **用途**：取消进行中的压测
@@ -1575,7 +1575,7 @@
 - **配套行为变更（非端点）**：压测 worker 收尾新增结构化落盘 `stress_<id>.json`（与 analysis_<id>.json 对称）——重启后压测结果可回读的前提
 - **代码出处**：bridge.py:131 挂载（主仓 1eac1b6）；perf_service.py `handle_perf_record_latest`(442-460+)；子仓 perf-analyzer 8faffde（ADR-022 侧）
 - **状态**：在用
-- **登记记录**：2026-09-18，代码实证（perf-analyzer-dev 实施，主仓 1eac1b6/子仓 8faffde，team-lead 转发知会，api-registrar-dev 复核登记）
+- **登记记录**：2026-09-18，代码实证（perf-analyzer-dev 实施，主仓 1eac1b6/子仓 8faffde，team-lead 转发知会，api-registrar-dev 复核登记）> 更新 2026-09-18（晚）：**消费方扩展**（net-doctor 4.1.8 批，a843027/47a03c0）——netdoctor AI perf_stress 证据源回采路径由 BRG-029 stress-status **切换为本端点**（kind=stress；理由：stress-status 内存态重启后 stress_id/任务态丢失回采恒失效，本端点落盘记录跨重启可回读）；BRG-029 剩余用途收窄为补采任务进行中轮询
 
 ### 2.5 平台接入（uplink.py，挂载于 /api/perf/uplink/*）
 
