@@ -735,9 +735,7 @@
 - **调用方式**：`curl -X POST http://<server>/api/v1/console/sysadmin/llm -H "X-ETP-Console-Token: <admin-token>" -d '{"model":"Qwen3.6"}'`
 - **代码出处**：api.py `_console_sysadmin` → settings.py `SettingsStore.set`
 - **状态**：在用
-- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit 4d2924b）
-
-#### SRV-063 算力网关连通性测试 `POST /api/v1/console/sysadmin/llm/test`
+- **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit 4d2924b）> 更新 2026-09-19：**生产配置取值变更（main 下发）**——llm.model=DeepSeek-V4.1（主）/ llm.model_fallback=Qwen3.6（备），端点契约无变化（详见 EXT-001 更新行）。**运维 CLI 锚**：`/data/terminal-platform/app/server/config_cli.py`（set/get/list 子命令，SSH 服务器侧，set --stdin 加密落库）——**已知缺陷（2026-09-19，待修复）**：`list` 子命令报 AttributeError：`SettingsStore.DEFAULTS` 不存在（DEFAULTS 为 settings.py 模块级常量、非类属性）；get/set 正常；修复建议 `from settings import DEFAULTS` 后遍历。待 server-platform-dev 修复后知会消项
 - **用途**：`GET {llm.url}/v1/models`（Bearer api_key，8s 超时）验证连通；不消耗对话额度
 - **鉴权**：X-ETP-Console-Token + admin
 - **请求参数**：无（读当前配置）
@@ -2387,7 +2385,7 @@
 - **调用方**：api.py `run_ai_analysis`（SRV-023/055）
 - **代码出处**：server-platform/server/ai.py `llm_chat` / `llm_chat_chain`；api.py `run_ai_analysis`
 - **状态**：在用
-- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：新增消费方 SRV-063 连通性测试（`GET {llm.url}/v1/models`，Bearer，8s 超时，不消耗对话额度；api.py `_llm_test`，commit 4d2924b）
+- **登记记录**：2026-09-09，代码实证 > 更新 2026-09-09：新增消费方 SRV-063 连通性测试（`GET {llm.url}/v1/models`，Bearer，8s 超时，不消耗对话额度；api.py `_llm_test`，commit 4d2924b）> 更新 2026-09-19：**模型链变更（main 下发，生产配置已生效；变更时间 2026-09-19）**——llm.model：Qwen3.6 → **DeepSeek-V4.1**（主）；llm.model_fallback：minimax → **Qwen3.6**（备）；llm.url / llm.api_key 不变。验证：主模型实测 ok（served_model=DeepSeek-V4.1，content=OK）；降级链实测 ok（tried=['no-such-model-xyz','Qwen3.6'] → 命中 Qwen3.6）。备注：Qwen3.6 为推理模型（响应含 reasoning 字段，content 在推理后输出），平台调用不设 max_tokens 故不受影响。消费方面：SRV-023/055（run_ai_analysis，含 routetrace/ipconflict kind 聚合分支）与 SRV-138 inference 块（ai_analysis `infer_asset_locate`）均经 `llm_chat_chain` 模型链；配置读写面见 SRV-061/062/063
 
 #### EXT-002 vsftpd FTP 文件上传
 - **用途**：终端日志/文件上传通道（deploy.py 安装配置 vsftpd 并持久放行端口）
