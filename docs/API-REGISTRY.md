@@ -5,12 +5,12 @@
 - **维护人**：api-registrar-dev（接口登记官）
 - **事实来源**：代码实证（server-platform/server/api.py、bridge.py、uplink.py、net-doctor/net_service.py 等），每条注明文件+函数
 - **登记统计**：
-  - 一、服务端 REST API（SRV）：139 条（2026-09-10 晚新增 ADR-029 IP 冲突深度检测 2 条；2026-09-16（晚）新增 power-control P0 2 条 SRV-080/081，服务端实现 commit ec726af/ADR-038；2026-09-17 新增客户端版本发布管理 6 条 SRV-082~087，commit e24a236/ADR-042；同日新增 update-manifest 别名 SRV-088（327a69b）与第三方数据源 4 条 SRV-089~092（b8a086b/ADR-043）；同日新增开关机管控页 7 条 SRV-093~099——其中 dispatch 批次组 3 条为 ADR-040 漏登补登，commit 95dbb1c/3645d94/983e7bc 前序，主体 a099448/3fe299e；同日晚新增火绒专项 9 条 SRV-100~108（b6a74f6/9ab89ac/7842aab，ADR-033 系，huorong-dev 按常设约定主动补知会）；同日新增 pc_diag 联调通道 4 条 SRV-109~112，commit 5f0ba2f/ADR-040 增补，已生产部署验证；2026-09-18 新增 4.1.5 电源行动与 WoL 产品化 7 条 SRV-113~119，commit 85ae733/ADR-044/045；2026-09-19 新增开关机管控任务化 18 条 SRV-120~137，commit 99f4079/ADR-046/047，server-platform-dev 按常设约定显式列清单知会；同日新增首页资产定位 1 条 SRV-138（asset_locate.py，commit 19694e1，asset-mgmt-dev 交付经 main 转达，api-registrar-dev 审核登记，新建 1.18 中心首页组）；同日补登首页卡片摘要 SRV-139（api_home.py，home-console-dev 实施；登记官误报「未实现」经 main 实证更正后按实登记））
+  - 一、服务端 REST API（SRV）：145 条（2026-09-10 晚新增 ADR-029 IP 冲突深度检测 2 条；2026-09-16（晚）新增 power-control P0 2 条 SRV-080/081，服务端实现 commit ec726af/ADR-038；2026-09-17 新增客户端版本发布管理 6 条 SRV-082~087，commit e24a236/ADR-042；同日新增 update-manifest 别名 SRV-088（327a69b）与第三方数据源 4 条 SRV-089~092（b8a086b/ADR-043）；同日新增开关机管控页 7 条 SRV-093~099——其中 dispatch 批次组 3 条为 ADR-040 漏登补登，commit 95dbb1c/3645d94/983e7bc 前序，主体 a099448/3fe299e；同日晚新增火绒专项 9 条 SRV-100~108（b6a74f6/9ab89ac/7842aab，ADR-033 系，huorong-dev 按常设约定主动补知会）；同日新增 pc_diag 联调通道 4 条 SRV-109~112，commit 5f0ba2f/ADR-040 增补，已生产部署验证；2026-09-18 新增 4.1.5 电源行动与 WoL 产品化 7 条 SRV-113~119，commit 85ae733/ADR-044/045；2026-09-19 新增开关机管控任务化 18 条 SRV-120~137，commit 99f4079/ADR-046/047，server-platform-dev 按常设约定显式列清单知会；同日新增首页资产定位 1 条 SRV-138（asset_locate.py，commit 19694e1，asset-mgmt-dev 交付经 main 转达，api-registrar-dev 审核登记，新建 1.18 中心首页组）；同日补登首页卡片摘要 SRV-139（api_home.py，home-console-dev 实施；登记官误报「未实现」经 main 实证更正后按实登记）；2026-09-19（晚五）新增 VLAN 知识库 4 条 SRV-142~145（api.py `_console_sysadmin` vlan-kb 分支，server-platform commit 1614c9d/ADR-044））
   - 二、终端本地桥接 API（BRG）：78 条（netdoctor 22 条：10 条 2026-09-09 合入转「在用」commit 628c210；AI 诊断 2 条 commit a892f62/bd965ae；冲突检测本地转发 3 条 commit b344bbc/40abd3f；路由追踪 AI 分析 + AI 诊断历史持久化 4 条 2026-09-11 登记，commit c4495bc/916e791；AI 证据增强 3 条 2026-09-18 登记，commit 0b3f43d/45cb17c 4.1.7；桌面管控 5 条 2026-09-16 登记，commit 08b3547/9bdfcdf；power-control 2 条 2026-09-16（晚）登记，主应用挂载 commit 2bbf881；客户端自启与更新 4 条 2026-09-17（7fe4e9b，power-control-dev 直写复核归档）；文件检索 5 条——4 条 2026-09-17 漏登补登（权威引擎 search_service.py 894f20a）+ 索引器部署 1 条 2026-09-18 登记（c598e05/9c3c680，4.1.7）；性能分析 1 条 2026-09-18 登记（record-latest，1eac1b6/8faffde））
   - 三、终端↔平台协议（UPL）：18 条（2026-09-16 新增桌面管控契约 3 条 UPL-011~013，契约冻结/服务端未实现；2026-09-17 新增命令 UPL-014 pc_apply_policy（主仓 a099448）与 UPL-015 pc_diag（5f0ba2f/3dc7e8b 双端闭环）；2026-09-18 新增命令 UPL-016~018 power_action/power_action_abort/wol_relay（主仓 0c5f1e0/客户端 4.1.5，双端就绪））
   - 四、外部依赖接口（EXT）：7 条（2026-09-15 新增火绒终端安全 API v1，试点实证；2026-09-19 EXT-007 补记字段消费落地 commit 8f9d5ad——_list 三时间戳 + _info2 assets 无固定字段名纪律，SRV-108 响应同步扩展）
   - 五、废弃/规划接口（DEP）：5 条
-  - **合计 247 条** > 更新 2026-09-19：合计由 232 纠正为 227（api-registrar-dev 入职对账，逐条 grep 实证 SRV119/BRG78/UPL18/EXT7/DEP5，编号连续无跳号；232 为此前误记）> 更新 2026-09-19（晚）：批 A 开关机管控任务化 +18 条（SRV-120~137，commit 99f4079/ADR-047），合计 227→245 > 更新 2026-09-19（晚二）：首页资产定位 +1 条（SRV-138，asset_locate.py，commit 19694e1），合计 245→246 > 更新 2026-09-19（晚三）：首页卡片摘要补登 +1 条（SRV-139，api_home.py；登记官误报「未实现」经 main 实证更正），合计 246→247 > 更新 2026-09-19（晚四）：条目更新批次（条数不变）——GET /runs/{id} 撤除定案（513ffa8，作废方案残留永不启用）入 1.17 组注记；SRV-129/SRV-134 响应删 calendar_fallback；SRV-133 删 covered + 语义调整为例外标记统计（ADR-047 增补纯星期语义）
+  - **合计 253 条** > 更新 2026-09-19：合计由 232 纠正为 227（api-registrar-dev 入职对账，逐条 grep 实证 SRV119/BRG78/UPL18/EXT7/DEP5，编号连续无跳号；232 为此前误记）> 更新 2026-09-19（晚）：批 A 开关机管控任务化 +18 条（SRV-120~137，commit 99f4079/ADR-047），合计 227→245 > 更新 2026-09-19（晚二）：首页资产定位 +1 条（SRV-138，asset_locate.py，commit 19694e1），合计 245→246 > 更新 2026-09-19（晚三）：首页卡片摘要补登 +1 条（SRV-139，api_home.py；登记官误报「未实现」经 main 实证更正），合计 246→247 > 更新 2026-09-19（晚四）：条目更新批次（条数不变）——GET /runs/{id} 撤除定案（513ffa8，作废方案残留永不启用）入 1.17 组注记；SRV-129/SRV-134 响应删 calendar_fallback；SRV-133 删 covered + 语义调整为例外标记统计（ADR-047 增补纯星期语义） > 更新 2026-09-19（晚五）：VLAN 知识库 +4 条（SRV-142~145，server-platform commit 1614c9d/ADR-044，代码实证），SRV 计数 141→145、合计 249→253（本次一并回写此前已登记但未计入头部的 SRV-140/141，修正头部 139/247 的滞后值）
 - **通用约定**：
   - 服务端监听：ThreadingHTTPServer，`0.0.0.0:{port}`，默认 18090（app.py `_load_config` / `main`）；配置经 `$ETP_CONFIG` → `server/config.local.json` → dev 默认三级加载
   - 终端上行鉴权：请求头 `X-ETP-Token`（对照 config.json `terminal_token`）> 更新 2026-09-09：收敛为**多 token 模型**——config token 或 SQLite `terminal_tokens` 表 status='active' 命中均放行（详见 UPL-010，commit 4d2924b）
@@ -853,7 +853,75 @@
 - **状态**：在用
 - **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit f031152，ADR-026）
 
+#### SRV-140 远程唤醒配置读取 `GET /api/v1/console/sysadmin/wol`
+- **用途**：读取 WoL 双路线调度配置（ADR-044 增补），供系统管理页「远程唤醒（WoL）」卡回填
+- **鉴权**：X-ETP-Console-Token + admin（`_require_admin`，非 admin 403 + ACCESS_DENIED 审计）
+- **请求参数**：无
+- **响应**：200 `{"ok":true,"wol":{"wake_mode":"relay|nad","pinned_relay":"<tid|空>","relay_step_sec":N,"relay_window_sec":N,"max_inflight":N,"nad":{"url":"<str|空>","api_key_masked":"<脱敏|空>","configured":bool}}}`；未设置键回落 settings DEFAULTS（wake_mode=relay / step=120 / window=300 / max_inflight=3）
+- **脱敏**：`nad.wol_api_key` 属 SENSITIVE_KEYS，端点只返回掩码，不返回明文
+- **调用方式**：`curl http://<server>/api/v1/console/sysadmin/wol -H "X-ETP-Console-Token: <token>"`
+- **代码出处**：api.py `_console_sysadmin` wol 分支（`sub == "wol"`，:2849-2870 区间）；store/settings `SettingsStore.get` 回落 DEFAULTS
+- **状态**：在用（2026-09-19 控制台 UI 卡接线完成）
+- **登记记录**：2026-09-19，代码实证（main 实施控制台卡 + E2E 206/206）
+
+#### SRV-141 远程唤醒配置更新 `POST /api/v1/console/sysadmin/wol`
+- **用途**：更新 WoL 双路线调度配置；**唤醒模式** relay（同网段中继代发，默认，多候选随机轮替）/ nad（画方准入唤醒，接口未接入时调度器如实留痕后回退 relay 链，不哑等）
+- **鉴权**：X-ETP-Console-Token + admin（`_require_admin`，403 + 审计）
+- **请求参数**（JSON，均可选，缺省不改）：`wake_mode`（"relay"|"nad"，非法值回落 relay）、`pinned_relay`（终端 tid，须存在否则 400；空串清空）、`relay_step_sec`（30-600）、`relay_window_sec`（60-1800）、`max_inflight`（1-10）、`nad_url`（空串清空，即「未接入」）、`nad_api_key`（**留空 = 保持不变**，输入新值才加密替换）
+- **响应**：`{"ok":true}`；参数越界/终端不存在 400（含具体原因文案）；敏感键写库经 SecretsBox 加密
+- **语义要点**：nad 模式实际唤醒由 `wol.wake_via_nad` 承担——当前为 **stub 级预埋**（ADR-043 降级位）：url 未配置 → "画方准入唤醒接口未接入，已回退中继模式"；url 已配置 → "画方接口适配器未接通（规格待交付），已回退中继模式"；两态均照常走 relay 链
+- **调用方式**：`curl -X POST http://<server>/api/v1/console/sysadmin/wol -H "X-ETP-Console-Token: <token>" -H "Content-Type: application/json" -d '{"wake_mode":"relay","relay_step_sec":120}'`
+- **代码出处**：api.py `_console_sysadmin` wol POST 分支；server/wol.py `_wake_mode`/`wake_via_nad`/`_fire_relay_round`（单测 tools/test_wol.py 15/15）
+- **状态**：在用（调度链路已提交 99f4079；画方唤醒执行面待接口交付）
+- **登记记录**：2026-09-19，代码实证（main 实施控制台卡 + E2E 206/206 + 单测 15/15）
+
 > 注（SRV-072~077）：本模块仅凭据/台账维护，**无 SSH 连通测试端点**（ADR-026 边界）；敏感语义：settings `switch.default_password` 为 SENSITIVE_KEYS 成员（list 接口自动脱敏，settings.py:15），switches.password_enc 经 SettingsStore.encrypt 复用同一 SecretsBox（settings.py:73-75，store.py:170-177 表结构）；deploy.py 幂等预置默认凭据（以 password --mask 判断 unset，stdin 注入）。
+
+#### SRV-142 VLAN 知识库列表 `GET /api/v1/console/sysadmin/vlan-kb`
+- **用途**：列出 VLAN 知识库全部条目（钉钉表格灌入的权威网段归属，供 AI 检索梯子 L1 使用）
+- **鉴权**：X-ETP-Console-Token + admin（dispatch api.py:1248-1256 统一 `auth.require_admin`，非 admin 403「需要管理员权限」+ ACCESS_DENIED 审计）
+- **请求参数**：无
+- **响应**：200 `{"ok":true,"items":[{"id":1,"cidr":"10.9.9.0/24","vlan_id":"909","zone_desc":"<网段归属>","source":"<来源>","updated_ts":1789000000}]}`（`vlan_kb` 表全列，按 id 升序）
+- **语义要点**：只读端点，**不落审计**（与 users/llm 等只读端点一致）
+- **调用方式**：`curl http://<server>/api/v1/console/sysadmin/vlan-kb -H "X-ETP-Console-Token: <token>"`
+- **代码出处**：api.py `_console_sysadmin`（`sub == "vlan-kb"` 分支，:3135-3139）→ store.py `vlan_kb_list`
+- **状态**：在用
+- **登记记录**：2026-09-19，代码实证（server-platform commit 1614c9d，ADR-044）
+
+#### SRV-143 VLAN 知识库单条 upsert `POST /api/v1/console/sysadmin/vlan-kb`
+- **用途**：单条写入/覆盖 VLAN 知识库条目（按 cidr 幂等），供控制台手填或表格单行灌入
+- **鉴权**：X-ETP-Console-Token + admin（同上，非 admin 403 + 审计）
+- **请求参数**（JSON body）：`cidr`（**必填**，缺失/空 → 400）、`vlan_id`（可选，空串兜底）、`zone_desc`（可选，空串兜底）、`source`（可选，空串兜底）；四字段均 strip
+- **响应**：200 `{"ok":true,"added":0,"updated":1}`（cidr 已存在计 updated，新条目计 added）；cidr 非法 → 400「cidr 非法：<原文前 64 字符>」
+- **语义要点**：cidr 服务端归一 `ipaddress.ip_network(cidr, strict=False)`（如 `10.9.9.7/24` → `10.9.9.0/24`），以归一后的 cidr 为唯一键 upsert
+- **审计**：写操作走 `auth.audit("sysadmin.vlan_kb", ...)`，success 与 failed **双记录**（reason=upsert，target=sysadmin/vlan-kb，failed 带 error 文案）
+- **调用方式**：`curl -X POST http://<server>/api/v1/console/sysadmin/vlan-kb -H "X-ETP-Console-Token: <token>" -H "Content-Type: application/json" -d '{"cidr":"10.9.9.7/24","vlan_id":"909","zone_desc":"<网段归属>","source":"dingtalk-table"}'`
+- **代码出处**：api.py `_console_sysadmin` vlan-kb POST 分支（:3142-3163）→ store.py `vlan_kb_upsert_many`；审计 `_audit_vlan_kb`（api.py:2756-2761）
+- **状态**：在用
+- **登记记录**：2026-09-19，代码实证（server-platform commit 1614c9d，ADR-044）
+
+#### SRV-144 VLAN 知识库批量导入 `POST /api/v1/console/sysadmin/vlan-kb/import`
+- **用途**：批量导入 VLAN 知识库（钉钉表格导出的 JSON），同种子重复导入幂等覆盖
+- **鉴权**：X-ETP-Console-Token + admin（同上，非 admin 403 + 审计）
+- **请求参数**（JSON body）：`{"items":[{"cidr":"10.9.9.0/24","vlan_id":"909","zone_desc":"<网段归属>","source":"dingtalk-table"}, ...]}`
+- **响应**：200 `{"ok":true,"added":n,"updated":n,"invalid":[{"cidr":"<原文前64字符>","reason":"cidr 非法，无法归一"}],"imported_ts":"2026-09-19T12:00:00"}`（`imported_ts` 为 `datetime.now().isoformat(timespec="seconds")`）
+- **语义要点**：`items` 非数组 → 400「items 必须为数组」；单次上限 **500 条**，超出 → 400「items 超过单次上限 500 条（本次 N 条）」；元素非对象 → 400「items[i] 必须为对象」；**非法 cidr 不整批拒绝**，收进 `invalid` 列表后继续处理其余条目
+- **审计**：success 记 `{"total":N,"added":n,"updated":n,"invalid":n}`；校验失败记 failed 带 error 文案（reason=import）
+- **调用方式**：`curl -X POST http://<server>/api/v1/console/sysadmin/vlan-kb/import -H "X-ETP-Console-Token: <token>" -H "Content-Type: application/json" -d '{"items":[{"cidr":"10.9.9.0/24","vlan_id":"909","source":"dingtalk-table"}]}'`
+- **代码出处**：api.py `_console_sysadmin` vlan-kb import 分支（:3166-3203）→ store.py `vlan_kb_upsert_many`；审计 `_audit_vlan_kb`（api.py:2756-2761）
+- **状态**：在用
+- **登记记录**：2026-09-19，代码实证（server-platform commit 1614c9d，ADR-044）
+
+#### SRV-145 VLAN 知识库删除 `DELETE /api/v1/console/sysadmin/vlan-kb/{id}`
+- **用途**：删除单条 VLAN 知识库条目
+- **鉴权**：X-ETP-Console-Token + admin（同上，非 admin 403 + 审计）
+- **请求参数**：路径 `{id}`（**纯数字**段才匹配本分支；非数字路径段落 404「not found」）
+- **响应**：200 `{"ok":true}`；条目不存在 → 404「vlan_kb entry not found」
+- **语义要点**：不存在时**审计仍记 failed**（target=`vlan_kb#<id>`，detail 带 error=not found）；成功记 success（target=`vlan_kb#<id>`，reason=delete）
+- **调用方式**：`curl -X DELETE http://<server>/api/v1/console/sysadmin/vlan-kb/1 -H "X-ETP-Console-Token: <token>"`
+- **代码出处**：api.py `_console_sysadmin` vlan-kb DELETE 分支（:3206-3215）→ store.py `vlan_kb_delete`；审计 `_audit_vlan_kb`（api.py:2756-2761）
+- **状态**：在用
+- **登记记录**：2026-09-19，代码实证（server-platform commit 1614c9d，ADR-044）
 
 ### 1.12 会话信息
 
