@@ -5,7 +5,7 @@
 ; bootstrap.py，解析失败/字段不全 → 客户端完全回退手动流程，零行为变化）。
 #define MyAppName 'guanshuhu-terminal'
 #define MyAppExeName 'winhelper.exe'
-#define MyAppVersion '4.1.5'
+#define MyAppVersion '4.1.6'
 
 [Setup]
 AppId={{8E6C2A70-91D4-4B7E-9A3F-1E4E7B9C0D55}
@@ -69,7 +69,10 @@ Root: HKLM; Subkey: Software\EyeTerm; ValueType: string; ValueName: EverythingPa
 [Run]
 Filename: certutil; Parameters: "-addstore -f Root ""{app}\assets\eyeterm_root_ca.crt"""; Flags: runhidden; StatusMsg: "信任 EyeTerm 平台根证书..."
 ; 2026-09-17（4.1.1 加急）：移除 skipifsilent——静默更新链装完同样自动拉起客户端
-Filename: {app}\{#MyAppExeName}; Description: {cm:LaunchProgram,EyeTerm}; Flags: nowait postinstall
+; 2026-09-18（4.1.6）：安装后自启统一走 --replace——新实例接管旧实例（若
+; PrepareToInstall taskkill 后仍有存活/迟启动实例），杜绝「更新重启+手动
+; 点击」叠出多开；无旧实例时幂等正常启动。
+Filename: {app}\{#MyAppExeName}; Parameters: --replace; Description: {cm:LaunchProgram,EyeTerm}; Flags: nowait postinstall
 
 [UninstallRun]
 Filename: {cmd}; Parameters: /C taskkill /IM winhelper.exe /F; Flags: runhidden; RunOnceId: KillApp

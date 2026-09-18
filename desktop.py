@@ -124,6 +124,14 @@ def main() -> None:
         tray_holder["obj"] = tray
     except Exception:
         tray_holder["obj"] = None
+    # 4.1.6 可接管：监听新实例的替换请求 → 旧实例走 _tray_exit 同款优雅
+    # 退出链（删托盘图标 + updater pid 锚点落盘 + destroy）；失败仍可被
+    # 再次请求。事件监听线程 daemon，不阻塞退出。
+    try:
+        import single_instance as _si2
+        _si2.listen_replace(_tray_exit)
+    except Exception:
+        pass
     try:
         window.events.closing += _on_closing
     except Exception:
@@ -155,4 +163,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # 4.1.6 单实例约束（用户点名需求）：全启动入口过同一把命名互斥锁——
+    # 已运行时再启动不起新进程，只还原置前现有窗口后退出；--replace（更新
+    # 安装后自启统一走此语义）= 通知旧实例优雅退出（托盘退出同款链，状态
+    # 落盘不丢）→ 轮询拿锁无缝交接；无旧实例时幂等正常启动。
+    import single_instance as _si
+    if not _si.enter(replace="--replace" in sys.argv):
+        sys.exit(0)
     main()
