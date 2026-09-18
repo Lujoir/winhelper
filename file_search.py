@@ -13,12 +13,16 @@ file_search.py → search_service.py — EyeTerm「文件检索」服务层（�
 零新增 pip 依赖；一切子进程 CREATE_NO_WINDOW。
 """
 
+import ctypes
 import os
 import re
 import sqlite3
 import subprocess
+import sys
 
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+INDEXER_TASK_NAME = "EyeTermFileIndexer"   # 与 fs_indexer.INDEXER_TASK_NAME 同名（双份同源约定）
 
 FS_MAX_RESULTS = 200
 FS_SORTABLE = {
@@ -86,6 +90,74 @@ def _like_escape(kw):
     return kw.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+def _is_user_admin():
+    try:
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+
+def _schtasks_task_registered(task_name=None):
+    """计划任务注册检测（schtasks /Query，返回码判定；任何异常按未注册如实——不虚构）。
+    CREATE_NO_WINDOW 铁律。"""
+    try:
+        p = subprocess.run(
+            ["schtasks", "/Query", "/TN", task_name or INDEXER_TASK_NAME],
+            capture_output=True, creationflags=_NO_WINDOW, timeout=10)
+        return p.returncode == 0
+    except Exception:
+        return False
+
+
+def _indexer_unavailable():
+    """indexer_not_running 错误的统一三态 hint（4.1.7 文案修复——废除误导性「请稍后重试」）：
+    任务已注册但库未就绪=构建中；未注册=未部署（给出部署指引）。"""
+    if _schtasks_task_registered():
+        return {"error": "indexer_not_running",
+                "hint": "索引构建中（首次需数分钟），请稍后重试"}
+    return {"error": "indexer_not_running",
+            "hint": "检索索引未部署：请重新安装客户端或由管理员部署"}
+
+
+def _worker_launch_cmd():
+    """worker 启动命令串（计划任务 /TR 用，--pc-elevated-worker 同款形态）：
+    exe 态 = 自身 exe + flag；python 态 = python + 同目录 fs_indexer.py + flag。"""
+    flag = "--fs-indexer-worker"
+    if getattr(sys, "frozen", False):
+        return '"%s" %s' % (sys.executable, flag)
+    cand = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fs_indexer.py")
+    return '"%s" "%s" %s' % (sys.executable, cand, flag)
+
+
+def handle_fs_indexer_deploy(params=None):
+    """索引器部署（4.1.7 方案 B 客户端管理员引导）：注册 SYSTEM 计划任务
+    （ONSTART + HIGHEST）并立即 Run 一次（装/部署完即首建，不等重启）。
+    管理员会话直接执行；非管理员走 UAC 提权（ShellExecuteW runas，一次拉起
+    Create+Run 组合，结果由前端轮询 /status 确认）。幂等：/Create /F 覆盖 + /Run 重复触发无害。"""
+    create = ["schtasks", "/Create", "/F", "/TN", INDEXER_TASK_NAME,
+              "/TR", _worker_launch_cmd(), "/SC", "ONSTART", "/RL", "HIGHEST"]
+    run_now = ["schtasks", "/Run", "/TN", INDEXER_TASK_NAME]
+    if _is_user_admin():
+        try:
+            p1 = subprocess.run(create, capture_output=True, creationflags=_NO_WINDOW, timeout=15)
+            if p1.returncode != 0:
+                return {"success": False, "already_admin": True,
+                        "error": "schtasks_create_failed:%d" % p1.returncode,
+                        "detail": (p1.stderr or p1.stdout or b"").decode("utf-8", "replace")[-200:]}
+            subprocess.run(run_now, capture_output=True, creationflags=_NO_WINDOW, timeout=15)
+            return {"success": True, "already_admin": True,
+                    "hint": "索引器已部署并启动，首次构建需数分钟"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    cmdline = '"%s" && "%s"' % (" ".join(create), " ".join(run_now))
+    ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", "cmd.exe", "/C " + cmdline, None, 0)
+    if int(ret) <= 32:
+        return {"success": False, "elevate_cancelled": True,
+                "error": "提权未确认或被拒绝（UAC 已取消）"}
+    return {"success": True, "elevated": True,
+            "hint": "已发起部署（UAC 需确认），索引构建需数分钟，请稍后"}
+
+
 def handle_fs_query(params=None):
     """文件检索：params {q, count?, sort?, ascending?}。直读索引库（只读），引擎不可用如实提示。"""
     params = params or {}
@@ -98,14 +170,12 @@ def handle_fs_query(params=None):
 
     conn = _connect_ro()
     if conn is None:
-        return {"success": False, "error": "indexer_not_running",
-                "hint": "文件索引未就绪：索引器首次运行需要数分钟，请稍后重试"}
+        return dict(success=False, **_indexer_unavailable())
     try:
         try:
             conn.execute("SELECT 1 FROM files LIMIT 1").fetchone()
         except sqlite3.Exception:
-            return {"success": False, "error": "indexer_not_running",
-                    "hint": "文件索引未就绪：索引器首次运行需要数分钟，请稍后重试"}
+            return dict(success=False, **_indexer_unavailable())
 
         where, args = ["1=1"], []
         if kw:
@@ -174,7 +244,9 @@ def handle_fs_query(params=None):
 
 
 def handle_fs_status(params=None):
-    """状态：索引库就绪情况（设置卡/指引依据）。partial 卷如实透出（部分索引常态展示）。"""
+    """状态：索引库就绪情况 + 索引器部署三态判定（4.1.7）。
+    state：ready=库有数据；building=计划任务已注册但库未就绪（首建分钟级进行中）；
+    not_deployed=任务未注册。partial 卷如实透出。"""
     path = _fs_db_path()
     out = {"success": True, "db_exists": os.path.isfile(path), "db_path": path,
            "file_count": 0, "dir_count": 0, "volumes": [], "partial_volumes": []}
@@ -194,6 +266,15 @@ def handle_fs_status(params=None):
                 conn.close()
             except Exception:
                 pass
+    out["indexer_task_registered"] = _schtasks_task_registered()
+    if out["file_count"] > 0:
+        out["state"], out["hint"] = "ready", ""
+    elif out["indexer_task_registered"]:
+        out["state"] = "building"
+        out["hint"] = "索引构建中（首次需数分钟），请稍后重试"
+    else:
+        out["state"] = "not_deployed"
+        out["hint"] = "检索索引未部署：请重新安装客户端或由管理员部署"
     return out
 
 
@@ -213,8 +294,7 @@ def handle_fs_stats(params=None):
     """统计：返回索引库中存在的文件扩展名（前 30）与修改时间区间。"""
     conn = _connect_ro()
     if conn is None:
-        return {"success": False, "error": "indexer_not_running",
-                "hint": "文件索引未就绪：索引器首次运行需要数分钟，请稍后重试"}
+        return dict(success=False, **_indexer_unavailable())
     try:
         conn.execute("SELECT 1 FROM files LIMIT 1").fetchone()
         rows = conn.execute(
@@ -226,8 +306,7 @@ def handle_fs_stats(params=None):
         r = conn.execute("SELECT MIN(mtime), MAX(mtime) FROM files WHERE is_dir=0").fetchall()
         return {"success": True, "exts": exts, "date_min": r[0][0], "date_max": r[0][1]}
     except sqlite3.Exception:
-        return {"success": False, "error": "indexer_not_running",
-                "hint": "文件索引未就绪：索引器首次运行需要数分钟，请稍后重试"}
+        return dict(success=False, **_indexer_unavailable())
     finally:
         try:
             conn.close()
@@ -240,6 +319,7 @@ FS_ROUTES = {
     "/api/filesearch/status": handle_fs_status,
     "/api/filesearch/stats": handle_fs_stats,
     "/api/filesearch/open-location": handle_fs_open_location,
+    "/api/filesearch/indexer-deploy": handle_fs_indexer_deploy,
 }
 
 

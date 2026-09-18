@@ -40,6 +40,7 @@ from uplink import (
 from home_service import handle_home_network
 from file_search import (
     handle_fs_query, handle_fs_status, handle_fs_stats, handle_fs_open_location,
+    handle_fs_indexer_deploy,
 )
 
 from net_service import (
@@ -155,6 +156,7 @@ ROUTES = {
     "/api/filesearch/status": handle_fs_status,
     "/api/filesearch/stats": handle_fs_stats,
     "/api/filesearch/open-location": handle_fs_open_location,
+    "/api/filesearch/indexer-deploy": handle_fs_indexer_deploy,
 
     "/api/netdoctor/ping-start": handle_net_ping_start,
     "/api/netdoctor/ping-history": handle_net_ping_history,

@@ -36,6 +36,8 @@ var fsState = {
     dateFrom: "",     /* 修改时间起（YYYY-MM-DD） */
     dateTo: "",       /* 修改时间止（YYYY-MM-DD） */
     typeLoaded: false, /* 是否已加载类型统计 */
+    deployState: "",   /* 索引器部署三态：ready/building/not_deployed（4.1.7） */
+    deployPolling: false, deployPollTries: 0,
     colW: fsLoadColW() /* 手动列宽（仅记 名称/类型/路径） */
 };
 
@@ -476,15 +478,101 @@ function fsFileTypeName(name, isDir) {
 
 function fsRenderError(d) {
     var emap = {
-        empty_query: "请输入搜索关键词",
-        indexer_not_running: "文件索引未就绪：索引器首次运行需要数分钟，请稍后重试；如持续未就绪请联系管理员检查索引器状态"
+        empty_query: "请输入搜索关键词"
     };
     var msg = emap[d.error] || d.hint || d.error || "未知错误";
     fsSetTip("fsSummary", "检索失败：" + msg);
     var body = document.getElementById("fsBody");
     if (body) {
-        body.innerHTML = '<div class="nd-empty">' + fsEscapeHtml(msg) + "</div>";
+        var extra = (d.error === "indexer_not_running")
+            ? '<div style="margin-top:8px"><button class="nd-btn primary" id="fsDeployBtn"'
+            + ' onclick="fsDeployIndexer()">部署索引（管理员）</button>'
+            + '<span class="nd-hint" style="margin-left:8px">由管理员一次性部署系统索引组件</span></div>'
+            : "";
+        body.innerHTML = '<div class="nd-empty">' + fsEscapeHtml(msg) + "</div>" + extra;
     }
+}
+
+/* ---- 索引器部署三态（4.1.7：ready / building / not_deployed）---- */
+function fsLoadDeployState() {
+    fsApiFetch("/api/filesearch/status").then(function (d) {
+        if (!d || d.success === false) { return; }
+        fsState.deployState = d.state || "";
+        fsRenderDeployState();
+    }).catch(function () { /* 状态不可得时保持现状（如实，不虚构） */ });
+}
+
+function fsRenderDeployState() {
+    /* 仅覆盖「尚未检索」空态；已有检索结果不抢占业务区 */
+    var body = document.getElementById("fsBody");
+    if (!body) { return; }
+    var hint = document.getElementById("fsSummary");
+    if (fsState.deployState === "not_deployed") {
+        body.innerHTML = '<div class="nd-empty">检索索引尚未部署：由管理员一次性部署系统索引组件后即可检索。</div>'
+            + '<div style="padding-bottom:10px"><button class="nd-btn primary" id="fsDeployBtn"'
+            + ' onclick="fsDeployIndexer()">部署索引（管理员）</button>'
+            + '<span class="nd-hint" style="margin-left:8px">部署后首次构建需数分钟</span></div>';
+        if (hint && !hint.textContent) { hint.textContent = "检索索引未部署，点击下方按钮部署"; }
+    } else if (fsState.deployState === "building") {
+        body.innerHTML = '<div class="nd-empty">索引构建中（首次需数分钟），完成后即可检索；'
+            + '期间可正常操作，检索会实时提示进度。</div>';
+    } else if (fsState.deployState === "ready") {
+        /* 就绪：恢复默认空态（building/not_deployed 提示让位） */
+        if (body.innerHTML.indexOf("尚未检索") < 0) {
+            body.innerHTML = '<div class="nd-empty">尚未检索</div>';
+        }
+        if (hint && hint.textContent.indexOf("索引就绪") >= 0) { /* 保留就绪提示 */ }
+    }
+}
+
+function fsDeployIndexer() {
+    var btn = document.getElementById("fsDeployBtn");
+    if (btn) { btn.disabled = true; }
+    fsApiFetch("/api/filesearch/indexer-deploy", {}).then(function (d) {
+        if (!d) { throw new Error("无响应"); }
+        if (d.success === false) {
+            fsSetTip("fsSummary", "部署未完成：" + (d.error || "未知错误"));
+            if (btn) { btn.disabled = false; }
+            return;
+        }
+        fsSetTip("fsSummary", d.hint || "已发起部署，索引构建需数分钟，请稍后");
+        if (btn) { btn.disabled = true; }
+        fsState.deployState = "building";
+        fsRenderDeployState();
+        fsPollDeploy();
+    }).catch(function (e) {
+        fsSetTip("fsSummary", "部署发起失败：" + String(e));
+        if (btn) { btn.disabled = false; }
+    });
+}
+
+function fsPollDeploy() {
+    /* 部署后轮询 status 到 ready（5s 间隔，10 分钟上限；sleep 间隔绝不热轮询） */
+    if (fsState.deployPolling) { return; }
+    fsState.deployPolling = true;
+    fsState.deployPollTries = 0;
+    var pollMs = window.__fsDeployPollMs || 5000;
+    var tick = function () {
+        fsState.deployPollTries += 1;
+        if (fsState.deployPollTries > 120) {
+            fsState.deployPolling = false;
+            fsSetTip("fsSummary", "索引构建耗时较长，稍后可直接检索验证");
+            return;
+        }
+        fsApiFetch("/api/filesearch/status").then(function (d) {
+            if (d && d.success !== false) {
+                fsState.deployState = d.state || fsState.deployState;
+                if (fsState.deployState === "ready") {
+                    fsState.deployPolling = false;
+                    fsSetTip("fsSummary", "索引就绪，输入关键词开始检索");
+                    fsRenderDeployState();
+                    return;
+                }
+            }
+            setTimeout(tick, window.__fsDeployPollMs || 5000);   /* 间隔可注入（E2E） */
+        }).catch(function () { setTimeout(tick, window.__fsDeployPollMs || 5000); });
+    };
+    setTimeout(tick, pollMs);
 }
 
 function fsRenderResults(d) {
@@ -689,6 +777,7 @@ function initFileSearchTab() {
     fsState.inited = true;
     fsInitCollapsible();
     fsLoadStats();
+    fsLoadDeployState();
     document.addEventListener("click", fsHideCtxMenu);
     var input = document.getElementById("fsQuery");
     if (input) {

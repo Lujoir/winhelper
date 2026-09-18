@@ -27,6 +27,14 @@ if len(sys.argv) > 1 and sys.argv[1] == "--et-updater":
     import updater as _upd
     sys.exit(_upd.run_updater())
 
+# 4.1.7 文件检索索引器常驻 worker 拦截（--fs-indexer-worker，A/B 部署方案共同
+# 前置）：SYSTEM 计划任务 / 安装器 / 客户端引导注册拉起。不加载 UI，不进单实例
+# 锁（worker 与 GUI 生命周期独立，锁是 GUI 单实例语义）。
+if len(sys.argv) > 1 and sys.argv[1] == "--fs-indexer-worker":
+    from fs_indexer import run_worker
+    run_worker()
+    sys.exit(0)
+
 # pywebview 6.x 本地资源改走内置 HTTP 服务（wsgiref/TCPServer，默认 backlog=5）：
 # 首帧并发加载多个静态资源时会随机丢弃请求（症状：某模块 js 整文件未执行、该页功能全断、
 # reload 后自愈——disk-cleaner ADR-016 活体取证定案）。在服务实例化前扩大队列根治。

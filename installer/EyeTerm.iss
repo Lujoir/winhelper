@@ -5,7 +5,7 @@
 ; bootstrap.py，解析失败/字段不全 → 客户端完全回退手动流程，零行为变化）。
 #define MyAppName 'guanshuhu-terminal'
 #define MyAppExeName 'winhelper.exe'
-#define MyAppVersion '4.1.6'
+#define MyAppVersion '4.1.7'
 
 [Setup]
 AppId={{8E6C2A70-91D4-4B7E-9A3F-1E4E7B9C0D55}
@@ -76,6 +76,8 @@ Filename: {app}\{#MyAppExeName}; Parameters: --replace; Description: {cm:LaunchP
 
 [UninstallRun]
 Filename: {cmd}; Parameters: /C taskkill /IM winhelper.exe /F; Flags: runhidden; RunOnceId: KillApp
+; 4.1.7：卸载清理文件检索索引器计划任务（防卸载后 worker 仍被拉起）
+Filename: {cmd}; Parameters: /C schtasks /Delete /F /TN EyeTermFileIndexer; Flags: runhidden; RunOnceId: DelFsIndexerTask
 ; 文件删除前先卸载 Everything 服务（SYSTEM 进程占用 exe）
 Filename: {app}\everything\Everything.exe; Parameters: "-uninstall-service"; Flags: runhidden; RunOnceId: DelEverythingSvc
 
@@ -214,6 +216,14 @@ begin
     // 服务模式为主路径：安装并启动 Everything 服务（SYSTEM 权限读 MFT + 由服务承载 HTTP 127.0.0.1:5700），
     // 终端侧无需提权；EyeTerm 首用时拉起实例仅作服务不在时的兜底。
     Exec(ExpandConstant('{app}\everything\Everything.exe'), '-install-service', '', SW_HIDE, ewWaitUntilTerminated, Rc);
+    // 4.1.7 文件检索自研索引器（方案 A 主通道）：注册 SYSTEM 计划任务（开机触发）
+    // 并立即 Run 一次（装完即首建，不等重启）；/F 幂等覆盖（重装/升级安全）。
+    // 失败不阻断安装（客户端方案 B 管理员引导可兜底补部署）。
+    Exec(ExpandConstant('{cmd}'),
+         '/C schtasks /Create /F /TN EyeTermFileIndexer /TR "\"{app}\winhelper.exe\" --fs-indexer-worker" /SC ONSTART /RL HIGHEST',
+         '', SW_HIDE, ewWaitUntilTerminated, Rc);
+    Exec(ExpandConstant('{cmd}'), '/C schtasks /Run /TN EyeTermFileIndexer',
+         '', SW_HIDE, ewWaitUntilTerminated, Rc);
     // 三大改造①：文件名携带预置注册配置 → {app}\config_bootstrap.json（raw 透传）；
     // 任何失败静默跳过（不写文件 → 客户端完全回退手动流程，零行为变化）。
     WriteBootstrapFromName();
