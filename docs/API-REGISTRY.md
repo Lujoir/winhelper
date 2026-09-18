@@ -1,16 +1,16 @@
 # EyeTerm 接口总台账（观枢终端平台）
 
 - **版本**：v1.0（首版建档）
-- **最后更新**：2026-09-16
+- **最后更新**：2026-09-19
 - **维护人**：api-registrar-dev（接口登记官）
 - **事实来源**：代码实证（server-platform/server/api.py、bridge.py、uplink.py、net-doctor/net_service.py 等），每条注明文件+函数
 - **登记统计**：
-  - 一、服务端 REST API（SRV）：119 条（2026-09-10 晚新增 ADR-029 IP 冲突深度检测 2 条；2026-09-16（晚）新增 power-control P0 2 条 SRV-080/081，服务端实现 commit ec726af/ADR-038；2026-09-17 新增客户端版本发布管理 6 条 SRV-082~087，commit e24a236/ADR-042；同日新增 update-manifest 别名 SRV-088（327a69b）与第三方数据源 4 条 SRV-089~092（b8a086b/ADR-043）；同日新增开关机管控页 7 条 SRV-093~099——其中 dispatch 批次组 3 条为 ADR-040 漏登补登，commit 95dbb1c/3645d94/983e7bc 前序，主体 a099448/3fe299e；同日晚新增火绒专项 9 条 SRV-100~108（b6a74f6/9ab89ac/7842aab，ADR-033 系，huorong-dev 按常设约定主动补知会）；同日新增 pc_diag 联调通道 4 条 SRV-109~112，commit 5f0ba2f/ADR-040 增补，已生产部署验证；2026-09-18 新增 4.1.5 电源行动与 WoL 产品化 7 条 SRV-113~119，commit 85ae733/ADR-044/045）
+  - 一、服务端 REST API（SRV）：137 条（2026-09-10 晚新增 ADR-029 IP 冲突深度检测 2 条；2026-09-16（晚）新增 power-control P0 2 条 SRV-080/081，服务端实现 commit ec726af/ADR-038；2026-09-17 新增客户端版本发布管理 6 条 SRV-082~087，commit e24a236/ADR-042；同日新增 update-manifest 别名 SRV-088（327a69b）与第三方数据源 4 条 SRV-089~092（b8a086b/ADR-043）；同日新增开关机管控页 7 条 SRV-093~099——其中 dispatch 批次组 3 条为 ADR-040 漏登补登，commit 95dbb1c/3645d94/983e7bc 前序，主体 a099448/3fe299e；同日晚新增火绒专项 9 条 SRV-100~108（b6a74f6/9ab89ac/7842aab，ADR-033 系，huorong-dev 按常设约定主动补知会）；同日新增 pc_diag 联调通道 4 条 SRV-109~112，commit 5f0ba2f/ADR-040 增补，已生产部署验证；2026-09-18 新增 4.1.5 电源行动与 WoL 产品化 7 条 SRV-113~119，commit 85ae733/ADR-044/045；2026-09-19 新增开关机管控任务化 18 条 SRV-120~137，commit 99f4079/ADR-046/047，server-platform-dev 按常设约定显式列清单知会）
   - 二、终端本地桥接 API（BRG）：78 条（netdoctor 22 条：10 条 2026-09-09 合入转「在用」commit 628c210；AI 诊断 2 条 commit a892f62/bd965ae；冲突检测本地转发 3 条 commit b344bbc/40abd3f；路由追踪 AI 分析 + AI 诊断历史持久化 4 条 2026-09-11 登记，commit c4495bc/916e791；AI 证据增强 3 条 2026-09-18 登记，commit 0b3f43d/45cb17c 4.1.7；桌面管控 5 条 2026-09-16 登记，commit 08b3547/9bdfcdf；power-control 2 条 2026-09-16（晚）登记，主应用挂载 commit 2bbf881；客户端自启与更新 4 条 2026-09-17（7fe4e9b，power-control-dev 直写复核归档）；文件检索 5 条——4 条 2026-09-17 漏登补登（权威引擎 search_service.py 894f20a）+ 索引器部署 1 条 2026-09-18 登记（c598e05/9c3c680，4.1.7）；性能分析 1 条 2026-09-18 登记（record-latest，1eac1b6/8faffde））
   - 三、终端↔平台协议（UPL）：18 条（2026-09-16 新增桌面管控契约 3 条 UPL-011~013，契约冻结/服务端未实现；2026-09-17 新增命令 UPL-014 pc_apply_policy（主仓 a099448）与 UPL-015 pc_diag（5f0ba2f/3dc7e8b 双端闭环）；2026-09-18 新增命令 UPL-016~018 power_action/power_action_abort/wol_relay（主仓 0c5f1e0/客户端 4.1.5，双端就绪））
   - 四、外部依赖接口（EXT）：7 条（2026-09-15 新增火绒终端安全 API v1，调研阶段）
   - 五、废弃/规划接口（DEP）：5 条
-  - **合计 232 条**
+  - **合计 245 条** > 更新 2026-09-19：合计由 232 纠正为 227（api-registrar-dev 入职对账，逐条 grep 实证 SRV119/BRG78/UPL18/EXT7/DEP5，编号连续无跳号；232 为此前误记）> 更新 2026-09-19（晚）：批 A 开关机管控任务化 +18 条（SRV-120~137，commit 99f4079/ADR-047），合计 227→245
 - **通用约定**：
   - 服务端监听：ThreadingHTTPServer，`0.0.0.0:{port}`，默认 18090（app.py `_load_config` / `main`）；配置经 `$ETP_CONFIG` → `server/config.local.json` → dev 默认三级加载
   - 终端上行鉴权：请求头 `X-ETP-Token`（对照 config.json `terminal_token`）> 更新 2026-09-09：收敛为**多 token 模型**——config token 或 SQLite `terminal_tokens` 表 status='active' 命中均放行（详见 UPL-010，commit 4d2924b）
@@ -1149,6 +1149,191 @@
 - **代码出处**：api.py `_console_huorong` context 分支(:1123-1129) → store.py `hr_context_block`（批次 7842aab/ADR-033 增补二）
 - **状态**：在用（生产待部署）
 - **登记记录**：2026-09-17，代码实证（huorong-dev 补知会，api-registrar-dev 复核登记）
+
+---
+
+### 1.17 开关机管控任务化（power_tasks，ADR-046/047，2026-09-19 登记）
+
+> 来源：server-platform-dev 按常设约定显式列清单交付（commit 99f4079，ADR-047 立项；任务为中心统一模型 ADR-046）。SRV-120 起共 18 条。
+> 组级约定：console 组（`/api/v1/console/powercontrol/`，api.py `_console_powercontrol`）读 operator / 写 admin（`_pc_admin`）403+审计；终端组（`/api/v1/terminals/{tid}/powercontrol/...`，api.py `_terminal_api`）鉴权 X-ETP-Token（白名单准入 `_admission`）。存储新增 **power_tasks / holidays / pc_shutdown_config** 三表，`wol_schedules` 增 `task_id` 列（boot 保存/编辑时目标展开写回，diff 保留运行态）。示例 host 统一 `http://127.0.0.1:18090`，控制台头 `-H "X-ETP-Console-Token: <token>"`、终端头 `-H "X-ETP-Token: <token>"`，下同。
+> **origin 语义（随批入档）**：`platform`=中心任务——控制台 POST /tasks 强制覆写 origin=platform（个性化走终端口），PUT 不可漂移（保留原值）；`client_personal`=终端个性化任务——仅终端口创建、**boot-only**（shutdown+client_personal 校验拒绝）、归属锁定（targets 必含本终端）、每终端上限 5 条 fail-closed（`PERSONAL_TASK_LIMIT=5`）、operator="client:{tid}"。
+> **任务载荷规范**（power_control.py `validate_task_payload` :1207-1296，API/单测共用）：`kind`=boot|shutdown；`source`=platform|huorong|nad（shutdown 仅 platform——第三方终端无客户端）；`target_type`=group|terminals（group_id>0 / targets 非空去重 ≤200 台 `_TASK_MAX_TARGETS`）；`repeat`=daily|workday|holiday|weekly|once（shutdown 仅 daily|weekly|once——本地执行）；weekly→`weekdays` 7 位 0/1（周一..周日，至少一天）；once→`once_date` 未来日期；`time`=HH:MM（time/time_hhmm 别名归一）；boot→`method`=auto|direct|relay（shutdown 固定 auto）；`name`≤60（缺省 task_gen_name 自动生成，UNIQUE(kind,name)）；PUT 增量合并（None 字段保持原值）。
+> **对账注记（2026-09-19）**：规划稿中 GET /tasks/{id}/runs 与 GET /runs/{id}/attempts 以实际路由为准——boot 执行留痕内嵌于任务详情（SRV-122 schedules/attempts）。另：api.py 存在 `GET /runs/{id}` 分支(:2286-2292，「执行详情 + per-target 明细，queued 超窗 converge」)调用 `pc.run_get`，**server-platform 全目录未见 run_get 定义**（疑似实施未闭环，触发将 AttributeError→500）——不在本批交付清单，暂不登记；待 server-platform-dev 确认（补实现或撤路由）后按实登记。
+
+#### SRV-120 任务列表 `GET /api/v1/console/powercontrol/tasks?kind=&origin=&q=`
+- **用途**：任务列表（附目标摘要；q 匹配名称或目标终端 tid/IP/主机名/MAC——个性化任务检索口径）
+- **鉴权**：X-ETP-Console-Token（读 operator）
+- **请求参数**：query `kind`=boot|shutdown（其余值视为不过滤）、`origin`=platform|client_personal、`q`（小写包含匹配：任务名 / 终端 tid / IP / 主机名 / 资产明细 network[].mac）
+- **响应**：`{"ok":true,"tasks":[{...power_tasks 行,"target_summary":"<组名> · N 台"|"指定终端 N 台"}]}`（target_summary 实时聚合，组名取 asset_group_list）
+- **调用方式**：`curl "http://127.0.0.1:18090/api/v1/console/powercontrol/tasks?kind=boot&origin=client_personal&q=office" -H "X-ETP-Console-Token: <token>"`
+- **代码出处**：api.py `_console_powercontrol` tasks 列表分支(:2022-2089) → power_control.py `task_list`
+- **状态**：在用
+- **登记记录**：2026-09-19，代码实证（server-platform-dev 实施，commit 99f4079/ADR-047，按常设约定显式列清单知会，api-registrar-dev 逐条核对 api.py/power_control.py 复核登记）
+
+#### SRV-121 创建任务 `POST /api/v1/console/powercontrol/tasks`
+- **用途**：创建中心任务（boot：校验后目标展开写回 wol_schedules，task_id 关联）
+- **鉴权**：X-ETP-Console-Token（**admin-only** 403 + 审计 `powercontrol.task`）
+- **请求参数**：载荷经 `validate_task_payload`（规范见组级约定），示例：
+
+```json
+{"kind": "boot", "name": "研发区早开", "repeat": "workday", "time": "08:20",
+ "target_type": "group", "group_id": 3, "method": "auto", "enabled": true}
+```
+- **响应**：`{"ok":true,"task":{...}}`；boot 另附 `"expand":{...含 conflicts}` 与 `"warnings":["<原因>（<tid>）"...]`；同类型同名 409；资产组/终端不存在 404
+- **调用方式**：`curl -X POST http://127.0.0.1:18090/api/v1/console/powercontrol/tasks -H "X-ETP-Console-Token: <token>" -H "Content-Type: application/json" -d '{"kind":"shutdown","repeat":"daily","time":"22:00","target_type":"terminals","targets":["<tid>"]}'`
+- **代码出处**：api.py tasks POST 分支(:2091-2137) → power_control.py `validate_task_payload`/`task_create`/`wol_expand_for_task`/`task_gen_name`
+- **状态**：在用
+- **登记记录**：2026-09-19，代码实证（同 SRV-120）
+
+#### SRV-122 任务详情 `GET /api/v1/console/powercontrol/tasks/{id}`
+- **用途**：任务详情——boot 附调度行+最近尝试；shutdown 附声明配置模板
+- **鉴权**：X-ETP-Console-Token（读 operator）
+- **请求参数**：路径 `{id}`
+- **响应**：boot → `{"ok":true,"task":{...,"schedules":[<wol_schedules 中 task_id 关联行，剔除 relay_queue/relay_tried>],"attempts":[<每调度行最近 8 条聚合，按 id 降序，截 30>]}}`；shutdown → `task.declared`（`task_shutdown_config` 声明模板；实际执行比对走 SRV-126）；404 task not found
+- **调用方式**：`curl http://127.0.0.1:18090/api/v1/console/powercontrol/tasks/12 -H "X-ETP-Console-Token: <token>"`
+- **代码出处**：api.py tasks/{id} GET 分支(:2139-2162) → power_control.py `task_get`/`wol_schedule_list`/`wol_attempts_list`/`task_shutdown_config`
+- **状态**：在用
+- **登记记录**：2026-09-19，代码实证（同 SRV-120）
+
+#### SRV-123 编辑任务 `PUT /api/v1/console/powercontrol/tasks/{id}`
+- **用途**：编辑任务（增量合并校验；boot 重展开 diff 保留运行态）
+- **鉴权**：X-ETP-Console-Token（**admin-only** 403 + 审计 `powercontrol.task`）
+- **请求参数**：路径 `{id}`；载荷同 SRV-121（增量合并：None 字段保持原值，time/time_hhmm 别名归一）；**origin 不可漂移**（强制保留任务原 origin）
+- **响应**：`{"ok":true,"task":{...},"expand"?}`（boot 重展开后 `task_set_enabled` 保持原 enabled）；404 task not found；组/终端不存在 404
+- **代码出处**：api.py tasks/{id} PUT 分支(:2164-2208) → power_control.py `task_update`/`task_set_targets`/`wol_expand_for_task`
+- **状态**：在用
+- **登记记录**：2026-09-19，代码实证（同 SRV-120）
+
+#### SRV-124 删除任务 `DELETE /api/v1/console/powercontrol/tasks/{id}`
+- **用途**：删除任务（级联清调度行；runs 保留为历史）
+- **鉴权**：X-ETP-Console-Token（**admin-only** 403 + 审计 `powercontrol.task_delete`）
+- **请求参数**：路径 `{id}`；body 无
+- **响应**：`{"ok":true}`；404 task not found
+- **代码出处**：api.py tasks/{id} DELETE 分支(:2210-2220) → power_control.py `task_delete`
+- **状态**：在用
+- **登记记录**：2026-09-19，代码实证（同 SRV-120）
+
+#### SRV-125 关机任务下发 `POST /api/v1/console/powercontrol/tasks/{id}/dispatch`
+- **用途**：关机任务声明下发（展开目标 → 复用 pc_apply_policy 批次链：在线待拉取 / 离线排队上线补投，见 SRV-097/UPL-014 同链）
+- **鉴权**：X-ETP-Console-Token（**admin-only** 403 + 审计 `powercontrol.task_dispatch`）
+- **请求参数**：路径 `{id}`；body 无
+- **响应**：`{"ok":true,"dispatch_id":N,"policy_id":"<hex32>","total":N,"queued_offline":N,"expand_note":"..."}`；仅 shutdown 任务（boot 400「开机任务由平台调度自动执行，无需下发」）；展开目标为空 409；**>100 台 400（单批上限）**；命令 `enqueue_command(pc_apply_policy, timeout_sec=604800, source=powercontrol)`
+- **代码出处**：api.py tasks/{id}/dispatch 分支(:2234-2284) → power_control.py `expand_platform_targets`/`task_shutdown_config`/`_validate_pc_sched`(api.py:1535)/`create_dispatch`/`bind_command` + store.py `enqueue_command`
+- **状态**：在用
+- **登记记录**：2026-09-19，代码实证（同 SRV-120）
+
+#### SRV-126 关机任务回读比对 `GET /api/v1/console/powercontrol/tasks/{id}/drift`
+- **用途**：任务声明 vs 各目标上报回读态比对（三态 consistent/drift/not_reported + stale 陈旧标注）
+- **鉴权**：X-ETP-Console-Token（读 operator）
+- **请求参数**：路径 `{id}`
+- **响应**：`{"ok":true,"drift":{"declared":{...声明配置},"note":"...","targets":[{terminal_id,state,stale,reported,reported_ts,version}]}}`（比对归一 `_cfg_equal`，声明形状与 pc_apply_policy shutdown-set 同构；stale 阈值 `SHUTDOWN_STALE_SEC`=7 天）；仅 shutdown（400）；404
+- **代码出处**：api.py tasks/{id}/drift 分支(:2222-2232) → power_control.py `shutdown_drift_for_task`(:1074-1097)
+- **状态**：在用
+- **登记记录**：2026-09-19，代码实证（同 SRV-120）
+
+#### SRV-127 每日开关机汇总 `GET /api/v1/console/powercontrol/daily-summary`
+- **用途**：终端「每日开机 / 每日关机」列数据源（资产列表）
+- **鉴权**：X-ETP-Console-Token（读 operator）
+- **请求参数**：无
+- **响应**：`{"ok":true,"map":{<tid>:{"boot":{"time":"HH:MM","total":N}?,"shutdown":{"time":..,"mode":..,"stale":bool}?}}}`——开机=命中该终端的启用中 daily 任务（组展开与执行引擎同源，取最早时间+命中任务数）；关机=终端上报的**本地实际配置**（真实态，非中心声明；stale 超 7 天标注）
+- **代码出处**：api.py daily-summary 分支(:2350-2387) → power_control.py `task_list(kind="boot")`/`expand_platform_targets`/`shutdown_config_list`
+- **状态**：在用
+- **登记记录**：2026-09-19，代码实证（同 SRV-120）
+
+#### SRV-128 终端检索 `GET /api/v1/console/powercontrol/term-search?q=`
+- **用途**：终端检索（tid/IP/主机名/MAC；任务向导选择器）
+- **鉴权**：X-ETP-Console-Token（读 operator）
+- **请求参数**：query `q`（小写包含匹配；MAC 走资产明细 `get_terminal_asset().network[].mac`）
+- **响应**：`{"ok":true,"terminals":[{terminal_id,hostname,ip,online}]}`（扫描前 500 终端、输出上限 60；online=last_seen 距今 < heartbeat_timeout_sec 缺省 180）
+- **代码出处**：api.py term-search 分支(:2389-2420)
+- **状态**：在用
+- **登记记录**：2026-09-19，代码实证（同 SRV-120）
+
+#### SRV-129 终端电源配置详情 `GET /api/v1/console/powercontrol/terminal-power-config?terminal_id=`
+- **用途**：终端详情弹窗数据源（开机=命中中心任务同执行引擎解析；关机=终端上报实际配置）
+- **鉴权**：X-ETP-Console-Token（读 operator）
+- **请求参数**：query `terminal_id`（必填）
+- **响应**：`{"ok":true,"boot":[{id,name,repeat,weekdays,once_date,time_hhmm,source,origin,method,next_ts,next_trigger}],"calendar_fallback":bool,"shutdown":{"config":{...},"version","reported_ts","stale":bool}|null}`；404 terminal not found
+- **代码出处**：api.py terminal-power-config 分支(:2422-2445) → power_control.py `boot_tasks_for_terminal`/`shutdown_config_get`
+- **状态**：在用
+- **登记记录**：2026-09-19，代码实证（同 SRV-120）
+
+#### SRV-130 节假日日历读/写 `GET|POST /api/v1/console/powercontrol/holidays`
+- **用途**：节假日日历（GET 查询 / POST 单条登记更新 upsert；workday=调休上班，供 repeat=workday/holiday 判定）
+- **鉴权**：X-ETP-Console-Token（GET 读 operator；POST **admin-only** 403 + 审计 `powercontrol.holiday`）
+- **请求参数**：GET query `year`（4 位数字，缺省全部）；POST `{"date":"YYYY-MM-DD","type":"holiday|workday","name"?≤60}`
+- **响应**：GET `{"ok":true,"holidays":[...]}`；POST `{"ok":true}`；date 非 YYYY-MM-DD 400、type 非法 400
+- **代码出处**：api.py holidays GET 分支(:2294-2298)/POST 分支(:2300-2315) → power_control.py `holiday_list`/`holiday_upsert`
+- **状态**：在用
+- **登记记录**：2026-09-19，代码实证（同 SRV-120）
+
+#### SRV-131 节假日批量导入 `POST /api/v1/console/powercontrol/holidays/import`
+- **用途**：年度日历批量导入
+- **鉴权**：X-ETP-Console-Token（**admin-only** 403 + 审计 `powercontrol.holiday`）
+- **请求参数**：`{"items":[{"date":"YYYY-MM-DD","type":"holiday|workday","name"?}...]}`——非空数组，**单次上限 500 条**（400）
+- **响应**：`{"ok":true,"imported":N,"invalid":N}`
+- **代码出处**：api.py holidays/import 分支(:2317-2332) → power_control.py `holiday_import`（返回 imported/invalid，逐条容错）
+- **状态**：在用
+- **登记记录**：2026-09-19，代码实证（同 SRV-120）
+
+#### SRV-132 删除节假日 `DELETE /api/v1/console/powercontrol/holidays/{date}`
+- **用途**：删除单条日历记录
+- **鉴权**：X-ETP-Console-Token（**admin-only** 403 + 审计 `powercontrol.holiday_delete`）
+- **请求参数**：路径 `{date}`（YYYY-MM-DD）
+- **响应**：`{"ok":true}`；404 holiday not found
+- **代码出处**：api.py holidays/{date} DELETE 分支(:2334-2343) → power_control.py `holiday_delete`
+- **状态**：在用
+- **登记记录**：2026-09-19，代码实证（同 SRV-120）
+
+#### SRV-133 日历覆盖状态 `GET /api/v1/console/powercontrol/holiday-status`
+- **用途**：当年日历覆盖状态（缺失年如实提示，供 UI 与运行留痕）
+- **鉴权**：X-ETP-Console-Token（读 operator）
+- **请求参数**：无
+- **响应**：`{"ok":true,"status":{"year":2026,"holiday_count":N,"workday_count":N,"covered":bool}}`
+- **代码出处**：api.py holiday-status 分支(:2345-2348) → power_control.py `holiday_status`(:1010-1020)
+- **状态**：在用
+- **登记记录**：2026-09-19，代码实证（同 SRV-120）
+
+#### SRV-134 终端拉取命中开机任务 `GET /api/v1/terminals/{tid}/powercontrol/boot-tasks`
+- **用途**：终端侧拉取命中本终端的启用中开机任务（组展开与执行引擎同源），按下次触发升序
+- **鉴权**：X-ETP-Token（白名单准入 `_admission`）
+- **请求参数**：路径 `{tid}`；body 无
+- **响应**：`{"ok":true,"terminal_id":"...","tasks":[{id,name,repeat,weekdays,once_date,time_hhmm,source,origin,method,next_ts,next_trigger}],"calendar_fallback":bool,"generated_ts":N}`；404 terminal not registered
+- **代码出处**：api.py `_terminal_api` powercontrol 子路由 boot-tasks GET 分支(:589-605) → power_control.py `boot_tasks_for_terminal`
+- **状态**：在用
+- **登记记录**：2026-09-19，代码实证（同 SRV-120）
+
+#### SRV-135 终端个性化开机任务创建 `POST /api/v1/terminals/{tid}/powercontrol/boot-tasks`
+- **用途**：终端个性化开机任务创建（origin=client_personal，目标锁定本终端）
+- **鉴权**：X-ETP-Token
+- **请求参数**：载荷同 SRV-121 规范（kind/origin/source/target_type/targets 由服务端**强制覆写**为 boot/client_personal/platform/terminals/[本 tid]；name 缺省自动生成；operator="client:{tid}"）
+
+```json
+{"repeat": "daily", "time": "07:50"}
+```
+- **响应**：`{"ok":true,"task_id":N,"task":{...},"expand":{...}}`；载荷非法 400；**每终端上限 5 条 fail-closed（409「每终端个性化开机任务上限 5 条」）**；404 terminal not registered
+- **代码出处**：api.py boot-tasks POST 分支(:606-636) → power_control.py `validate_task_payload`/`task_count_personal`/`task_create`/`wol_expand_for_task`（`PERSONAL_TASK_LIMIT=5`）
+- **状态**：在用
+- **登记记录**：2026-09-19，代码实证（同 SRV-120）
+
+#### SRV-136 终端个性化任务维护 `PUT|DELETE /api/v1/terminals/{tid}/powercontrol/boot-tasks/{task_id}`
+- **用途**：终端编辑/删除本终端个性化任务（**归属锁定**）
+- **鉴权**：X-ETP-Token
+- **请求参数**：路径 `{tid}`、`{task_id}`（数字）；PUT 载荷同 SRV-121 增量合并
+- **归属锁定**：仅可操作 **origin=client_personal 且 targets 含本终端** 的任务——否则 403「仅可维护本终端的个性化任务」；task 不存在 404
+- **响应**：PUT `{"ok":true,"task":{...},"expand":{...}}`（kind/origin/source/target_type/group_id/targets 锁定不可漂移，重展开保持 enabled）；DELETE `{"ok":true}`
+- **代码出处**：api.py boot-tasks/{task_id} 分支(:639-683) → power_control.py `task_get`/`task_update`/`task_set_targets`/`task_delete`
+- **状态**：在用
+- **登记记录**：2026-09-19，代码实证（同 SRV-120）
+
+#### SRV-137 终端关机配置上报 `POST /api/v1/terminals/{tid}/powercontrol/shutdown-config`
+- **用途**：终端本地关机配置上报（架构修正：定时关机终端本地执行；连接时+变更时各上报一次，中心按版本去重存档）
+- **鉴权**：X-ETP-Token
+- **请求参数**：`{"config":{...pc_apply_policy shutdown 形状...},"version":"...","ts"?}`（config 非对象 400）
+- **响应**：`{"ok":true,"terminal_id":"...","updated":bool,"duplicate":bool}`——同版本重复上报幂等（仅刷新 reported_ts，updated=false/duplicate=true）；新版本覆盖
+- **代码出处**：api.py shutdown-config 分支(:572-588) → power_control.py `shutdown_config_save`(:1026-1051，pc_shutdown_config 表 terminal_id 主键 UPSERT)
+- **状态**：在用
+- **登记记录**：2026-09-19，代码实证（同 SRV-120）
 
 ---
 
