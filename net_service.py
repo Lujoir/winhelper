@@ -1043,6 +1043,90 @@ def run_ping_suite(task, params):
             "center_connected": center_connected, "ts": int(time.time())}
 
 
+# ============================================================
+# 功能六：AI 证据供给（4.1.7）—— tracert/stress JSONL 回读 + 网络性能快照
+# ============================================================
+
+
+def _record_generic(kind, rec):
+    """通用 JSONL 追加（tracert_YYYYMMDD.jsonl / stress_YYYYMMDD.jsonl），失败静默。"""
+    try:
+        day = datetime.now().strftime("%Y%m%d")
+        path = os.path.join(_records_dir(), "%s_%s.jsonl" % (kind, day))
+        row = dict(rec)
+        row["ts"] = int(time.time())
+        row["ts_text"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+def _read_last_jsonl(kind, days=7):
+    """跨天扫描最近一条（近 days 天窗口，文件名倒序逐文件取最大 ts）；无记录返回 None。"""
+    import glob
+    try:
+        paths = sorted(glob.glob(os.path.join(_records_dir(), "%s_*.jsonl" % kind)),
+                       reverse=True)[:days]
+        for path in paths:
+            best = None
+            with open(path, "r", encoding="utf-8") as f:
+                for ln in f:
+                    ln = ln.strip()
+                    if not ln:
+                        continue
+                    try:
+                        row = json.loads(ln)
+                    except ValueError:
+                        continue
+                    if best is None or (row.get("ts") or 0) > (best.get("ts") or 0):
+                        best = row
+            if best is not None:
+                return best
+    except Exception:
+        pass
+    return None
+
+
+def handle_net_tracert_last(params=None):
+    """AI 证据回读：最近一次路由追踪（tracert JSONL——重启后 lastTracert 会话态丢失的回填源）。"""
+    rec = _read_last_jsonl("tracert")
+    if not rec:
+        return {"success": False, "error": "no_record"}
+    return {"success": True, "record": rec}
+
+
+def handle_net_stress_last(params=None):
+    """AI 证据回读：最近一次网络压测总结（stress JSONL；历史回填不需要中心）。"""
+    rec = _read_last_jsonl("stress")
+    if not rec:
+        return {"success": False, "error": "no_record"}
+    return {"success": True, "record": rec}
+
+
+def handle_net_net_snapshot(params=None):
+    """网络性能快照（AI 第 9 源，4.1.7）：链路速率 + 网关/核心快速 ping 采样。
+    同步执行（正常网络 <5s），免中心；ping 走既有 _ping_summary 引擎（非裸 subprocess）。"""
+    out = {"success": True, "ts": int(time.time()), "link_speeds": {}, "probes": []}
+    try:
+        out["link_speeds"] = _fetch_link_speeds()
+    except Exception:
+        pass
+    nodes = {n.get("key"): n for n in (_load_app_config().get("nodes") or [])}
+    for key in ("gateway", "core"):
+        node = nodes.get(key) or {}
+        target, note = _resolve_node_target(node)
+        if not target:
+            out["probes"].append({"key": key, "target": None,
+                                  "ok": False, "error": note or "target_not_configured"})
+            continue
+        s = _ping_summary(target, count=10, timeout_ms=500)
+        out["probes"].append({"key": key, "target": target, "ok": s.get("ok"),
+                              "loss_pct": s.get("loss_pct"), "min_ms": s.get("min_ms"),
+                              "avg_ms": s.get("avg_ms"), "max_ms": s.get("max_ms")})
+    return out
+
+
 def ping_history(limit=200, hours=None, start_ts=None, end_ts=None):
     """最近连通性记录摘要：读取近 7 天 JSONL，返回最近 limit 条 + 按 key 聚合。
     2026-09-10：AI 诊断时间范围过滤——hours（小时数）或 start_ts/end_ts（epoch 秒）。"""
@@ -1186,9 +1270,11 @@ def run_tracert_result(task, target, max_hops=15):
         h["zone"] = m["zone"] if m else None
         h["zone_desc"] = (m["desc"] if m else "") or None
     resolved_ok = hops[-1].get("ip") is not None
-    return {"success": True, "target": target, "hops": hops,
-            "kb_count": len(kb_nodes), "kb_error": kb_err,
-            "reached": resolved_ok, "ts": int(time.time())}
+    out = {"success": True, "target": target, "hops": hops,
+           "kb_count": len(kb_nodes), "kb_error": kb_err,
+           "reached": resolved_ok, "ts": int(time.time())}
+    _record_generic("tracert", {"target": target, "hops": hops, "reached": resolved_ok})
+    return out
 
 
 # ============================================================
@@ -1430,6 +1516,8 @@ def run_stress(task, params):
                         "data": {"summary": text, "result": summary}})
 
     result["verdict"] = _stress_verdict(result["ping"], result["iperf"])
+    _record_generic("stress", {"center": center, "ping": result["ping"],
+                               "iperf": result["iperf"], "verdict": result["verdict"]})
     return result
 
 
@@ -2095,6 +2183,8 @@ _ND_AI_PROMPT_SYSTEM = (
     "3. 某类日志未提供/为空/被截断时，必须显式声明该维度证据不足，"
     "不得用其它维度推断或常识替代。\n"
     "约束：只基于给出的日志数据分析，不要编造；中文输出；简洁专业。\n"
+    "4. 性能类问题（性能/延迟/丢包/带宽/快不快/卡）缺量化证据时，必须按「缺失证据清单 + "
+    "获取方式（指引用户在对应功能执行：连通性测试/网络压测/性能分析）」输出，不得凭体感下结论。\n"
     "隐私边界：日志包仅含运维诊断数据，不涉及用户个人文件内容与任何凭据。"
 )
 
@@ -2283,7 +2373,10 @@ NET_ROUTES = {
     "/api/netdoctor/ping-start": handle_net_ping_start,
     "/api/netdoctor/ping-history": handle_net_ping_history,
     "/api/netdoctor/tracert-start": handle_net_tracert_start,
+    "/api/netdoctor/tracert-last": handle_net_tracert_last,
     "/api/netdoctor/stress-start": handle_net_stress_start,
+    "/api/netdoctor/stress-last": handle_net_stress_last,
+    "/api/netdoctor/net-snapshot": handle_net_net_snapshot,
     "/api/netdoctor/stress-export": handle_net_stress_export,
     "/api/netdoctor/task-status": handle_net_task_status,
     "/api/netdoctor/task-cancel": handle_net_task_cancel,

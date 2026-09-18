@@ -1681,17 +1681,19 @@ var ND_AI_SINGLES = [
 var ND_AI_NET_SUBS = [
     { key: "net_conn",    name: "连通性历史（含最近检测结果）", time: true,  needCenter: false },
     { key: "net_tracert", name: "路由追踪记录（最近一次）",     time: false, needCenter: false },
-    { key: "net_stress",  name: "网络压测总结（最近一次）",     time: false, needCenter: true }
+    { key: "net_stress",  name: "网络压测总结（最近一次）",     time: false, needCenter: true },
+    { key: "net_perf_snapshot", name: "网络性能快照（实时链路速率+网关/核心采样）", time: false, needCenter: false }
 ];
 
 function ndAiAllKeys() {
     return ["hwinfo", "os_info", "perf_analysis", "perf_stress", "system_log",
-            "net_conn", "net_tracert", "net_stress"];
+            "net_conn", "net_tracert", "net_stress", "net_perf_snapshot"];
 }
 
 var ND_AI_KEY_NAMES = { hwinfo: "硬件信息", os_info: "系统信息", perf_analysis: "性能分析记录",
     perf_stress: "性能压测记录", system_log: "系统日志", net_conn: "连通性历史",
-    net_tracert: "路由追踪记录", net_stress: "网络压测总结" };
+    net_tracert: "路由追踪记录", net_stress: "网络压测总结",
+    net_perf_snapshot: "网络性能快照" };
 
 function ndAiKeyName(k) { return ND_AI_KEY_NAMES[k] || k; }
 
@@ -1892,18 +1894,46 @@ function ndAiCollectOne(key) {
         }).catch(fail);
     }
     if (key === "net_tracert") {
-        if (!ndState.lastTracert) {
-            return Promise.resolve({ ok: false, data: null, note: "不可用（尚未追踪）" });
+        if (ndState.lastTracert) {
+            return Promise.resolve({ ok: true, data: ndState.lastTracert,
+                note: "最近一次 · " + ((ndState.lastTracert.hops || []).length) + " 跳" });
         }
-        return Promise.resolve({ ok: true, data: ndState.lastTracert,
-            note: "最近一次 · " + ((ndState.lastTracert.hops || []).length) + " 跳" });
+        /* 4.1.7 会话失忆回填：会话态为空时回读 tracert JSONL 最近一次（历史跑过即认） */
+        return ndApiFetch("/api/netdoctor/tracert-last").then(function (d) {
+            var rec = d && d.success !== false ? d.record : null;
+            if (!rec || !rec.hops) { return fail(); }
+            ndState.lastTracert = rec;   /* 回填会话态（后续 AI 分析/补采共用） */
+            return { ok: true, data: rec,
+                note: "历史回填 · " + rec.ts_text + " · " + ((rec.hops || []).length) + " 跳" };
+        }).catch(fail);
     }
     if (key === "net_stress") {
-        if (!ndConnected()) { return Promise.resolve({ ok: false, data: null, note: "需连接中心" }); }
-        if (!ndState.lastStressResult) {
-            return Promise.resolve({ ok: false, data: null, note: "不可用（尚未压测）" });
+        if (ndState.lastStressResult) {
+            return Promise.resolve({ ok: true, data: ndState.lastStressResult, note: "最近一次 · 压测总结" });
         }
-        return Promise.resolve({ ok: true, data: ndState.lastStressResult, note: "最近一次 · 压测总结" });
+        /* 4.1.7 回填：历史压测总结落盘 JSONL，回读不需要中心（needCenter 语义仅对新发起压测） */
+        return ndApiFetch("/api/netdoctor/stress-last").then(function (d) {
+            var rec = d && d.success !== false ? d.record : null;
+            if (!rec || !rec.verdict) { return fail(); }
+            ndState.lastStressResult = rec;
+            return { ok: true, data: rec, note: "历史回填 · " + rec.ts_text + " · 压测总结" };
+        }).catch(function () {
+            if (!ndConnected()) { return Promise.resolve({ ok: false, data: null, note: "需连接中心" }); }
+            return Promise.resolve({ ok: false, data: null, note: "不可用（尚未压测）" });
+        });
+    }
+    if (key === "net_perf_snapshot") {
+        /* 4.1.7 第 9 源：实时网络性能快照（链路速率+网关/核心采样，免中心，服务端 <5s） */
+        return ndApiFetch("/api/netdoctor/net-snapshot").then(function (d) {
+            if (!d || d.success === false) { return fail(); }
+            var probes = (d.probes || []).map(function (p) {
+                return (p.key || "?") + "@" + (p.target || "--") + ":"
+                    + (p.ok ? ("avg " + p.avg_ms + "ms 丢包 " + p.loss_pct + "%") : "不可达");
+            });
+            return { ok: true, data: d,
+                note: "实时 · " + Object.keys(d.link_speeds || {}).length + " 网卡 · "
+                    + (probes.join(" | ") || "无采样") };
+        }).catch(fail);
     }
     var route = key === "hwinfo" ? "/api/perf/hwinfo"
         : key === "perf_analysis" ? "/api/perf/record-report"
@@ -2050,15 +2080,7 @@ function ndAiRefreshSources() {
     var keys = ndAiAllKeys();
     for (var i = 0; i < keys.length; i++) {
         (function (key) {
-            if (key === "net_stress" && !ndConnected()) {
-                var skip = { ok: false, data: null, note: "需连接中心", ts: Date.now() };
-                ndState.aiCollect[key] = skip;
-                var st0 = document.getElementById("ndAiSt-" + key);
-                if (st0) { st0.textContent = skip.note; }
-                ndAiUpdateAgg();
-                return;
-            }
-            ndAiCollectNow(key);
+            ndAiCollectNow(key);   /* 4.1.7：net_stress 历史回填不需中心，未连时也在采集层如实标注 */
         })(keys[i]);
     }
 }
@@ -2301,6 +2323,27 @@ function ndAiFreshNetSubs() {
     });
 }
 
+/* 4.1.7 问题-证据联动引导（轻量，不阻断）：性能类关键词且快照/连通性均无有效数据时提示 */
+function ndAiGuideHint(issue) {
+    if (!/性能|延迟|丢包|带宽|快不快|卡|网速/.test(issue || "")) { return; }
+    var snap = ndState.aiCollect ? ndState.aiCollect.net_perf_snapshot : null;
+    var conn = ndState.aiCollect ? ndState.aiCollect.net_conn : null;
+    if ((snap && snap.ok) || (conn && conn.ok)) { return; }
+    var host = document.getElementById("ndAiSummary");
+    if (!host) { return; }
+    var g = document.getElementById("ndAiGuide");
+    if (!g) {
+        g = document.createElement("div");
+        g.id = "ndAiGuide";
+        g.className = "nd-hint";
+        g.style.cssText = "margin:4px 0 6px;padding:6px 10px;border:1px dashed rgba(255,183,77,.5);"
+            + "border-radius:8px;color:#ffb74d;background:rgba(255,183,77,.06)";
+        host.parentNode.insertBefore(g, host);
+    }
+    g.textContent = "性能证据不足：建议先执行「连通性测试」或「网络压测」，并勾选「网络性能快照」源后再诊断"
+        + "（当前提交不受影响）";
+}
+
 function ndAiSubmitProceed() {
     var issue = ((document.getElementById("ndAiIssue") || {}).value || "").trim();
     if (!issue) {
@@ -2312,6 +2355,7 @@ function ndAiSubmitProceed() {
     }
     var btn = document.getElementById("ndAiBtn");
     if (btn) { btn.disabled = true; }
+    ndAiGuideHint(issue);
     ndSetTip("ndAiSummary", "采集日志并提交分析中（模型链处理约 10-30 秒）…");
     var c0 = ndState.aiCollect && ndState.aiCollect.hwinfo;
     var needFresh = !c0 || (Date.now() - (c0.ts || 0) > 300000);
