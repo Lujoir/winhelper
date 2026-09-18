@@ -1,6 +1,6 @@
 # 观枢终端平台｜EyeTerm · 建设史编年
 
-> 维护者：chronicler-dev ｜ v2.6 ｜ 2026-09-14 ｜ 补记 #56 文件检索子系统立项交付与 #55 AI 热修三连（登记号非时间序：实证 56→55）
+> 维护者：chronicler-dev ｜ v2.7 ｜ 2026-09-18 ｜ 补记 #57 WoL 远程自动开机实现（BIOS RTC 不可行后的产品链路定案与干净终验）
 
 ## 卷首语
 
@@ -74,6 +74,7 @@
 | 54 | 2026-09-14 | 废除原生 confirm/alert 专项 | uiConfirm 唯一出口 23 处清零 + 源码级门禁长效化（ADR-021） |
 | 56 | 2026-09-14 | 文件检索子系统立项并交付 | Everything 捆绑 + 服务模式 + 三仓集成，第五个独立子系统（ADR-001~003） |
 | 55 | 2026-09-14 | AI 补采模态热修三连 | 排队假象消除 + 异常必达复位 + 历史写路径加固（ADR-032） |
+| 57 | 2026-09-18 | WoL 远程自动开机实现 | BIOS RTC 不可行改走网络唤醒：平台调度 + 中继代发 + last_seen 唯一判据定案（ADR-044/045） |
 
 ---
 
@@ -364,6 +365,11 @@
 - 意义：补采模态（#43 引入）的交互反馈与异常路径补全，「异常路径必达复位」延续 UI 可信性防线（#36/#49 同族）；exe 版本滞后作为根因因素再次印证「构建同步」运维口径。
 - 考证：net-doctor 提交 `1bdf7e9`（2026-09-14 18:11，ADR-032 已入档）；主仓库提交 `7c9b5ad`（18:11）、`b406338`（18:15，origin/main 实证）。
 
+#### 2026-09-18 · WoL 远程自动开机实现——BIOS RTC 不可行后的产品链路定案与干净终验（#57）
+- 事件：**背景与决策链**——M720t（WIN-13F-xx-3，172.17.90.18）BIOS 定时开机远程写入定案不可行：两代联想 BIOS WMI 写接口（老一代 Lenovo_SetBiosSetting/SaveBiosSetting、新一代 Lenovo_BiosSetting 实例级 SetBiosSetting）在该机型均方法面缺失（UPL pc_diag 只读诊断通道 2026-09-17 实证），属固件级能力边界而非软件缺陷；main 拍板替代路线为**平台定时 WoL 唤醒**（不依赖 BIOS 写接口，对所有 WoL 可用终端通用）。**交付链**（当日全链落地）——终端 4.1.5（power_action 中心发起关机/重启 + wol_relay 跨网段中继代发，一包双能力，生产发布 release id=6）；服务端 wol.py 调度守护（20s 节拍；直发→240s 观察窗→同网段中继升级→give_up 五态留痕；wol_schedules/wol_attempts 两表，ADR-044/045）；console「立即开关机与远程唤醒」UI（五态徽章/新建弹窗/手动唤醒直发与中继二选一）；接口登记 SRV-113~119 + UPL-016~018；生产 systemd timer 每日 08:30 服务器直发兜底（过渡自动化先行，ADR-044 背景互证）。**方法论勘误**（同日，用户实机纠错）——白昼唤醒事件中多轮 ICMP/TCP/ARP 探测判读「机器未开机」全部作废（防火墙/安全软件使探测在开机状态下也全静默，探测静默≠关机）；确立「唤醒/在线判定唯一权威判据=平台 last_seen，观察窗内禁止探测辅助判据」，勘误入档 server-platform 运维记录。**定案验证**（19:43 干净终验）——平台心跳确认真离线（last_seen 288s 前）→ 19:43:35 同网段三路广播发魔术包 → 60 秒后 last_seen 恢复（cv=4.1.3）→ 唤醒成立；M720t BIOS Wake on LAN 由用户手工设为 Primary（BIOS 写入只读，一次性物理配置）。叠加当日 08:07 首次成功案例（当时 BIOS Wake on LAN=Automatic，经同网段 Jun-office-PC 代发，与 ADR-044 背景记录互证）。
+- 意义：EyeTerm **第一次在终端 BIOS RTC 远程写入不支持的前提下实现 Windows 终端自动开机**——以「网络唤醒（WoL）」产品链路达成；形成「生产 systemd timer（每日 08:30 直发兜底）+ 平台定时唤醒调度（五态状态机、直发/同网段中继双通道）+ 4.1.5+ 客户端 wol_relay」的通用产品形态；「last_seen 唯一权威判据」探测红线入档，为此后电源管控类一切在线/唤醒判定立规。
+- 考证：server-platform 提交 `85ae733`（2026-09-18 09:09，ADR-044/045，含 server/wol.py、power_control.py 两表、console pw 页）、`6079c6d`（19:44，白昼唤醒事件方法论勘误运维记录）；主仓库提交 `702f0c9`（08:38，4.1.5 power_action 终端侧版本 bump）、`0c5f1e0`（08:46，4.1.5 重打包一包双能力）、`e6e9974`（09:16，SRV-113~119 + UPL-016~018 接口登记）；ADR-044/045 与勘误运维记录见 server-platform/docs/DECISIONS.md（验证门禁 test_wol.py 7/7 组 + E2E 179/179 见 ADR-044）；19:43 干净终验、release id=6、BIOS Wake on LAN Primary 物理配置、08:07 案例来源：会话记忆（main 下发 2026-09-18）；BIOS WMI 方法面缺失实证（2026-09-17 diag#2）来源：会话记忆（pc_diag 通道考证承接 server-platform `5f0ba2f` / 主仓库 `3dc7e8b`）。日期两源矛盾说明见存疑 #8。
+
 ---
 
 ## 三、存疑与考证
@@ -375,6 +381,7 @@
 5. **终端资产明细（asset schema1）部署确认待考证**：功能本体源自 `eba91c5`（2026-09-06，ADR-015）；会话记忆称 2026-09-08 已部署至生产并提供控制台资产明细弹窗，但 api.py register 传参 asset 曾因断言失败未写回（部署后 asset 走 hwinfo 回退），补丁是否已重新应用并部署待确认。
 6. **disk-cleaner ADR 范围勘误**：任务简报记为「ADR-001~011」，实际仓库 DECISIONS.md 已演进至 ADR-015（`a29b0fb`/`4b8d4b1`/`97794d3`/`fd87cda`）。本编年以仓库为准。
 7. **安卓端统一管理**：为规划目标（会话记忆，无日期、无交付物），暂不入大事记，仅于卷首语注明。
+8. **【2026-09-18 建条】WoL 干净终验日期两源矛盾（2026-09-18 vs 2026-09-19）**：main 下发任务素材记定案验证为 2026-09-18 19:43（发包 19:43:35，60 秒后 last_seen 恢复 cv=4.1.3）；另有一份项目记忆记为「2026-09-19 19:43」，其余细节（last_seen 288s、同网段三路广播、08:07 叠加案例）完全一致。本编年采 **2026-09-18**——任务素材于事件发生后即时下发且与用户当日确认里程碑的时点一致，并与勘误提交 `6079c6d`（2026-09-18 19:44）时间窗吻合；09-19 记法判为记忆录入日期笔误。后续如有新证据再勘误。
 
 ---
 
@@ -382,12 +389,12 @@
 
 | 仓库 | 位置 | 首提交 | 最新提交（建档时） | 提交数 | 决策记录 |
 |------|------|--------|-------------------|--------|---------|
-| winhelper 主应用 | workspace 根（.git）；远程 git.wzeye.cn/zlj/eyeterm（2026-09-10 接入） | `84ea539` 2026-05-22 | `b406338` 2026-09-14 | 140 | docs/ARCHITECTURE-CLIENT.md |
+| winhelper 主应用 | workspace 根（.git）；远程 git.wzeye.cn/zlj/eyeterm（2026-09-10 接入） | `84ea539` 2026-05-22 | `eb35781` 2026-09-18 | 224 | docs/ARCHITECTURE-CLIENT.md |
 | disk-cleaner | disk-cleaner\（.git） | `3cdeb9b` 2026-09-05 | `130a012` 2026-09-14 | 12 | ADR-001~015（docs/DECISIONS.md） |
 | log-inspector | log-inspector\（.git） | `dde1c4b` 2026-09-06 | `5ca2c1f` 2026-09-08 | 7 | ADR-001~009（docs/DECISIONS.md） |
 | perf-analyzer | perf-analyzer\（.git） | `4192b95` 2026-09-05 | `16c92d2` 2026-09-14 | 21 | ADR-001~021（docs/DECISIONS.md） |
-| server-platform | server-platform\（.git） | `5a21967` 2026-09-06 | `35c74f5` 2026-09-11 | 35 | ADR-001~032（24 空缺，docs/DECISIONS.md）+ docs/login_upgrade_delivery.md、docs/iperf_e2e_report.md |
-| net-doctor | net-doctor\（.git） | `539b993` 2026-09-09 | `1bdf7e9` 2026-09-14 | 38 | ADR-001~032（docs/DECISIONS.md）+ docs/STYLE.md 设计规格 |
-| file-search | file-search\（.git） | `ef42a92` 2026-09-14 | `df96c16` 2026-09-14 | 3 | ADR-001~003（docs/DECISIONS.md） |
+| server-platform | server-platform\（.git） | `5a21967` 2026-09-06 | `6079c6d` 2026-09-18 | 65 | ADR-001~045（缺 024，docs/DECISIONS.md）+ docs/login_upgrade_delivery.md、docs/iperf_e2e_report.md |
+| net-doctor | net-doctor\（.git） | `539b993` 2026-09-09 | `d926941` 2026-09-16 | 43 | ADR-001~032（docs/DECISIONS.md）+ docs/STYLE.md 设计规格 |
+| file-search | file-search\（.git） | `ef42a92` 2026-09-14 | `9c3c680` 2026-09-18 | 23 | ADR-001~003（docs/DECISIONS.md） |
 
 > 检索方式：`git log --date=short --format="%h %ad %s"`（各仓库根目录执行）。子项目仓库均位于主仓库 workspace 之下，主仓库以 gitlink 方式引用三者（server-platform 当前未以 gitlink 跟踪）。
