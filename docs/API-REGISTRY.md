@@ -736,6 +736,8 @@
 - **代码出处**：api.py `_console_sysadmin` → settings.py `SettingsStore.set`
 - **状态**：在用
 - **登记记录**：2026-09-09，代码实证（server-platform-dev 下发，commit 4d2924b）> 更新 2026-09-19：**生产配置取值变更（main 下发）**——llm.model=DeepSeek-V4.1（主）/ llm.model_fallback=Qwen3.6（备），端点契约无变化（详见 EXT-001 更新行）。**运维 CLI 锚**：`/data/terminal-platform/app/server/config_cli.py`（set/get/list 子命令，SSH 服务器侧，set --stdin 加密落库）——**已知缺陷（2026-09-19，待修复）**：`list` 子命令报 AttributeError：`SettingsStore.DEFAULTS` 不存在（DEFAULTS 为 settings.py 模块级常量、非类属性）；get/set 正常；修复建议 `from settings import DEFAULTS` 后遍历。待 server-platform-dev 修复后知会消项
+
+#### SRV-063 算力网关连通性测试 `POST /api/v1/console/sysadmin/llm/test`
 - **用途**：`GET {llm.url}/v1/models`（Bearer api_key，8s 超时）验证连通；不消耗对话额度
 - **鉴权**：X-ETP-Console-Token + admin
 - **请求参数**：无（读当前配置）
