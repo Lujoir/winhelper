@@ -16,6 +16,8 @@ ADR-006 附注⑤（power-control/docs/DECISIONS.md）。
 """
 
 import ctypes
+import re
+import socket
 import subprocess
 import threading
 
@@ -142,3 +144,75 @@ def handle_power_action_abort(args, runner=None):
     note = (err or out or "").strip()[:160] or "exit=%d" % rc
     log("power_action_abort 失败 rc=%s: %s" % (rc, note), "WARN")
     return False, {"ok": False, "rc": rc, "error": note}
+
+
+# ---------- wol_relay（跨网段中继主通道·终端本地发魔术包；2026-09-18 main 定稿）----------
+# WoL 中继语义：终端与目标机同网段时由中心指派本终端代发魔术包（纯 UDP
+# 广播、零依赖零提权）；仅中心发起（白名单+审计），无本地 UI 入口。
+# UDP 无确认——回执注明「已发送」，唤醒结果取决于目标机电源状态与同网段可达性。
+
+def normalize_mac(mac):
+    """MAC 归一：AA:BB:CC:DD:EE:FF / AA-BB-CC-DD-EE-FF / aabbccddeeff
+    → 大写 12 hex；非法拒绝。"""
+    s = re.sub(r"[:\-\s.]", "", str(mac or "")).upper()
+    if not re.fullmatch(r"[0-9A-F]{12}", s):
+        raise ValueError("MAC 格式非法: %r" % (mac,))
+    return s
+
+
+def build_magic_packet(mac):
+    """魔术包：6×0xFF + 16×目标 MAC（6 字节）= 102 字节（AMD 帕洛阿尔托标准）。"""
+    return b"\xff" * 6 + bytes.fromhex(normalize_mac(mac)) * 16
+
+
+def validate_broadcast(addr):
+    """广播地址合法性：严格 IPv4 点分四段、每段 0-255（拒绝 inet_aton 简写形态）。"""
+    s = str(addr or "").strip()
+    if not re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", s):
+        raise ValueError("广播地址非法: %r" % (addr,))
+    if any(int(x) > 255 for x in s.split(".")):
+        raise ValueError("广播地址段超界: %r" % (addr,))
+    return s
+
+
+def _default_wol_sender(packet, broadcast, port):
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        s.settimeout(3)
+        s.sendto(packet, (broadcast, port))
+    finally:
+        s.close()
+
+
+def handle_wol_relay(args, sender=None):
+    """UPL wol_relay：终端向同网段广播地址发送目标机魔术包。
+
+    args: {mac:string(归一格式不限), broadcast:string(IPv4), port?:uint(缺省 9)}
+    返回 (ok, data)；UDP fire-and-forget，发送成功即回执。"""
+    args = args if isinstance(args, dict) else {}
+    mac_raw = args.get("mac")
+    port_raw = args.get("port", 9)
+    try:
+        mac = normalize_mac(mac_raw)
+        packet = build_magic_packet(mac)
+        bcast = validate_broadcast(args.get("broadcast"))
+        port = int(port_raw)
+        if not (1 <= port <= 65535):
+            raise ValueError("端口超出范围（1-65535）: %r" % (port_raw,))
+    except (TypeError, ValueError) as e:
+        log("wol_relay 参数校验拒绝: %s | args=%r" % (e, args), "WARN")
+        return False, {"ok": False, "error": "参数校验失败: %s" % e}
+    send = sender or _default_wol_sender
+    log("wol_relay 中心下发: mac=%s broadcast=%s port=%d（审计）"
+        % (mac, bcast, port), "WARN")
+    try:
+        send(packet, bcast, port)
+    except Exception as e:
+        log("wol_relay 发送失败: %s" % e, "WARN")
+        return False, {"ok": False, "mac": mac, "broadcast": bcast,
+                       "port": port, "error": str(e)[:160]}
+    log("wol_relay 魔术包已发送（102B → %s:%d）" % (bcast, port))
+    return True, {"ok": True, "mac": mac, "broadcast": bcast, "port": port,
+                  "note": "魔术包已发送至 %s:%d；唤醒结果取决于目标机电源"
+                          "状态与同网段可达性" % (bcast, port)}

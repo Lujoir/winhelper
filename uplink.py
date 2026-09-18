@@ -781,6 +781,17 @@ def _cmd_power_action_abort(args):
     return power_action.handle_power_action_abort(args or {})
 
 
+@command_handler("wol_relay")
+def _cmd_wol_relay(args):
+    """args={mac:string, broadcast:string(IPv4), port?:uint(缺省 9)}。
+
+    WoL 跨网段中继主通道·终端侧：终端向同网段广播地址发目标机魔术包
+    （纯 UDP 广播，零依赖零提权）；仅中心发起（白名单+审计），无本地 UI
+    入口；UDP 无确认，发送成功即回执（唤醒结果取决于目标机电源状态）。"""
+    import power_action   # 延迟导入
+    return power_action.handle_wol_relay(args or {})
+
+
 # ---------- pc_diag（自动开关机只读诊断，ADR-006 定案工具；2026-09-17）----------
 
 
