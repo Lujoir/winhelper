@@ -5,12 +5,12 @@
 - **维护人**：api-registrar-dev（接口登记官）
 - **事实来源**：代码实证（server-platform/server/api.py、bridge.py、uplink.py、net-doctor/net_service.py 等），每条注明文件+函数
 - **登记统计**：
-  - 一、服务端 REST API（SRV）：138 条（2026-09-10 晚新增 ADR-029 IP 冲突深度检测 2 条；2026-09-16（晚）新增 power-control P0 2 条 SRV-080/081，服务端实现 commit ec726af/ADR-038；2026-09-17 新增客户端版本发布管理 6 条 SRV-082~087，commit e24a236/ADR-042；同日新增 update-manifest 别名 SRV-088（327a69b）与第三方数据源 4 条 SRV-089~092（b8a086b/ADR-043）；同日新增开关机管控页 7 条 SRV-093~099——其中 dispatch 批次组 3 条为 ADR-040 漏登补登，commit 95dbb1c/3645d94/983e7bc 前序，主体 a099448/3fe299e；同日晚新增火绒专项 9 条 SRV-100~108（b6a74f6/9ab89ac/7842aab，ADR-033 系，huorong-dev 按常设约定主动补知会）；同日新增 pc_diag 联调通道 4 条 SRV-109~112，commit 5f0ba2f/ADR-040 增补，已生产部署验证；2026-09-18 新增 4.1.5 电源行动与 WoL 产品化 7 条 SRV-113~119，commit 85ae733/ADR-044/045；2026-09-19 新增开关机管控任务化 18 条 SRV-120~137，commit 99f4079/ADR-046/047，server-platform-dev 按常设约定显式列清单知会；同日新增首页资产定位 1 条 SRV-138（asset_locate.py，commit 19694e1，asset-mgmt-dev 交付经 main 转达，api-registrar-dev 审核登记，新建 1.18 中心首页组））
+  - 一、服务端 REST API（SRV）：139 条（2026-09-10 晚新增 ADR-029 IP 冲突深度检测 2 条；2026-09-16（晚）新增 power-control P0 2 条 SRV-080/081，服务端实现 commit ec726af/ADR-038；2026-09-17 新增客户端版本发布管理 6 条 SRV-082~087，commit e24a236/ADR-042；同日新增 update-manifest 别名 SRV-088（327a69b）与第三方数据源 4 条 SRV-089~092（b8a086b/ADR-043）；同日新增开关机管控页 7 条 SRV-093~099——其中 dispatch 批次组 3 条为 ADR-040 漏登补登，commit 95dbb1c/3645d94/983e7bc 前序，主体 a099448/3fe299e；同日晚新增火绒专项 9 条 SRV-100~108（b6a74f6/9ab89ac/7842aab，ADR-033 系，huorong-dev 按常设约定主动补知会）；同日新增 pc_diag 联调通道 4 条 SRV-109~112，commit 5f0ba2f/ADR-040 增补，已生产部署验证；2026-09-18 新增 4.1.5 电源行动与 WoL 产品化 7 条 SRV-113~119，commit 85ae733/ADR-044/045；2026-09-19 新增开关机管控任务化 18 条 SRV-120~137，commit 99f4079/ADR-046/047，server-platform-dev 按常设约定显式列清单知会；同日新增首页资产定位 1 条 SRV-138（asset_locate.py，commit 19694e1，asset-mgmt-dev 交付经 main 转达，api-registrar-dev 审核登记，新建 1.18 中心首页组）；同日补登首页卡片摘要 SRV-139（api_home.py，home-console-dev 实施；登记官误报「未实现」经 main 实证更正后按实登记））
   - 二、终端本地桥接 API（BRG）：78 条（netdoctor 22 条：10 条 2026-09-09 合入转「在用」commit 628c210；AI 诊断 2 条 commit a892f62/bd965ae；冲突检测本地转发 3 条 commit b344bbc/40abd3f；路由追踪 AI 分析 + AI 诊断历史持久化 4 条 2026-09-11 登记，commit c4495bc/916e791；AI 证据增强 3 条 2026-09-18 登记，commit 0b3f43d/45cb17c 4.1.7；桌面管控 5 条 2026-09-16 登记，commit 08b3547/9bdfcdf；power-control 2 条 2026-09-16（晚）登记，主应用挂载 commit 2bbf881；客户端自启与更新 4 条 2026-09-17（7fe4e9b，power-control-dev 直写复核归档）；文件检索 5 条——4 条 2026-09-17 漏登补登（权威引擎 search_service.py 894f20a）+ 索引器部署 1 条 2026-09-18 登记（c598e05/9c3c680，4.1.7）；性能分析 1 条 2026-09-18 登记（record-latest，1eac1b6/8faffde））
   - 三、终端↔平台协议（UPL）：18 条（2026-09-16 新增桌面管控契约 3 条 UPL-011~013，契约冻结/服务端未实现；2026-09-17 新增命令 UPL-014 pc_apply_policy（主仓 a099448）与 UPL-015 pc_diag（5f0ba2f/3dc7e8b 双端闭环）；2026-09-18 新增命令 UPL-016~018 power_action/power_action_abort/wol_relay（主仓 0c5f1e0/客户端 4.1.5，双端就绪））
   - 四、外部依赖接口（EXT）：7 条（2026-09-15 新增火绒终端安全 API v1，调研阶段）
   - 五、废弃/规划接口（DEP）：5 条
-  - **合计 246 条** > 更新 2026-09-19：合计由 232 纠正为 227（api-registrar-dev 入职对账，逐条 grep 实证 SRV119/BRG78/UPL18/EXT7/DEP5，编号连续无跳号；232 为此前误记）> 更新 2026-09-19（晚）：批 A 开关机管控任务化 +18 条（SRV-120~137，commit 99f4079/ADR-047），合计 227→245 > 更新 2026-09-19（晚二）：首页资产定位 +1 条（SRV-138，asset_locate.py，commit 19694e1），合计 245→246
+  - **合计 247 条** > 更新 2026-09-19：合计由 232 纠正为 227（api-registrar-dev 入职对账，逐条 grep 实证 SRV119/BRG78/UPL18/EXT7/DEP5，编号连续无跳号；232 为此前误记）> 更新 2026-09-19（晚）：批 A 开关机管控任务化 +18 条（SRV-120~137，commit 99f4079/ADR-047），合计 227→245 > 更新 2026-09-19（晚二）：首页资产定位 +1 条（SRV-138，asset_locate.py，commit 19694e1），合计 245→246 > 更新 2026-09-19（晚三）：首页卡片摘要补登 +1 条（SRV-139，api_home.py；登记官误报「未实现」经 main 实证更正），合计 246→247
 - **通用约定**：
   - 服务端监听：ThreadingHTTPServer，`0.0.0.0:{port}`，默认 18090（app.py `_load_config` / `main`）；配置经 `$ETP_CONFIG` → `server/config.local.json` → dev 默认三级加载
   - 终端上行鉴权：请求头 `X-ETP-Token`（对照 config.json `terminal_token`）> 更新 2026-09-09：收敛为**多 token 模型**——config token 或 SQLite `terminal_tokens` 表 status='active' 命中均放行（详见 UPL-010，commit 4d2924b）
@@ -1341,7 +1341,7 @@
 
 > 来源：home 组为 home-console-dev 辖区（api_home.py 自治演进）；本条 asset-locate 为 asset-mgmt-dev 实施（commit 19694e1），经 main 转达交付说明、api-registrar-dev 审核登记。
 > 组级约定：api.py `_console_api` 头部单点转发(:904-906，`parts[:4]==["api","v1","console","home"]` → api_home.handle(:46-49))，本组新增端点不改 api.py。鉴权：组级沿用 dispatch 层 console resolve_session（operator/admin 可读，组内 GET 不重复鉴权、不审计）；**端点级加固由各端点自理**（asset-locate 自行 admin-only + 审计，与 sysadmin 组同口径）。
-> 规划锚：`GET /api/v1/console/home/summary`（首页卡片摘要聚合，api_home.py docstring v1 规划，home-console-dev 辖区）——尚未实现（handle 目前仅分发 asset-locate），**未登记**；交付后按实补登。每卡片独立容错（单卡失败 `{"ok":false,"error":...}` 不阻塞整页，PRD 硬要求）。
+> 规划锚 → **更正（2026-09-19）**：`GET /api/v1/console/home/summary` 已实现在位（此前登记官误报「未实现」——检索只扫了 handle 分发分支、未读 `_summary` 函数体；经 main 实证更正），实登记为 **SRV-139**。卡片数据契约 v1：cards 键=前端卡片注册 id（monitor/assets/release 已实现；nettest/ai/dpol/pc/kb/config/sysadmin 为 `{"ok":true,"pending":true}` 骨架占位，Phase2 各模块 agent 按键追加自有字段，向后兼容）。每卡片独立容错（单卡失败 `{"ok":false,"error":...}` 不阻塞整页，PRD 硬要求）。
 
 #### SRV-138 资产定位检索聚合 `POST /api/v1/console/home/asset-locate`
 - **用途**：首页「资产定位」卡数据供给——自由文本提取标识符 → 中心/火绒/画方三源检索聚合 →（可选 AI 推断块）→ 结构化资产画像
@@ -1358,6 +1358,21 @@
 - **状态**：在用
 - **登记记录**：2026-09-19，代码实证（asset-mgmt-dev 实施，commit 19694e1，经 main 转达交付说明；api-registrar-dev 审核登记——条目按代码为准，审核差异 3 点见下）
 - **审核注记（2026-09-19，登记官）**：①交付说明「404/405 语义」中 405 无对应分支——代码 method≠POST 实际返回 404，以代码为准；②交付说明「工号 4-11 位」实为 5-11 位独立 token + 4 位仅前缀形态，以代码为准；③asset_locate.py 模块头注释仍写「api.py 单点转发、不进 api_home.py」，与实际链路（经 api_home.py 分发）不符，属注释过时不影响功能——已提醒 asset-mgmt-dev 顺手修正
+
+#### SRV-139 首页卡片摘要聚合 `GET /api/v1/console/home/summary`
+- **用途**：中心首页卡片式主界面数据聚合（一次请求喂全部卡片；卡片键=前端卡片注册 id，Phase2 各模块按键追加自有字段，向后兼容）
+- **鉴权**：X-ETP-Console-Token（dispatch 层 console 统一 resolve_session，operator/admin 可读；组级 GET 不重复鉴权、不审计）
+- **请求参数**：无
+- **响应**：200 `{"ok":true,"ts":N,"cards":{...}}`，10 张卡：
+  - `monitor`（实现）：`{"ok":true,"total":N,"online":N,"offline":N,"version_counts":{<client_version>:N}}`——在线判定 last_seen 距今 < heartbeat_timeout_sec（缺省 180）
+  - `assets`（实现）：`{"ok":true,"platform_groups":N,"huorong_groups":N,"other_total":N,"other_online":N}`——平台资产组 / 火绒镜像组（hr_groups_with_stats）/ 未关联平台终端统计（hr_platform_unlinked，含在线计数）
+  - `release`（实现）：`{"ok":true,"current_version":..,"published_at":..,"release_note":..,"total_releases":N}`——**operator 可见脱敏投影**（仅版本号/时间/数量，不含 token/sha256/安装包文件名，admin-only 端点数据的投影）；发布模块未初始化降级 `{"ok":true,"current_version":null,"total_releases":0}`
+  - `nettest`/`ai`/`dpol`/`pc`/`kb`/`config`/`sysadmin`（7 卡）：`{"ok":true,"pending":true}` 骨架占位（Phase2 各模块 agent 接入替换）
+  - 已实现卡异常时 `{"ok":false,"error":"<str[:120]>"}` 单卡失败不阻塞整页
+- **调用方式**：`curl http://127.0.0.1:18090/api/v1/console/home/summary -H "X-ETP-Console-Token: <token>"`
+- **代码出处**：api_home.py `_summary`(:53-78)/`_card_monitor`(:92-105)/`_card_assets`(:108-121)/`_card_release`(:124-140)；分发 api.py `_console_api`(:904-906) → api_home.py `handle`(:41-42)
+- **状态**：在用（3 卡实读数据 + 7 卡 pending 占位）
+- **登记记录**：2026-09-19，代码实证（home-console-dev 实施，api-registrar-dev 复核登记）> 更新 2026-09-19：本条此前被登记官**误判「规划未实现」**（检索只扫 handle 分发分支、未读 _summary 函数体即下结论），经 main 实证更正后按实补登——登记方法论入档：登记前必须读函数体实现，不得以 docstring/分支存在性推断实现状态
 
 ---
 
