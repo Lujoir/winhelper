@@ -24,9 +24,20 @@ ai-agent/
     input.schema.json       输入结构约束
     output.schema.json      输出结构约束
     validate.py             校验器（输入拒绝 + 输出把关 + 污染检测）
+  templates/
+    AGENT.template.md       AI 功能 Agent 配置模板（**唯一源**，实例从它派生）
+    archive/                模板历史版本（模板变更前必须先归档原版）
+  agents/
+    center/<id>.agent.md    中心服务侧 AI 功能配置（**源**）
+    client/<id>.agent.md    Windows 客户端侧 AI 功能配置（**源**）
   tmp/                      临时中间产物（**唯一允许自动清理**的目录，带 TTL）
-  tools/cleanup.py          一键清理
-  docs/DECISIONS.md         架构决策（ADR）
+  tools/
+    cleanup.py              一键清理（默认 dry-run）
+    publish_agents.py       发布配置：源 → 功能模块（幂等）
+    verify_agent_configs.py 校验门禁：字段/枚举/段落/身份/隐私/一致性/常量（7 项）
+  docs/
+    DECISIONS.md            架构决策（ADR）
+    AUDIT.md                AI 能力合规审计（含问题清单与欠账）
 ```
 
 ## 服务对象与隐私边界（接入必读）
@@ -64,6 +75,38 @@ Memory  我做过什么、知道什么、上次结论       → 提供事实与�
 1. **物理隔离** —— 一模块一目录，禁止跨目录直接 `open()`
 2. **访问收口** —— 读写一律经 `MemoryScope(module_id)`，越界抛异常
 3. **命名空间标注** —— 条目带 `module` 字段；跨模块引用必须显式声明 `depends_on`
+
+## 每个 AI 功能都要有 Agent 配置（强制）
+
+**每一项 AI 能力都必须在两侧（中心服务 / Windows 客户端）有独立配置文件**，
+且遵循「模板 → 实例 → 归档 → 发布」流水线：
+
+```
+templates/AGENT.template.md          ← 唯一模板（改模板前先归档旧版到 archive/）
+        │  复制实例化
+        ▼
+agents/<env>/<id>.agent.md           ← 源（唯一维护点）
+        │  publish_agents.py（机械发布，勿手改副本）
+        ▼
+功能模块内副本                        ← 中心: server-platform/server/agents/
+                                      客户端: net-doctor/agents/
+        │  verify_agent_configs.py（7 项门禁）
+        ▼
+```
+
+| 步骤 | 命令 / 动作 |
+|---|---|
+| 建配置 | 复制 `templates/AGENT.template.md` → `agents/<env>/<id>.agent.md`，**11 个段落一个都不能少** |
+| 归档模板 | 改模板前先把当前版复制到 `templates/archive/AGENT.template.v<版本>.md` |
+| 发布 | `python ai-agent/tools/publish_agents.py`（幂等，会跳过未变项） |
+| 校验 | `python ai-agent/tools/verify_agent_configs.py`（**必须全绿**才算完成） |
+
+**现有配置**（7 项 AI 能力）：
+
+| env | 配置 | 对应代码 |
+|---|---|---|
+| center | `analyze` `diagnose` `ipconflict` `routetrace` `asset-locate` | `server-platform/server/ai.py` |
+| client | `netdoctor-ai`（企业版 + 个人版双模式） | `net_service.py` |
 
 ## 接入指引（给业务模块）
 
