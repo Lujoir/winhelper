@@ -947,6 +947,8 @@ def _cancel_task(task_id):
 
 # 清理任务互斥
 _cleanup_mutex = threading.Lock()
+# H9（安全改造 R1）：当前运行中的清理分类 —— 供并发请求如实透出「正在执行什么」
+_cleanup_current = {"categories": []}
 
 
 # ============================================================
@@ -1004,7 +1006,13 @@ def handle_disk_scan_cancel(params: dict) -> dict:
 
 
 def handle_disk_cleanup(params: dict) -> dict:
-    """启动后台清理: categories=逗号分隔的分类key（仅接受服务端白名单，同步前置校验）"""
+    """启动后台清理: categories=逗号分隔的分类key（仅接受服务端白名单，同步前置校验）
+
+    H9（安全改造 R1）：并发请求改为**显式拒绝并如实透出** —— 原实现在已有同类
+    任务时会静默复用旧 job、忽略本次 categories，却仍把新的 categories 回显给
+    调用方，前端误以为已生效。现在复用场景返回明确错误码 `cleanup_busy` 与
+    正在运行的分类。
+    """
     raw = (params.get("categories") or "").strip()
     if not raw:
         return {"success": False, "error": "未指定清理项"}
@@ -1016,19 +1024,31 @@ def handle_disk_cleanup(params: dict) -> dict:
         return {"success": False, "error": f"非法清理项: {unknown}"}
 
     if not _cleanup_mutex.acquire(blocking=False):
-        return {"success": False, "error": "已有清理任务正在进行中，请稍候"}
+        return {"success": False, "code": "cleanup_busy",
+                "running_categories": list(_cleanup_current["categories"]),
+                "requested_categories": categories,
+                "error": "已有清理任务正在进行中，本次请求未执行"
+                         "（请等待完成或取消后重试）"}
     _cleanup_mutex.release()
 
     def runner(task, p):
         _cleanup_mutex.acquire()
+        _cleanup_current["categories"] = list(p.get("categories") or [])
         try:
             _run_cleanup(task, p)
         finally:
+            _cleanup_current["categories"] = []
             _cleanup_mutex.release()
 
     job_id, reused = _start_task("cleanup", runner, {"categories": categories})
-    return {"success": True, "job_id": job_id, "reused": reused,
-            "categories": categories}
+    if reused:
+        # 同类任务在跑：本次未生效，如实透出（不再静默丢弃并误导性回显新分类）
+        return {"success": False, "code": "cleanup_busy", "job_id": job_id,
+                "reused": True,
+                "running_categories": list(_cleanup_current["categories"]),
+                "requested_categories": categories,
+                "error": "已有清理任务正在进行中，本次请求未执行"}
+    return {"success": True, "job_id": job_id, "categories": categories}
 
 
 def handle_disk_open_location(params: dict) -> dict:
