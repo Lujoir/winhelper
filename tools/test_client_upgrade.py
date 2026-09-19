@@ -450,7 +450,8 @@ class TestPcDiagUplinkFields(unittest.TestCase):
                 up._state["registered"] = True
             ok, data = up.COMMAND_HANDLERS["pc_diag"]({})
         self.assertTrue(ok)
-        self.assertEqual(data["client_version"], "4.1.7")
+        # 版本号动态跟随 CLIENT_VERSION（此前硬编码 4.1.7，每次升版都要改测试）
+        self.assertEqual(data["client_version"], up.CLIENT_VERSION)
         self.assertEqual(data["uplink"]["state"], "connected")
         self.assertTrue(data["uplink"]["registered"])
         self.assertEqual(data["uplink"]["heartbeat_interval"], 60)
@@ -470,7 +471,6 @@ class TestUplinkStatusVersion(unittest.TestCase):
         self.assertTrue(data["success"])
         ul = data["uplink"]
         self.assertEqual(ul["version"], up.CLIENT_VERSION)
-        self.assertEqual(ul["version"], "4.1.7")
         # 兼容旧消费方字段仍在
         self.assertEqual(ul["client_version"], up.CLIENT_VERSION)
 

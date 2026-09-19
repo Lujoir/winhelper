@@ -165,6 +165,26 @@ def run(tmp):
     check("args 为 None 时不崩（按 notify 处理）",
           ok is True and data.get("mode") == "notify", str(data))
 
+    # ---------- 9. 通知可靠性（2026-09-19 缺陷修复的门禁）----------
+    #   背景：发布新版本后终端收不到通知，两根因——
+    #   a) 心跳只在「版本号变化」时检查一次，卡死/失败后再无重试；
+    #   b) 提示条是主窗口内 DOM，客户端常驻托盘时用户看不到。
+    import inspect
+    check("心跳兜底重查间隔已配置（防通知永久丢失）",
+          int(getattr(uplink, "_UPDATE_RECHECK_SEC", 0) or 0) > 0,
+          str(getattr(uplink, "_UPDATE_RECHECK_SEC", None)))
+    loop_src = inspect.getsource(uplink._loop)
+    check("心跳循环含兜底重查分支（_last_update_check）",
+          "_last_update_check" in loop_src
+          and "_UPDATE_RECHECK_SEC" in loop_src)
+    desk = os.path.join(ROOT, "desktop.py")
+    dtxt = ""
+    if os.path.isfile(desk):
+        with open(desk, encoding="utf-8") as fh:
+            dtxt = fh.read()
+    check("桌面入口含更新就绪托盘气泡（_update_notify_loop）",
+          "_update_notify_loop" in dtxt and "t.notify(" in dtxt)
+
 
 if __name__ == "__main__":
     sys.exit(main())

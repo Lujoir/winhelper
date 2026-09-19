@@ -41,11 +41,17 @@ import urllib.request
 # GUI（无控制台）程序中调用控制台子进程（ping/route/iperf3）必须隐藏窗口（ADR-013）
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-CLIENT_VERSION = "4.1.9"
+CLIENT_VERSION = "4.1.10"
 TERMINAL_TYPE = "windows"
 DEFAULT_HEARTBEAT_INTERVAL = 30          # 秒（ADR 可调）
 _BACKOFF_CAP = 2                         # 失败退避倍数上限（30s*2=60s；4.1.3 main 批准 ADR-004 变更：联调期快速重连）
 _RESULT_RETRIES = 3                      # 命令回执重试（409 终态不重试）
+_UPDATE_RECHECK_SEC = 1800               # 更新兜底重查间隔（2026-09-19）：即使
+                                         # latest_version 未变化，心跳里持续带着值
+                                         # 也每 30 分钟重查一次。修复「只在版本号
+                                         # 变化时检查一次」的缺陷——原实现若首次
+                                         # 检查卡在 downloading（进程被杀）或重试
+                                         # 链断掉，终端将永久收不到更新通知。
 
 
 def _decode_output(b):
@@ -1124,10 +1130,20 @@ def _loop():
                                         ) >= 300
                 except Exception:
                     pass
-                if lv and (retry_needed or
-                           lv != _state.get("_last_seen_version")):
+                # 兜底重查（2026-09-19）：除「版本号变化」与「failed 重试」外，
+                # 只要心跳仍携带 latest_version，就每 _UPDATE_RECHECK_SEC 无条件
+                # 重查一次。修复缺陷：原实现仅版本号变化时查一次，若那次下载
+                # 卡在 downloading（进程被杀）或重试链断掉，终端将永久收不到
+                # 更新通知（用户实况：发布新版本后终端无任何提示）。
+                now_chk = time.time()
+                with _lock:
+                    last_chk = float(_state.get("_last_update_check") or 0)
+                if lv and (retry_needed
+                           or (now_chk - last_chk) >= _UPDATE_RECHECK_SEC
+                           or lv != _state.get("_last_seen_version")):
                     with _lock:
                         _state["_last_seen_version"] = str(lv)
+                        _state["_last_update_check"] = now_chk
                     import updater as _upd
                     _upd.check_async(CLIENT_VERSION,
                                      cfg.get("server_url") or "",

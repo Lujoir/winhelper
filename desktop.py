@@ -13,6 +13,7 @@ import os
 import sys
 import ctypes
 import socketserver
+import threading
 
 # power-control P1：提权子进程拦截（单操作 worker，UAC runas 拉起；最小职责
 # 见 power-control/docs/DECISIONS.md ADR-008）——必须在任何 UI/服务初始化之前
@@ -50,6 +51,33 @@ def resource_path(rel: str) -> str:
 def fatal(msg: str) -> None:
     """无降级手段时的原生弹窗提示"""
     ctypes.windll.user32.MessageBoxW(0, msg, "观枢终端平台｜EyeTerm", 0x10)
+
+
+# 更新就绪托盘气泡知会（2026-09-19）：后台每 60s 查 updater 状态，就绪即弹
+# 气泡一次（同一版本只提醒一次）。修复用户实况「发布新版本后终端收不到通知」：
+# 更新提示条（web/index.html 的 #ubBanner）是主窗口内的 DOM，而客户端常驻托盘
+# 时窗口是隐藏的，用户根本看不到——气泡负责把用户「叫回」主界面。
+_update_notify_stop = threading.Event()
+
+
+def _update_notify_loop(tray_holder):
+    notified = None
+    while True:
+        try:
+            import updater as _upd
+            st = _upd.load_state()
+            ver = str(st.get("version") or "")
+            if st.get("status") == "ready" and ver and ver != notified:
+                t = tray_holder.get("obj")
+                if t is not None:
+                    t.notify("观枢终端平台｜EyeTerm 有新版本",
+                             "发现新版本 %s，双击托盘图标打开主界面即可更新"
+                             % ver)
+                notified = ver
+        except Exception:
+            pass
+        if _update_notify_stop.wait(60):
+            return
 
 
 # ---- 4.1.7 开机自启静默化（用户点名需求）----
@@ -176,6 +204,13 @@ def main(autostart=False) -> None:
                 pass
     except Exception:
         tray_holder["obj"] = None
+    # 更新就绪托盘气泡（后台 daemon，独立于托盘是否可用；托盘缺失时静默跳过）
+    try:
+        _update_notify_stop.clear()
+        threading.Thread(target=_update_notify_loop, args=(tray_holder,),
+                         daemon=True, name="eyeterm-update-notify").start()
+    except Exception:
+        pass
     # 4.1.6 可接管：监听新实例的替换请求 → 旧实例走 _tray_exit 同款优雅
     # 退出链（删托盘图标 + updater pid 锚点落盘 + destroy）；失败仍可被
     # 再次请求。事件监听线程 daemon，不阻塞退出。
