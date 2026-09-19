@@ -62,7 +62,9 @@ Name: {group}\EyeTerm; Filename: {app}\{#MyAppExeName}
 Name: {autodesktop}\EyeTerm; Filename: {app}\{#MyAppExeName}; Tasks: desktopicon
 
 [Registry]
-Root: HKCU; Subkey: Software\Microsoft\Windows\CurrentVersion\Run; ValueType: string; ValueName: EyeTerm; ValueData: "{app}\{#MyAppExeName}"; Tasks: autostart; Flags: uninsdeletevalue
+; 4.1.7：--autostart 旗标（开机自启静默收纳托盘，不弹主窗体）；存量终端由
+; desktop.py ensure_run_key_autostart 幂等重写兜底
+Root: HKCU; Subkey: Software\Microsoft\Windows\CurrentVersion\Run; ValueType: string; ValueName: EyeTerm; ValueData: """{app}\{#MyAppExeName}"" --autostart"; Tasks: autostart; Flags: uninsdeletevalue
 ; 文件检索 {app} 探测：终端侧定位链（env → 配置 → 注册表 → 常见路径）第三级命中安装目录
 Root: HKLM; Subkey: Software\EyeTerm; ValueType: string; ValueName: EverythingPath; ValueData: "{app}\everything\Everything.exe"; Flags: uninsdeletevalue
 

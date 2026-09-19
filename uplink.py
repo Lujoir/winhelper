@@ -169,17 +169,48 @@ def _ulog(msg):
 _UL_KEYS = ("state", "last_error", "registered", "enabled", "started",
             "terminal_id")   # 噪声键（last_hb_ts/last_ok）不入日志
 
+# 连接成功监听器（4.1.8 追加：状态由非 connected 翻转为 connected 时触发；
+# 供 power-control 等子系统上报本地状态，心跳主链只派发不等待）
+_connect_listeners = []
+_connect_listeners_lock = threading.Lock()
+
+
+def on_connected(callback):
+    """注册连接成功回调（幂等；异常回调不影响心跳链，后台线程执行）。"""
+    with _connect_listeners_lock:
+        if callback not in _connect_listeners:
+            _connect_listeners.append(callback)
+
+
+def _fire_connected_async():
+    for cb in list(_connect_listeners):
+        def _run(c=cb):
+            try:
+                c()
+            except Exception:
+                pass
+        try:
+            threading.Thread(target=_run, daemon=True,
+                             name="uplink-conn-notify").start()
+        except Exception:
+            pass
+
 
 def _set_state(**kw):
     changed = []
+    became_connected = False
     with _lock:
         for k, v in kw.items():
             old = _state.get(k)
             _state[k] = v
             if k in _UL_KEYS and old != v:
                 changed.append("%s: %s -> %s" % (k, old, v))
+            if k == "state" and v == "connected" and old != "connected":
+                became_connected = True
     if changed:
         _ulog("state " + "; ".join(changed))
+    if became_connected and _connect_listeners:
+        _fire_connected_async()
 
 
 # ============================================================

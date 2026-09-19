@@ -1,13 +1,20 @@
 /* powercontrol.js · 自动开关机（观枢终端平台｜EyeTerm）
  * pc 前缀隔离；卡片基线见 net-doctor/docs/STYLE.md；文案零实现细节。
- * 数据源：/api/powercontrol/snapshot、/api/powercontrol/report
+ * 数据源：/api/powercontrol/snapshot（本机快照，仅读本地）、
+ *         /api/powercontrol/center-tasks、/api/powercontrol/center-task-create
+ *         （定时开机=中心任务驱动：4.1.8 页改追加，连接门控 + 只读任务列表
+ *         + 个性化任务创建；执行在中心侧，终端不做本地定时）。
+ * 定时关机：本地配置本地执行（schtasks 引擎不变），配置变更由引擎侧
+ * 静默上报中心（版本化，见 power_control.py），本页不含上报逻辑。
  * （宿主 apiFetch → pywebview → fetch 三级回退）。
  */
 "use strict";
 
 var pcState = { busy: false, loaded: false, lastSnap: null,
-                reportState: null, opBusy: false, sdTask: null,
-                activePolicy: null };
+                opBusy: false, sdTask: null,
+                activePolicy: null,
+                center: { busy: false, connected: null, tasks: [],
+                          quota: null, error: "", tip: "" } };
 
 /* DOM 辅助（自包含，不依赖宿主 $） */
 function pc$(sel) { return document.querySelector(sel); }
@@ -124,6 +131,7 @@ function pcApiFetch(path, body) {
 function initPowerControlTab() {
   if (pcState.busy) return;
   pcLoadSnapshot();
+  pcLoadCenter();
 }
 
 function pcSetBusy(b) {
@@ -150,7 +158,6 @@ function pcLoadSnapshot() {
     }
     pcState.loaded = true;
     pcState.lastSnap = data.snapshot;
-    pcState.reportState = data.report_state || null;
     pcState.activePolicy = data.active_policy || null;
     pcRenderSnapshot(data.snapshot);
   }).catch(function (e) {
@@ -201,14 +208,8 @@ function pcRenderSnapshot(snap) {
   }
   var ct = pc$("#pcCollectTime");
   if (ct) ct.textContent = snap.collected_at || "—";
-  var cfgCard = pc$("#pcBiosCfgCard");
-  if (cfgCard) {
-    cfgCard.style.display =
-        (m.capability === "enterprise_configurable") ? "" : "none";
-  }
   pcRenderBios(snap);
   pcRenderShutdownTasks(snap);
-  pcRenderReportState();
   pcRenderShutdownCurrent(snap);
   pcRenderPolicy();
 }
@@ -229,20 +230,6 @@ function pcRenderPolicy() {
   } else {
     el.style.display = "none";
     el.textContent = "";
-  }
-}
-
-function pcRenderReportState() {
-  var rs = pc$("#pcReportState");
-  if (!rs) return;
-  var st = pcState.reportState;
-  if (st && st.last_ok) {
-    var hhmm = (st.last_at || "").split(" ").pop() || st.last_at;
-    rs.textContent = "已存档 " + hhmm;
-  } else if (st && st.last_error) {
-    rs.textContent = "上次上报未成功（打开本页自动重试）";
-  } else {
-    rs.textContent = "未上报（打开本页自动上报，需已接入平台）";
   }
 }
 
@@ -312,22 +299,16 @@ function pcRenderBios(snap) {
         '<span class="hm-row-value">' + pcEsc(rtc.wake_on_lan) + "</span></div>");
     }
     html.push('<div class="nd-hint" style="margin-top:8px">以上为开机配置的当前状态（只读展示）。</div>');
-    pcFillBootForm(snap);   // P1a 实机迭代②：配置卡自动回填当前值
   } else {
-    html.push('<div class="nd-empty">' +
-      pcEsc(b.reason || "本机不支持远程配置定时开机") + "</div>");
-    html.push('<div class="nd-hint">如需定时开机：开机自检时按屏幕提示进入 BIOS 设置，' +
-      "在电源管理菜单中查找「定时开机 / RTC Alarm / Wake Up on Alarm」类选项进行设置。</div>");
+    /* 4.1.8 紧凑化：两段说明合并为一行核心指引；「登记到平台」按钮语义
+       已并入中心任务卡的个性化任务维护（备注填写即登记）。 */
+    html.push('<div class="nd-hint">如需定时开机：开机自检进 BIOS → 电源管理菜单' +
+      "设置 RTC Alarm / Wake Up on Alarm 类选项。</div>");
     if (b.human_set_flag) {
       html.push('<div class="nd-hint" style="margin-top:6px">' +
         pcBadge("已登记人工设置", "nd-info") +
         '<span style="margin-left:6px">' + pcEsc(b.human_set_at || "") +
         "（平台可见）</span></div>");
-    } else {
-      html.push('<div style="margin-top:8px">' +
-        '<button class="nd-btn" onclick="pcRegisterHumanSet()">' +
-        "我已在 BIOS 人工设置，登记到平台</button>" +
-        '<span class="nd-hint" id="pcHumanTip" style="margin-left:8px"></span></div>');
     }
   }
   host.innerHTML = html.join("");
@@ -363,36 +344,15 @@ function pcRenderShutdownTasks(snap) {
     rows + "</tbody></table>";
 }
 
-function pcReportNow() {
-  if (pcState.busy) return;
-  pcSetBusy(true);
-  var tip = pc$("#pcReportTip");
-  if (tip) tip.textContent = "正在上报…";
-  return pcApiFetch("/api/powercontrol/report").then(function (data) {
-    if (!data || data.success === false) {
-      throw new Error((data && data.error) || "上报失败");
-    }
-    if (tip) {
-      tip.textContent = "已上报存档（" +
-        new Date().toLocaleTimeString("zh-CN", { hour12: false }) + "）";
-    }
-    var rs = pc$("#pcReportState");
-    if (rs) rs.textContent = "已存档";
-    pcState.reportState = { last_ok: true,
-                            last_at: new Date().toLocaleString("zh-CN",
-                                { hour12: false }) };
-    pcRenderReportState();
-  }).catch(function (e) {
-    if (tip) tip.textContent = pcTrunc((e && e.message) || "上报失败", 140);
-  }).then(function () { pcSetBusy(false); });
-}
+/* 4.1.8：pcReportNow 已随「平台存档」卡删除；页改追加后本页对中心只读
+   （任务列表）+ 个性化创建，/report human_set 通道保留但 UI 无调用方
+   （人工登记语义并入个性化任务备注，见中心任务模块）。 */
 
 /* ======================================================================
  * P1 · 定时开机配置 / 定时关机操作（提权异步任务；UAC 确认制）
  * ==================================================================== */
 
-var _PC_OP_BTNS = ["#pcBtnBiosApply", "#pcBtnBiosRestore", "#pcBtnSdSave",
-                   "#pcBtnSdToggle", "#pcBtnSdRemove"];
+var _PC_OP_BTNS = ["#pcBtnSdSave", "#pcBtnSdToggle", "#pcBtnSdRemove"];
 
 function pcSetOpBusy(b) {
   pcState.opBusy = b;
@@ -402,71 +362,9 @@ function pcSetOpBusy(b) {
   });
 }
 
-function pcOnBootModeChange() {
-  var sel = pc$("#pcBootMode");
-  var m = sel ? sel.value : "";
-  var showTime = m === "daily" || m === "weekly" || m === "single";
-  var tRow = pc$("#pcBootTimeRow");
-  var dRow = pc$("#pcBootDateRow");
-  var wRow = pc$("#pcWeekdaysRow");
-  if (tRow) tRow.style.display = showTime ? "" : "none";
-  if (dRow) dRow.style.display = m === "single" ? "" : "none";
-  if (wRow) wRow.style.display = m === "weekly" ? "" : "none";
-}
-
 function pcOnSdModeChange() {
   var m = pc$("#pcSdMode").value || "daily";
   pc$("#pcSdDate").style.display = m === "single" ? "" : "none";
-}
-
-/* P1a 实机迭代②：打开页面自动回填当前 BIOS 定时开机设置（ADR-005 v2 rtc） */
-function pcMmddToIso(s) {
-  /* BIOS "MM/DD/YYYY" → <input type=date> "YYYY-MM-DD"；其它形态原样返回空 */
-  var m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(String(s || "").trim());
-  if (!m) return "";
-  var p2 = function (x) { return ("0" + x).slice(-2); };
-  return m[3] + "-" + p2(m[1]) + "-" + p2(m[2]);
-}
-
-function pcFillBootForm(snap) {
-  var m = (snap.machine || {});
-  if (m.capability !== "enterprise_configurable") return;
-  var rtc = (snap.bios || {}).rtc || {};
-  var mode = "off", time = "", date = "", hint = "";
-  var on = !!rtc.alarm_on;
-  switch (rtc.alarm) {
-    case "Daily Event":
-      mode = "daily";
-      time = rtc.time || ""; break;
-    case "Weekly Event":
-      mode = "weekly";
-      time = rtc.time || ""; break;
-    case "Single Event":
-      mode = "single";
-      time = rtc.time || ""; date = rtc.date || ""; break;
-    case "User Defined":
-      mode = "daily";
-      time = rtc.user_time || rtc.time || "";
-      hint = "当前 BIOS 为自定义时刻（User Defined）模式；应用所选模式将覆盖。";
-      break;
-    default:
-      mode = on ? "daily" : "off";
-      time = rtc.time || "";
-  }
-  var sel = pc$("#pcBootMode");
-  if (sel) sel.value = mode;
-  var t = pc$("#pcBootTime");
-  if (t) t.value = time ? String(time).substring(0, 5) : "";
-  var d = pc$("#pcBootDate");
-  if (d) d.value = pcMmddToIso(date);
-  var wd = rtc.weekdays || {};
-  var boxes = document.querySelectorAll(".pc-wd");
-  for (var i = 0; i < boxes.length; i++) {
-    boxes[i].checked = (wd[boxes[i].value] === "Enabled");
-  }
-  pcOnBootModeChange();
-  var tip = pc$("#pcBiosTip");
-  if (tip && hint) tip.textContent = hint;
 }
 
 function pcPollTask(tid, tip, doneText) {
@@ -497,99 +395,6 @@ function pcPollTask(tid, tip, doneText) {
     };
     setTimeout(poll, 600);
   });
-}
-
-async function pcApplyBios() {
-  if (pcState.opBusy) return;
-  var mode = (pc$("#pcBootMode") || {}).value || "";
-  var time = (pc$("#pcBootTime") || {}).value || "";
-  var date = (pc$("#pcBootDate") || {}).value || "";
-  if (!mode) {
-    pc$("#pcBiosTip").textContent = "请先选择重复周期";
-    return;
-  }
-  if (mode !== "off" && !time) {
-    pc$("#pcBiosTip").textContent = "请填写开机时刻";
-    return;
-  }
-  if (mode === "single" && !date) {
-    pc$("#pcBiosTip").textContent = "请填写指定日期";
-    return;
-  }
-  var weekdays = null;
-  if (mode === "weekly") {
-    weekdays = [];
-    var boxes = document.querySelectorAll(".pc-wd");
-    for (var i = 0; i < boxes.length; i++) {
-      weekdays.push(boxes[i].checked ? 1 : 0);
-    }
-    if (weekdays.indexOf(1) < 0) {
-      pc$("#pcBiosTip").textContent = "每周模式请至少勾选一天";
-      return;
-    }
-  }
-  var modeText = "";
-  if (mode === "weekly") {
-    var names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
-    var picked = [];
-    for (var j = 0; j < weekdays.length; j++) {
-      if (weekdays[j]) picked.push(names[j]);
-    }
-    modeText = "每周（" + picked.join("、") + "）";
-  } else {
-    var sel = pc$("#pcBootMode");
-    modeText = sel.selectedOptions[0].text;
-  }
-  if (!(await pcConfirm({
-    title: "应用定时开机配置",
-    message: mode === "off"
-      ? "将停用本机的定时开机（应用前自动备份当前配置）。继续？"
-      : "将按以下配置修改定时开机（应用前自动备份当前配置，需系统授权确认）：\n\n" +
-        "周期：" + modeText +
-        "\n时刻：" + (mode === "off" ? "—" : time) +
-        (mode === "single" ? ("\n日期：" + date) : "") + "\n\n继续？"
-  }))) return;
-  pcSetOpBusy(true);
-  var tip = pc$("#pcBiosTip");
-  tip.textContent = "已受理，等待系统授权与执行…（若未见弹窗请在任务栏确认）";
-  var payload = { mode: mode, time: time, date: date };
-  if (mode === "weekly") payload.weekdays = weekdays;
-  pcApiFetch("/api/powercontrol/bios-apply", payload)
-    .then(function (data) {
-      if (!data || data.success === false) {
-        throw new Error((data && data.error) || "提交失败");
-      }
-      return pcPollTask(data.task_id, tip, "已应用：当前配置见上方卡片");
-    })
-    .then(function (r) { if (r) pcLoadSnapshot(); })
-    .catch(function (e) {
-      tip.textContent = pcTrunc((e && e.message) || "提交失败", 180);
-      pcSetOpBusy(false);
-    });
-}
-
-async function pcRestoreBios() {
-  if (pcState.opBusy) return;
-  if (!(await pcConfirm({
-    title: "还原定时开机配置",
-    message: "将把定时开机配置还原为最近一次备份的初始值（需系统授权确认）。继续？",
-    danger: true
-  }))) return;
-  pcSetOpBusy(true);
-  var tip = pc$("#pcBiosTip");
-  tip.textContent = "已受理，等待系统授权与执行…";
-  pcApiFetch("/api/powercontrol/bios-restore", {})
-    .then(function (data) {
-      if (!data || data.success === false) {
-        throw new Error((data && data.error) || "提交失败");
-      }
-      return pcPollTask(data.task_id, tip, "已还原为初始值");
-    })
-    .then(function (r) { if (r) pcLoadSnapshot(); })
-    .catch(function (e) {
-      tip.textContent = pcTrunc((e && e.message) || "提交失败", 140);
-      pcSetOpBusy(false);
-    });
 }
 
 async function pcSaveShutdown() {
@@ -679,18 +484,387 @@ async function pcRemoveShutdown() {
     });
 }
 
-function pcRegisterHumanSet() {
-  var tip = pc$("#pcHumanTip");
-  if (tip) tip.textContent = "正在登记…";
-  return pcApiFetch("/api/powercontrol/report", { human_set: true })
-    .then(function (data) {
-      if (!data || data.success === false) {
-        throw new Error((data && data.error) || "登记失败");
+/* ======================================================================
+ * 定时开机（中心任务）· 4.1.8 页改追加
+ * 中心任务驱动：连接门控 → 生效任务只读列表（最早触发在最上）→
+ * 个性化任务创建（origin=client_personal，数量限额以中心校验为准）。
+ * 执行在中心侧，终端不做本地定时；人工 BIOS 设置场景=进 BIOS 后
+ * 在此登记一条个性化任务（备注栏填写）。
+ * ==================================================================== */
+
+function pcCenterSetBusy(b) {
+  pcState.center.busy = b;
+  var el = pc$("#pcBtnCenterRefresh");
+  if (el) el.disabled = b;
+}
+
+/* 连接门控：沿用企业版/平台接入既有检测（/api/perf/uplink/status 的
+   uplink.state === "connected"）；查询失败一律按未连接处理。 */
+function pcCheckConnected() {
+  return pcApiFetch("/api/perf/uplink/status").then(function (d) {
+    var u = d && d.uplink ? d.uplink : null;
+    return !!(u && u.state === "connected");
+  }).catch(function () { return false; });
+}
+
+function pcLoadCenter(keepTip) {
+  var body = pc$("#pcCenterBody");
+  if (!body || pcState.center.busy) return Promise.resolve();
+  if (!keepTip) pcState.center.tip = "";
+  pcCenterSetBusy(true);
+  pcSetConnBadge(null);
+  body.innerHTML = '<div class="nd-empty">正在检查中心连接…</div>';
+  return pcCheckConnected().then(function (conn) {
+    pcState.center.connected = conn;
+    if (!conn) { pcRenderCenterGate(); return null; }
+    return pcApiFetch("/api/powercontrol/center-tasks").then(function (r) {
+      if (!r || r.success === false) {
+        pcState.center.error = (r && r.error) || "任务列表获取失败";
+        pcState.center.tasks = [];
+        pcState.center.quota = null;
+      } else {
+        pcState.center.error = "";
+        pcState.center.tasks = pcSortTasks(r.tasks || []);
+        pcState.center.quota = r.quota || null;
       }
-      if (tip) tip.textContent = "已登记（平台可见）";
-      pcLoadSnapshot();
+      pcRenderCenterConnected();
+    });
+  }).catch(function () {
+    pcState.center.connected = false;
+    pcRenderCenterGate();
+  }).then(function () { pcCenterSetBusy(false); });
+}
+
+function pcSetConnBadge(state) {
+  var b = pc$("#pcCenterConnBadge");
+  if (!b) return;
+  if (state === null) {
+    b.style.display = "";
+    b.textContent = "检测连接…";
+    b.className = "nd-badge nd-muted";
+  } else if (state === true) {
+    b.style.display = "";
+    b.textContent = "中心已连接";
+    b.className = "nd-badge nd-ok";
+  } else {
+    b.style.display = "";
+    b.textContent = "中心未连接";
+    b.className = "nd-badge nd-muted";
+  }
+}
+
+/* 未连接降级：置灰 + 一句说明 + 人工指引一行（快照卡照常可用） */
+function pcRenderCenterGate() {
+  pcSetConnBadge(false);
+  var body = pc$("#pcCenterBody");
+  if (!body) return;
+  body.style.opacity = ".62";
+  body.innerHTML =
+    '<div class="nd-hint">连接中心后开放定时开机管理。</div>' +
+    '<div class="nd-hint" style="margin-top:6px">如需定时开机：开机自检进 BIOS → ' +
+    "电源管理菜单设置 RTC Alarm / Wake Up on Alarm 类选项。</div>";
+}
+
+function pcParseHHMM(s) {
+  var m = /^(\d{1,2}):(\d{2})/.exec(String(s || "").trim());
+  if (!m) return null;
+  var h = +m[1], mi = +m[2];
+  if (h > 23 || mi > 59) return null;
+  return h * 60 + mi;
+}
+
+/* 下次触发时间戳：契约定稿（2026-09-19）后优先采用中心 next_ts（epoch 秒），
+   缺失时降级为本地按 repeat/time 推算。未知/不可解析/已过期单次排最后（大数）。 */
+function pcNextFireTs(t) {
+  var BIG = 8640000000000000;
+  if (!t || typeof t !== "object") return BIG;
+  var cts = Number(t.next_ts);
+  if (isFinite(cts) && cts > 0) return cts * 1000;
+  var mins = pcParseHHMM(t.time_hhmm);
+  if (mins == null) return BIG;
+  var now = new Date();
+  var midnight = new Date(now.getFullYear(), now.getMonth(),
+                          now.getDate()).getTime();
+  function at(dayOffset) {
+    return midnight + dayOffset * 86400000 + mins * 60000;
+  }
+  var rep = String(t.repeat || "").toLowerCase();
+  if (rep === "once") {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(t.once_date || "").trim());
+    if (!m) return BIG;
+    var ts = new Date(+m[1], +m[2] - 1, +m[3]).getTime() + mins * 60000;
+    return ts > now.getTime() ? ts : BIG;
+  }
+  if (rep === "weekly") {
+    var wd = String(t.weekdays || "");
+    for (var off = 0; off < 8; off++) {
+      var d = new Date(midnight + off * 86400000);
+      var idx = (d.getDay() + 6) % 7;   /* 周一=0 … 周日=6 */
+      if (wd.charAt(idx) === "1") {
+        var wts = at(off);
+        if (wts > now.getTime()) return wts;
+      }
+    }
+    return BIG;
+  }
+  var dts = at(0);   /* daily / workday / holiday / 未知 → 按每天近似 */
+  return dts > now.getTime() ? dts : at(1);
+}
+
+function pcSortTasks(tasks) {
+  var arr = [];
+  for (var i = 0; i < tasks.length; i++) {
+    var t = tasks[i];
+    if (!t || typeof t !== "object") continue;
+    if (t.kind !== undefined && String(t.kind) !== "boot") continue;
+    var en = t.enabled;
+    if (en !== undefined && en !== 1 && en !== true && en !== "1") continue;
+    arr.push(t);
+  }
+  arr.sort(function (a, b) {
+    var ta = pcNextFireTs(a), tb = pcNextFireTs(b);
+    if (ta !== tb) return ta - tb;
+    var ma = pcParseHHMM(a.time_hhmm) || 0, mb = pcParseHHMM(b.time_hhmm) || 0;
+    if (ma !== mb) return ma - mb;
+    return String(a.name || "").localeCompare(String(b.name || ""));
+  });
+  return arr;
+}
+
+function pcModeText(t) {
+  var rep = String((t && t.repeat) || "").toLowerCase();
+  var names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+  if (rep === "daily") return "每天";
+  if (rep === "weekly") {
+    var wd = String((t && t.weekdays) || ""), picked = [];
+    for (var i = 0; i < 7; i++) { if (wd.charAt(i) === "1") picked.push(names[i]); }
+    return picked.length ? "每周（" + picked.join("、") + "）" : "每周";
+  }
+  if (rep === "once") {
+    var d = String((t && t.once_date) || "");
+    return d ? "单次 " + d.substring(5) : "单次";
+  }
+  if (rep === "workday") return "工作日";
+  if (rep === "holiday") return "节假日";
+  return rep ? rep : "—";
+}
+
+function pcSourceLabel(src) {
+  var s = String(src || "").toLowerCase();
+  var map = { platform: "平台", client_personal: "个性化",
+              huorong: "安全软件", nad: "准入系统" };
+  return map[s] || (s || "—");
+}
+
+function pcRenderCenterConnected() {
+  pcSetConnBadge(true);
+  var body = pc$("#pcCenterBody");
+  if (!body) return;
+  body.style.opacity = "";
+  var html = [];
+  if (pcState.center.error) {
+    html.push('<div class="nd-hint" style="color:#ef9a9a">任务列表获取失败：' +
+      pcEsc(pcTrunc(pcState.center.error, 120)) +
+      "（可点击右上角刷新重试）</div>");
+  }
+  var q = pcState.center.quota;
+  if (q && (q.limit !== undefined && q.limit !== null)) {
+    html.push('<div class="nd-hint" style="margin-bottom:6px">个性化任务：' +
+      pcEsc(String(q.used != null ? q.used : "—")) + " / " +
+      pcEsc(String(q.limit)) + "</div>");
+  }
+  html.push('<div id="pcCenterListBody">' + pcRenderCenterList() + "</div>");
+  html.push(pcRenderCenterForm());
+  body.innerHTML = html.join("");
+}
+
+function pcRenderCenterList() {
+  var tasks = pcState.center.tasks || [];
+  if (!tasks.length) {
+    return '<div class="nd-empty">暂无生效的开机任务</div>';
+  }
+  var rows = tasks.map(function (t, i) {
+    var next = pcNextFireTs(t);
+    var nextText;
+    if (t.next_trigger) {
+      nextText = String(t.next_trigger);
+    } else if (next < 8640000000000000) {
+      nextText = pcFormatTs(next);
+    } else {
+      nextText = "—";
+    }
+    if (t.calendar_fallback && nextText !== "—") {
+      nextText = "≈" + nextText;
+    }
+    var cfAttr = t.calendar_fallback
+      ? ' title="日历未就绪，此为近似预估"' : "";
+    var own = String(t.origin || "") === "client_personal" &&
+              t.task_id !== undefined && t.task_id !== null &&
+              t.task_id !== "";
+    var act = own
+      ? '<button class="nd-btn" onclick="pcDeletePersonalTask(' +
+        pcEsc(String(t.task_id)) + ')">删除</button>'
+      : "—";
+    return "<tr><td class=\"nd-num\">" + (i + 1) + "</td><td>" +
+      pcEsc(pcTrunc(t.name || "—", 28)) + "</td><td>" +
+      pcEsc(pcModeText(t)) + "</td><td class=\"nd-num\">" +
+      pcEsc(String(t.time_hhmm || "—")) + "</td><td>" +
+      pcBadge(pcSourceLabel(t.source), "nd-info") + "</td><td class=\"nd-num\"" +
+      cfAttr + ">" + pcEsc(nextText) + "</td><td>" + act + "</td></tr>";
+  }).join("");
+  return '<table class="nd-table"><thead><tr><th>#</th><th>任务名</th>' +
+    "<th>计划模式</th><th>时刻</th><th>来源</th><th>下次触发</th>" +
+    "<th>操作</th></tr></thead><tbody>" + rows + "</tbody></table>" +
+    '<div class="nd-hint" style="margin-top:6px">按下次触发时间排序（以中心为准），' +
+    "最早触发在最上；到点由中心执行唤醒，本机不做本地定时。仅个性化任务可删除。</div>";
+}
+
+function pcFormatTs(ms) {
+  var d = new Date(ms);
+  var p2 = function (x) { return ("0" + x).slice(-2); };
+  return (d.getMonth() + 1) + "-" + p2(d.getDate()) + " " +
+    p2(d.getHours()) + ":" + p2(d.getMinutes());
+}
+
+function pcRenderCenterForm() {
+  return '<div style="margin-top:12px;padding-top:10px;' +
+    'border-top:1px dashed rgba(42,47,69,.6)">' +
+    '<div class="nd-hint" style="margin-bottom:6px">新建个性化开机任务' +
+    "（仅对本机生效；已手动在 BIOS 设置的，可在此登记并填备注）</div>" +
+    '<div class="pc-form-row">' +
+    '<span class="pc-form-label">计划模式</span>' +
+    '<select class="nd-select" id="pcCenterMode" onchange="pcOnCenterModeChange()">' +
+    '<option value="daily">每天</option>' +
+    '<option value="weekly">每周（勾选星期）</option>' +
+    '<option value="once">指定日期（单次）</option>' +
+    '<option value="workday" disabled>工作日（日历就绪后开放）</option>' +
+    '<option value="holiday" disabled>节假日（日历就绪后开放）</option>' +
+    "</select>" +
+    '<input class="nd-input" type="time" id="pcCenterTime" autocomplete="off">' +
+    "</div>" +
+    '<div class="pc-form-row" id="pcCenterDateRow" style="display:none">' +
+    '<span class="pc-form-label">指定日期</span>' +
+    '<input class="nd-input" type="date" id="pcCenterDate" autocomplete="off">' +
+    "</div>" +
+    '<div class="pc-form-row" id="pcCenterWeekRow" style="display:none">' +
+    '<span class="pc-form-label">重复在</span>' +
+    '<span style="display:flex;gap:8px;flex-wrap:wrap;font-size:12px">' +
+    '<label><input type="checkbox" class="pc-cwd" value="0">周一</label>' +
+    '<label><input type="checkbox" class="pc-cwd" value="1">周二</label>' +
+    '<label><input type="checkbox" class="pc-cwd" value="2">周三</label>' +
+    '<label><input type="checkbox" class="pc-cwd" value="3">周四</label>' +
+    '<label><input type="checkbox" class="pc-cwd" value="4">周五</label>' +
+    '<label><input type="checkbox" class="pc-cwd" value="5">周六</label>' +
+    '<label><input type="checkbox" class="pc-cwd" value="6">周日</label>' +
+    "</span></div>" +
+    '<div class="pc-form-row">' +
+    '<span class="pc-form-label">备注</span>' +
+    '<input class="nd-input" type="text" id="pcCenterRemark" maxlength="60" ' +
+    'style="flex:1;min-width:160px" placeholder="选填，如：已在 BIOS 手工设置，此为登记">' +
+    "</div>" +
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px">' +
+    '<button class="nd-btn primary" id="pcBtnCenterCreate" onclick="pcCreatePersonalTask()">提交任务</button>' +
+    '<span class="nd-hint" id="pcCenterTip">' + pcEsc(pcState.center.tip || "") + "</span>" +
+    "</div>" +
+    "</div>";
+}
+
+function pcOnCenterModeChange() {
+  var sel = pc$("#pcCenterMode");
+  var m = sel ? sel.value : "daily";
+  var dRow = pc$("#pcCenterDateRow");
+  var wRow = pc$("#pcCenterWeekRow");
+  if (dRow) dRow.style.display = m === "once" ? "" : "none";
+  if (wRow) wRow.style.display = m === "weekly" ? "" : "none";
+}
+
+async function pcCreatePersonalTask() {
+  if (pcState.center.busy || !pcState.center.connected) return;
+  var tip = pc$("#pcCenterTip");
+  var mode = (pc$("#pcCenterMode") || {}).value || "daily";
+  var time = (pc$("#pcCenterTime") || {}).value || "";
+  var date = (pc$("#pcCenterDate") || {}).value || "";
+  var remark = ((pc$("#pcCenterRemark") || {}).value || "").trim();
+  if (!time) {
+    if (tip) tip.textContent = "请填写开机时刻";
+    return;
+  }
+  var payload = { repeat: mode, time: time, remark: remark };
+  var modeText = "";
+  if (mode === "weekly") {
+    var wd = [0, 0, 0, 0, 0, 0, 0];
+    var boxes = document.querySelectorAll(".pc-cwd");
+    var picked = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+    var names = [];
+    for (var i = 0; i < boxes.length; i++) {
+      var idx = +boxes[i].value;
+      if (boxes[i].checked) { wd[idx] = 1; names.push(picked[idx]); }
+    }
+    if (names.length === 0) {
+      if (tip) tip.textContent = "每周模式请至少勾选一天";
+      return;
+    }
+    payload.weekdays = wd;
+    modeText = "每周（" + names.join("、") + "）";
+  } else if (mode === "once") {
+    if (!date) {
+      if (tip) tip.textContent = "请选择开机日期";
+      return;
+    }
+    payload.once_date = date;
+    modeText = "单次 " + date;
+  } else {
+    modeText = "每天";
+  }
+  if (!(await pcConfirm({
+    title: "新建个性化开机任务",
+    message: "将向中心提交一条仅对本机生效的开机任务：\n\n" +
+      "计划模式：" + modeText + "\n开机时刻：" + time +
+      (remark ? "\n备注：" + remark : "") +
+      "\n\n到点由中心执行唤醒。继续？"
+  }))) return;
+  pcState.center.tip = "正在提交…";
+  if (tip) tip.textContent = "正在提交…";
+  pcApiFetch("/api/powercontrol/center-task-create", payload)
+    .then(function (r) {
+      if (!r || r.success === false) {
+        throw new Error((r && r.error) || "提交失败");
+      }
+      pcState.center.tip = "已提交，任务列表已刷新";
+      return pcLoadCenter(true);
     })
     .catch(function (e) {
-      if (tip) tip.textContent = pcTrunc((e && e.message) || "登记失败", 120);
+      pcState.center.tip = "";
+      if (tip) tip.textContent = pcTrunc((e && e.message) || "提交失败", 160);
     });
+}
+
+/* 删除本终端的个性化开机任务（仅 origin=client_personal 行可见入口；
+   中心归属锁定，越权/不存在以中心 error 原文如实提示）。 */
+function pcDeletePersonalTask(taskId) {
+  if (pcState.center.busy || !pcState.center.connected) return;
+  pcConfirm({
+    title: "删除个性化开机任务",
+    message: "将删除本机的个性化开机任务（任务 " + taskId + "）。\n继续？",
+    danger: true
+  }).then(function (ok) {
+    if (!ok) return;
+    pcState.center.tip = "";
+    pcApiFetch("/api/powercontrol/center-task-delete?task_id=" +
+               encodeURIComponent(taskId))
+      .then(function (r) {
+        if (!r || r.success === false) {
+          throw new Error((r && r.error) || "删除失败");
+        }
+        pcState.center.tip = "已删除，任务列表已刷新";
+        return pcLoadCenter(true);
+      })
+      .catch(function (e) {
+        pcState.center.tip = "";
+        var tip = pc$("#pcCenterTip");
+        if (tip) {
+          tip.textContent = pcTrunc((e && e.message) || "删除失败", 160);
+        }
+      });
+  });
 }

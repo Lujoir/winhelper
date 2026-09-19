@@ -68,10 +68,23 @@ REPLACE_POLL_INTERVAL = 0.4     # 拿锁轮询步进（秒）
 _handle = {"mutex": None}       # 进程生命周期内持有的 mutex 句柄
 
 
+# 活实例隔离（4.1.7 单测实况：本机 winhelper 4.1.6+ 常驻持有正式锁名，
+# 同机跑单测 try_acquire 必失败）——测试专用替换锁/事件名，生产不调用。
+_mutex_name = MUTEX_NAME
+_event_name = REPLACE_EVENT_NAME
+
+
+def _use_names(mutex=None, event=None):
+    """替换锁/事件名（测试隔离用）；传 None 恢复正式名。"""
+    global _mutex_name, _event_name
+    _mutex_name = mutex or MUTEX_NAME
+    _event_name = event or REPLACE_EVENT_NAME
+
+
 def _create_mutex():
     """尝试创建命名互斥锁。返回 (acquired:bool, handle)；
     已存在持有者 → acquired=False（句柄已关闭，不占名）。"""
-    h = _KERNEL32.CreateMutexW(None, True, MUTEX_NAME)
+    h = _KERNEL32.CreateMutexW(None, True, _mutex_name)
     last = ctypes.get_last_error()   # use_last_error=True 配套快照
     if not h:
         return False, None
@@ -110,7 +123,7 @@ def focus_existing():
 def _create_or_open_replace_event():
     """打开/创建替换请求事件（auto-reset）。首个创建者为旧实例；后来者
     CreateEventW 同名返回既有句柄（语义等同 OpenEvent）。"""
-    return _KERNEL32.CreateEventW(None, False, False, REPLACE_EVENT_NAME)
+    return _KERNEL32.CreateEventW(None, False, False, _event_name)
 
 
 def request_replace():
@@ -151,11 +164,13 @@ def listen_replace(callback):
     return t
 
 
-def enter(replace=False, wait_timeout=REPLACE_WAIT_TIMEOUT,
+def enter(replace=False, focus_on_exists=True,
+          wait_timeout=REPLACE_WAIT_TIMEOUT,
           poll_interval=REPLACE_POLL_INTERVAL, _sleep=time.sleep):
     """启动入口统一闸门（desktop.py 在 UI/服务初始化之前调用）。
 
-    replace=False：拿锁成功 → True；已被持有 → 置前现有窗口 → False
+    replace=False：拿锁成功 → True；已被持有 → 置前现有窗口（focus_on_exists
+    =False 时静默不置前，开机自启撞托盘常驻实例不得抢焦点，4.1.7）→ False
     （调用方应立即退出，不产生新进程）。
     replace=True：先请求旧实例优雅退出 → 轮询拿锁（上限 wait_timeout 秒）
     → 拿到 True；旧实例未退出超时 → False（如实失败，不叠开）；
@@ -163,7 +178,8 @@ def enter(replace=False, wait_timeout=REPLACE_WAIT_TIMEOUT,
     if not replace:
         if try_acquire():
             return True
-        focus_existing()
+        if focus_on_exists:
+            focus_existing()
         return False
     request_replace()
     deadline = time.time() + max(0.0, float(wait_timeout))

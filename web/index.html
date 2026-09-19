@@ -1278,8 +1278,8 @@
                 /* powercontrol 模块样式（对齐 netdoctor 模块模式：仅本 section，不改 style.css） */
                 .pc-form-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; flex-wrap: wrap; }
                 .pc-form-label { color: var(--text-secondary, #8a93a5); font-size: 12.5px; min-width: 64px; flex-shrink: 0; }
-                #pcBootTime, #pcSdTime { width: 92px; text-align: center; }
-                #pcBootDate, #pcSdDate { width: 130px; }
+                #pcBootTime, #pcSdTime, #pcCenterTime { width: 92px; text-align: center; }
+                #pcBootDate, #pcSdDate, #pcCenterDate { width: 130px; }
                 #tab-powercontrol input[type="time"], #tab-powercontrol input[type="date"] { color-scheme: dark; }
             </style>
             <div class="page-header">
@@ -1293,7 +1293,6 @@
                 <span class="nd-badge nd-warn" id="pcCapBadge">检测中</span>
                 <span class="nd-badge nd-warn" id="pcWriteBadge" style="display:none">写入：—</span>
                 <span class="nd-hint">采集时间：<span id="pcCollectTime">—</span></span>
-                <span class="nd-hint">平台存档：<span id="pcReportState">—</span></span>
                 <button class="nd-btn primary" id="pcBtnRefresh" onclick="pcLoadSnapshot()">刷新快照</button>
             </div>
             <div class="nd-hint" id="pcPolicyLine" style="display:none; margin:-2px 0 8px 4px"></div>
@@ -1306,45 +1305,13 @@
                 </div>
             </div>
 
-            <div class="section-card nd-styled" data-collapse id="pcBiosCfgCard" style="display:none">
-                <div class="card-header"><h3>定时开机配置</h3></div>
-                <div class="card-body">
-                    <div class="pc-form-row">
-                        <span class="pc-form-label">重复周期</span>
-                        <select class="nd-select" id="pcBootMode" onchange="pcOnBootModeChange()">
-                            <option value="">请选择…</option>
-                            <option value="daily">每天</option>
-                            <option value="weekly">每周（勾选星期）</option>
-                            <option value="single">指定日期（单次）</option>
-                            <option value="off">停用定时开机</option>
-                        </select>
-                    </div>
-                    <div class="pc-form-row" id="pcBootTimeRow" style="display:none">
-                        <span class="pc-form-label">开机时刻</span>
-                        <input class="nd-input" type="time" id="pcBootTime" autocomplete="off">
-                    </div>
-                    <div class="pc-form-row" id="pcBootDateRow" style="display:none">
-                        <span class="pc-form-label">指定日期</span>
-                        <input class="nd-input" type="date" id="pcBootDate" autocomplete="off">
-                    </div>
-                    <div class="pc-form-row" id="pcWeekdaysRow" style="display:none">
-                        <span class="pc-form-label">重复在</span>
-                        <span style="display:flex;gap:8px;flex-wrap:wrap;font-size:12px">
-                            <label><input type="checkbox" class="pc-wd" value="Monday">周一</label>
-                            <label><input type="checkbox" class="pc-wd" value="Tuesday">周二</label>
-                            <label><input type="checkbox" class="pc-wd" value="Wednesday">周三</label>
-                            <label><input type="checkbox" class="pc-wd" value="Thursday">周四</label>
-                            <label><input type="checkbox" class="pc-wd" value="Friday">周五</label>
-                            <label><input type="checkbox" class="pc-wd" value="Saturday">周六</label>
-                            <label><input type="checkbox" class="pc-wd" value="Sunday">周日</label>
-                        </span>
-                    </div>
-                    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px">
-                        <button class="nd-btn primary" id="pcBtnBiosApply" onclick="pcApplyBios()">应用</button>
-                        <button class="nd-btn" id="pcBtnBiosRestore" onclick="pcRestoreBios()">还原原值</button>
-                        <span class="nd-hint" id="pcBiosTip"></span>
-                    </div>
-                    <div class="nd-hint" style="margin-top:8px">打开本页自动回填当前 BIOS 设置；应用前会自动备份当前配置（本机与平台双存档）并弹出系统授权确认，修改立即生效。本机设置与平台下发后到者生效。</div>
+            <div class="section-card nd-styled" data-collapse id="pcCenterCard">
+                <div class="card-header"><h3>定时开机（中心任务）</h3>
+                    <span class="nd-badge nd-muted" id="pcCenterConnBadge" style="display:none">检测连接…</span>
+                    <button class="nd-btn" id="pcBtnCenterRefresh" onclick="pcLoadCenter()" style="margin-left:auto">刷新任务</button>
+                </div>
+                <div class="card-body" id="pcCenterBody">
+                    <div class="nd-empty">正在检查中心连接…</div>
                 </div>
             </div>
 
@@ -1381,17 +1348,6 @@
                         <div class="nd-empty">正在读取本机配置…</div>
                     </div>
                     <div class="nd-hint" style="margin-top:8px">到点后系统将倒计时 60 秒执行关机（本版本暂无关机前提醒弹窗）。</div>
-                </div>
-            </div>
-
-            <div class="section-card nd-styled" data-collapse>
-                <div class="card-header"><h3>平台存档</h3></div>
-                <div class="card-body">
-                    <div class="nd-summary">打开本页会自动定期同步快照到平台；也可手动立即上报（需已接入中心平台）。</div>
-                    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center">
-                        <button class="nd-btn" id="pcBtnReport" onclick="pcReportNow()">上报平台</button>
-                        <span class="nd-hint" id="pcReportTip"></span>
-                    </div>
                 </div>
             </div>
         </div>

@@ -52,7 +52,43 @@ def fatal(msg: str) -> None:
     ctypes.windll.user32.MessageBoxW(0, msg, "观枢终端平台｜EyeTerm", 0x10)
 
 
-def main() -> None:
+# ---- 4.1.7 开机自启静默化（用户点名需求）----
+RUN_KEY_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
+RUN_VALUE_NAME = "EyeTerm"
+AUTOSTART_FLAG = "--autostart"
+
+
+def is_autostart_launch(argv=None):
+    """启动旗标判定：--autostart（开机自启静默）/ 无旗标（手动/更新正常显示）。"""
+    return AUTOSTART_FLAG in (sys.argv if argv is None else argv)
+
+
+def ensure_run_key_autostart():
+    """旧自启 Run 键幂等重写为带 --autostart 旗标（升级终端首次运行后自动
+    完成，下个开机周期生效，无需重装）。
+
+    仅刷新已存在的 EyeTerm 键（安装器 autostart 任务未勾选 = 用户意图，
+    不无中生有）；已含旗标不动；失败静默不阻塞启动。"""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY_PATH, 0,
+                            winreg.KEY_READ | winreg.KEY_WRITE) as k:
+            try:
+                val, _ = winreg.QueryValueEx(k, RUN_VALUE_NAME)
+            except FileNotFoundError:
+                return False
+            cmd = str(val).strip()
+            if AUTOSTART_FLAG in cmd:
+                return False
+            exe = cmd.strip('"').rstrip()
+            new_val = '"%s" %s' % (exe, AUTOSTART_FLAG)
+            winreg.SetValueEx(k, RUN_VALUE_NAME, 0, winreg.REG_SZ, new_val)
+            return True
+    except Exception:
+        return False
+
+
+def main(autostart=False) -> None:
     try:
         import webview
         from bridge import ApiBridge
@@ -82,6 +118,7 @@ def main() -> None:
         height=880,
         min_size=(1100, 700),
         background_color="#0f1117",
+        hidden=autostart,   # 4.1.7：开机自启静默启动——不弹主窗体，托盘常驻
     )
     # 「以管理员重启」：性能模块通过该钩子销毁窗口退出当前实例（防双实例）
     try:
@@ -130,6 +167,13 @@ def main() -> None:
         tray = TrayIcon(on_show=_tray_show, on_exit=_tray_exit)
         tray.start()
         tray_holder["obj"] = tray
+        # 4.1.7：静默自启一次性气泡知会（每开机至多一条；失败静默）
+        if autostart:
+            try:
+                tray.notify("观枢终端平台｜EyeTerm",
+                            "已在后台运行，双击托盘图标打开主界面")
+            except Exception:
+                pass
     except Exception:
         tray_holder["obj"] = None
     # 4.1.6 可接管：监听新实例的替换请求 → 旧实例走 _tray_exit 同款优雅
@@ -171,11 +215,18 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    # 4.1.6 单实例约束（用户点名需求）：全启动入口过同一把命名互斥锁——
-    # 已运行时再启动不起新进程，只还原置前现有窗口后退出；--replace（更新
-    # 安装后自启统一走此语义）= 通知旧实例优雅退出（托盘退出同款链，状态
-    # 落盘不丢）→ 轮询拿锁无缝交接；无旧实例时幂等正常启动。
+    # 4.1.6 单实例约束：全启动入口过同一把命名互斥锁——已运行时再启动不起
+    # 新进程；手动启动置前现有窗口后退出；--replace（更新安装后自启统一
+    # 走此语义）= 通知旧实例优雅退出 → 轮询拿锁无缝交接；无旧实例时幂等。
+    # 4.1.7：--autostart（开机自启）+ 已运行 → 静默退出不置前不抢焦点；
+    # --autostart 正常启动 → 隐藏主窗体托盘常驻（一次性气泡知会）。
+    try:
+        ensure_run_key_autostart()   # 旧 Run 键幂等重写（失败静默）
+    except Exception:
+        pass
     import single_instance as _si
-    if not _si.enter(replace="--replace" in sys.argv):
+    autostart = is_autostart_launch()
+    if not _si.enter(replace="--replace" in sys.argv,
+                     focus_on_exists=not autostart):
         sys.exit(0)
-    main()
+    main(autostart=autostart)

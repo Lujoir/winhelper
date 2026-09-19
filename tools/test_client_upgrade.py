@@ -19,6 +19,7 @@ import threading
 import time
 import unittest
 import unittest.mock
+import uuid
 import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -449,7 +450,7 @@ class TestPcDiagUplinkFields(unittest.TestCase):
                 up._state["registered"] = True
             ok, data = up.COMMAND_HANDLERS["pc_diag"]({})
         self.assertTrue(ok)
-        self.assertEqual(data["client_version"], "4.1.6")
+        self.assertEqual(data["client_version"], "4.1.7")
         self.assertEqual(data["uplink"]["state"], "connected")
         self.assertTrue(data["uplink"]["registered"])
         self.assertEqual(data["uplink"]["heartbeat_interval"], 60)
@@ -469,7 +470,7 @@ class TestUplinkStatusVersion(unittest.TestCase):
         self.assertTrue(data["success"])
         ul = data["uplink"]
         self.assertEqual(ul["version"], up.CLIENT_VERSION)
-        self.assertEqual(ul["version"], "4.1.6")
+        self.assertEqual(ul["version"], "4.1.7")
         # 兼容旧消费方字段仍在
         self.assertEqual(ul["client_version"], up.CLIENT_VERSION)
 
@@ -748,6 +749,10 @@ class TestSingleInstance(unittest.TestCase):
 
     def setUp(self):
         si = self._si()
+        # 活实例隔离：本机 winhelper 4.1.6+ 常驻持有正式锁名——单测换用
+        # 独立测试名，避免与运行中实例互斥冲突
+        si._use_names("Global\\EyeTerm.Test.Mutex.%s" % uuid.uuid4().hex,
+                      "Global\\EyeTerm.Test.Event.%s" % uuid.uuid4().hex)
         # 防御：清理上一用例异常中断遗留的锁句柄（模块级容器跨用例共享）
         if si._handle["mutex"]:
             si._KERNEL32.CloseHandle(si._handle["mutex"])
@@ -758,6 +763,7 @@ class TestSingleInstance(unittest.TestCase):
         if si._handle["mutex"]:
             si._KERNEL32.CloseHandle(si._handle["mutex"])
             si._handle["mutex"] = None
+        si._use_names()
 
     def test_mutex_double_acquire_same_process(self):
         """同进程复刻双实例：首次拿锁成功、二次 ALREADY_EXISTS 失败。"""
@@ -819,6 +825,101 @@ class TestSingleInstance(unittest.TestCase):
         si = self._si()
         ok = si.enter(replace=True, wait_timeout=2, poll_interval=0.1)
         self.assertTrue(ok)
+
+    def test_enter_autostart_no_focus(self):
+        """4.1.7：--autostart 撞已运行实例 → 静默退出，不置前不抢焦点。"""
+        si = self._si()
+        self.assertTrue(si.try_acquire())
+        focused = []
+        with unittest.mock.patch.object(si, "focus_existing",
+                                        lambda: focused.append(1)):
+            ok = si.enter(replace=False, focus_on_exists=False)
+        self.assertFalse(ok)
+        self.assertEqual(focused, [])   # 置前零触发
+
+
+class TestAutostartSilent(unittest.TestCase):
+    """4.1.7 开机自启静默化：旗标判定/Run 键幂等重写/集成断言。"""
+
+    def _dt(self):
+        ws = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if ws not in sys.path:
+            sys.path.insert(0, ws)
+        import desktop as dt
+        return dt
+
+    def test_is_autostart_launch(self):
+        dt = self._dt()
+        self.assertTrue(dt.is_autostart_launch(
+            ["winhelper.exe", "--autostart"]))
+        self.assertFalse(dt.is_autostart_launch(
+            ["winhelper.exe"]))
+        self.assertFalse(dt.is_autostart_launch(
+            ["winhelper.exe", "--replace"]))   # replace≠autostart
+
+    def _fake_winreg(self, existing):
+        import types
+        fake = types.SimpleNamespace(
+            HKEY_CURRENT_USER=0, KEY_READ=0x20019, KEY_WRITE=0x20006,
+            REG_SZ=1)
+        key = unittest.mock.MagicMock()
+        fake.OpenKey = unittest.mock.MagicMock(return_value=key)
+        key.__enter__.return_value = key
+        # QueryValueEx/SetValueEx 是 winreg 模块级函数（desktop.py 以
+        # winreg.XXX 调用），必须挂 fake 命名空间而非 key 实例
+        if existing is None:
+            fake.QueryValueEx = unittest.mock.MagicMock(
+                side_effect=FileNotFoundError)
+        else:
+            fake.QueryValueEx = unittest.mock.MagicMock(
+                return_value=(existing, fake.REG_SZ))
+        fake.SetValueEx = unittest.mock.MagicMock()
+        return fake, key
+
+    def _run_ensure(self, existing):
+        dt = self._dt()
+        fake, key = self._fake_winreg(existing)
+        with unittest.mock.patch.dict(
+                "sys.modules", {"winreg": fake}), \
+             unittest.mock.patch.dict(
+                 "sys.modules", {"desktop": dt}):
+            ok = dt.ensure_run_key_autostart()
+        return ok, fake, key
+
+    def test_ensure_rewrites_old_key(self):
+        """旧 Run 键（无旗标）→ 重写为带 --autostart，返回 True。"""
+        ok, fake, key = self._run_ensure('"C:\\Program Files\\EyeTerm\\winhelper.exe"')
+        self.assertTrue(ok)
+        args, _ = fake.SetValueEx.call_args
+        self.assertEqual(args[1], "EyeTerm")     # args[0]=键句柄
+        self.assertEqual(args[3], fake.REG_SZ)
+        self.assertEqual(args[4],
+                         '"C:\\Program Files\\EyeTerm\\winhelper.exe" --autostart')
+
+    def test_ensure_skips_flagged_key(self):
+        """已含旗标 → 不重写返回 False（幂等）。"""
+        ok, fake, key = self._run_ensure(
+            '"C:\\app\\winhelper.exe" --autostart')
+        self.assertFalse(ok)
+        fake.SetValueEx.assert_not_called()
+
+    def test_ensure_skips_missing_key(self):
+        """无 EyeTerm 键（用户未勾选自启）→ 不无中生有，返回 False。"""
+        ok, fake, key = self._run_ensure(None)
+        self.assertFalse(ok)
+        fake.SetValueEx.assert_not_called()
+
+    def test_desktop_silent_branch_integrated(self):
+        """集成静态断言：静默分支/隐藏窗口/气泡/锁衔接/监听保持。"""
+        ws = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        d = open(os.path.join(ws, "desktop.py"), encoding="utf-8").read()
+        self.assertIn("focus_on_exists=not autostart", d)
+        self.assertIn("hidden=autostart", d)
+        self.assertIn('tray.notify(', d)
+        self.assertIn("ensure_run_key_autostart()", d)
+        self.assertIn("_si2.listen_replace(", d)   # 4.1.6 可接管保持
+        tray = open(os.path.join(ws, "tray.py"), encoding="utf-8").read()
+        self.assertIn("def notify(", tray)
 
     def test_desktop_integrated_and_iss_replace(self):
         """集成静态断言：desktop.py 顶层闸门 + main 内监听 + iss --replace。"""

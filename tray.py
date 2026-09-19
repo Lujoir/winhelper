@@ -16,7 +16,7 @@ import os
 import threading
 
 NIM_ADD, NIM_MODIFY, NIM_DELETE = 0, 1, 2
-NIF_MESSAGE, NIF_ICON, NIF_TIP = 0x01, 0x02, 0x04
+NIF_MESSAGE, NIF_ICON, NIF_TIP, NIF_INFO = 0x01, 0x02, 0x04, 0x10
 WM_APP_TRAY = 0x8000
 WM_LBUTTONDBLCLK = 0x0203
 WM_RBUTTONUP = 0x0205
@@ -239,3 +239,19 @@ class TrayIcon(object):
                 _user32.PostMessageW(self._hwnd, WM_CLOSE, 0, 0)
             except Exception:
                 pass
+
+    def notify(self, title, msg, timeout_ms=3000):
+        """托盘气泡通知（4.1.7 静默自启知会；图标未就绪/失败静默返回 False）。"""
+        if not (self._added.is_set() and self._nid and self._hwnd):
+            return False
+        try:
+            nid = self._make_nid()
+            nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_INFO
+            nid.szInfo = (msg or "")[:255]
+            nid.szInfoTitle = (title or "")[:63]
+            nid.dwInfoFlags = 0x01          # NIIF_INFO
+            nid.uVersion = min(max(int(timeout_ms), 1000), 30000)
+            return bool(_shell32.Shell_NotifyIconW(NIM_MODIFY,
+                                                   ctypes.byref(nid)))
+        except Exception:
+            return False

@@ -22,7 +22,7 @@ import time
 APP_DIR_NAME = "power-control"
 CREATE_NO_WINDOW = 0x08000000
 REPORT_PATH = "/api/v1/terminals/{tid}/powercontrol/snapshot"
-REPORT_THROTTLE_SEC = 12 * 3600
+# 4.1.8：REPORT_THROTTLE_SEC 已随页面级自动上报链删除
 
 # RTC 项映射：归一化（小写去空白）BIOS 项名 → 语义键。
 # 真实基准 = ThinkCentre M720t 实测（ADR-005）：Wake Up on Alarm / Alarm
@@ -1329,17 +1329,6 @@ def _last_report_path():
     return os.path.join(data_dir(), "last_report.json")
 
 
-def _should_auto_report(now=None):
-    now = now if now is not None else time.time()
-    with _last_report_lock:
-        try:
-            with open(_last_report_path(), "r", encoding="utf-8") as f:
-                ts = int(json.load(f).get("ts") or 0)
-            return (now - ts) >= REPORT_THROTTLE_SEC
-        except (OSError, ValueError):
-            return True
-
-
 def _mark_reported(now=None):
     now = now if now is not None else time.time()
     with _last_report_lock:
@@ -1350,41 +1339,265 @@ def _mark_reported(now=None):
             pass
 
 
-def _auto_report_async(snapshot):
-    """打开菜单自动上报（12h 节流）；后台线程，结果状态落档供 UI 展示
-    （修复「平台存档：—」：自动上报成功/失败此前不回传界面）。"""
-    if not _should_auto_report():
-        return False
+# 4.1.8 页面级自动上报已删除（_auto_report_async/_should_auto_report/
+# _save_report_state/_load_report_state 移除）——「自动开关机」页仅读本地；
+# 写入路径的快照双存档（bios_apply/_job_bios_apply，ADR-007）与平台侧
+# 消费口径不受本改动影响。4.1.8 页改追加后本文件新增两类中心通道：
+# ①定时开机=中心任务驱动（终端只读展示+个性化创建，见「中心开机任务」节）；
+# ②定时关机=本地配置本地执行 + 版本化上报（见「定时关机配置上报」节）。
 
-    def _job():
+
+# ======================================================================
+# 中心通道（4.1.8 页改追加）：直连复用 PlatformReporter 通道（ADR-003），
+# 错误翻译为可展示中文；接口路径常量集中此处，服务端契约定稿后仅改常量。
+# ======================================================================
+
+# 定时开机：命中本终端的启用中任务（GET）；个性化创建（POST，origin=client_personal）；
+#           个性化维护（PUT/DELETE /boot-tasks/{task_id}，中心归属锁定）
+#           —— 2026-09-19 契约定稿（server-platform 批 A，commit 99f4079）
+PC_BOOT_TASKS_PATH = "/api/v1/terminals/{tid}/powercontrol/boot-tasks"
+# 定时关机：本地配置版本化上报（中心按 config_version 去重；契约定稿对齐）
+SD_CONFIG_REPORT_PATH = ("/api/v1/terminals/{tid}"
+                         "/powercontrol/shutdown-config")
+
+
+class CenterApiError(Exception):
+    """中心通道业务错误（str(e) 为可直接展示的中文信息）。"""
+
+
+def _center_call(method, path, body=None, timeout=30):
+    """中心直连调用；HTTPError 提取响应体 error 字段，断链/未注册统一翻译。"""
+    import urllib.error
+    try:
+        return PlatformReporter()._request(method, path, body=body,
+                                           timeout=timeout)
+    except RuntimeError:
+        raise CenterApiError("not_connected")
+    except urllib.error.HTTPError as e:
         try:
-            PlatformReporter().report_snapshot(snapshot)
-            _mark_reported()
-            _save_report_state(True)
-            log("快照已自动上报平台")
-        except Exception as e:
-            _save_report_state(False, str(e))
-            log("自动上报失败: %s" % e, "WARN")
+            payload = json.loads(_decode(e.read()))
+        except Exception:
+            payload = {}
+        msg = payload.get("error") if isinstance(payload, dict) else None
+        raise CenterApiError(str(msg or ("HTTP %s" % e.code)))
+    except Exception as e:
+        raise CenterApiError("连接平台失败：%s" % e)
 
-    threading.Thread(target=_job, daemon=True).start()
-    return True
+
+def handle_pc_center_tasks(params=None):
+    """拉取命中本终端的启用中开机任务（中心执行、终端只读展示）。
+
+    中心按 next_trigger 升序返回（task_id/name/repeat/weekdays/once_date/
+    time_hhmm/source/origin/next_trigger/next_ts/calendar_fallback）；
+    排序与下次触发展示由前端优先采用中心字段。断链返回 success=False。"""
+    try:
+        resp = _center_call("GET", PC_BOOT_TASKS_PATH) or {}
+    except CenterApiError as e:
+        return {"success": False, "error": str(e)}
+    tasks = resp.get("tasks")
+    if not isinstance(tasks, list):
+        tasks = resp.get("items") if isinstance(resp.get("items"), list) else []
+    tasks = [t for t in tasks if isinstance(t, dict)]
+    quota = resp.get("quota")
+    return {"success": True, "tasks": tasks,
+            "quota": quota if isinstance(quota, dict) else None}
+
+
+def handle_pc_center_task_create(params=None, data=None):
+    """创建终端个性化开机任务（中心落库并做数量限额校验；origin=client_personal）。
+
+    data={repeat: daily|weekly|once, time: HH:MM, weekdays?: [0/1]*7,
+          once_date?: YYYY-MM-DD, remark?}；形状最小校验在此，权威校验在中心
+    （超限/重复等以中心 error 原文如实透出）。"""
+    d = dict(data or {})
+    repeat = str(d.get("repeat") or "").strip()
+    if repeat not in ("daily", "weekly", "once"):
+        return {"success": False, "error": "计划模式暂仅支持：每天/每周/单次"}
+    t = str(d.get("time") or "").strip()
+    if not re.match(r"^\d{1,2}:\d{2}$", t):
+        return {"success": False, "error": "请填写开机时刻（HH:MM）"}
+    h, mi = int(t.split(":")[0]), int(t.split(":")[1])
+    if not (0 <= h < 24 and 0 <= mi < 60):
+        return {"success": False, "error": "时刻数值超出范围"}
+    time_hhmm = "%02d:%02d" % (h, mi)
+    payload = {"origin": "client_personal",
+               "name": str(d.get("name") or ("个性化开机 " + time_hhmm)),
+               "kind": "boot", "repeat": repeat, "time_hhmm": time_hhmm}
+    if repeat == "weekly":
+        wd = d.get("weekdays")
+        if (not isinstance(wd, list) or len(wd) != 7
+                or not all(x in (0, 1, True, False) for x in wd)
+                or 1 not in [1 if x in (1, True) else 0 for x in wd]):
+            return {"success": False, "error": "每周模式请至少勾选一天"}
+        payload["weekdays"] = "".join("1" if x in (1, True) else "0"
+                                      for x in wd)
+    if repeat == "once":
+        od = str(d.get("once_date") or "").strip()
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", od):
+            return {"success": False, "error": "请选择开机日期"}
+        payload["once_date"] = od
+    remark = str(d.get("remark") or "").strip()
+    if remark:
+        payload["remark"] = remark[:200]
+    try:
+        resp = _center_call("POST", PC_BOOT_TASKS_PATH, body=payload) or {}
+    except CenterApiError as e:
+        return {"success": False, "error": str(e)}
+    task = resp.get("task")
+    return {"success": True,
+            "task": task if isinstance(task, dict) else resp,
+            "tasks": resp.get("tasks") if isinstance(resp.get("tasks"), list)
+            else None}
+
+
+def handle_pc_center_task_delete(params=None):
+    """删除本终端的个性化开机任务（DELETE boot-tasks/{task_id}）。
+
+    仅 origin=client_personal 的任务可删（中心归属锁定，越权 403 原文透出）；
+    平台/安全软件来源的任务不在客户端维护范围。"""
+    task_id = str((params or {}).get("task_id") or "").strip()
+    if not task_id.isdigit():
+        return {"success": False, "error": "缺少有效的任务标识"}
+    try:
+        _center_call("DELETE", PC_BOOT_TASKS_PATH + "/" + task_id)
+    except CenterApiError as e:
+        return {"success": False, "error": str(e)}
+    return {"success": True}
+
+
+# ======================================================================
+# 定时关机配置上报（4.1.8 终端侧追加，用户定案架构）：
+# 定时关机=本地配置本地执行（schtasks 引擎不变），变更成功后落本地存档
+# （自增版本+配置摘要）并静默上报中心；触发点=平台接入连接成功 / 配置变更。
+# 断链不打扰：失败保留 pending，下次触发（连接/变更）自然重报；中心按
+# config_version/config_hash 去重。pc_diag 诊断读取与存档互不影响。
+# ======================================================================
+
+def _sd_cfg_path():
+    return os.path.join(data_dir(), "shutdown_config.json")
+
+
+def _sd_cfg_hash(cfg):
+    """配置语义摘要（不含版本/时间戳/上报标志）：键序规范 JSON sha256 前 16 位。"""
+    import hashlib
+    basis = {k: cfg.get(k) for k in ("enabled", "mode", "time", "date",
+                                     "task_name") if k in cfg}
+    raw = json.dumps(basis, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def load_shutdown_config():
+    try:
+        with open(_sd_cfg_path(), "r", encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_shutdown_config(enabled, mode="", time_hhmm="", date=""):
+    """关机配置变更成功后调用：版本自增落盘（原子写），置 report_pending。"""
+    cfg = load_shutdown_config()
+    nxt = {
+        "schema": 1,
+        "enabled": bool(enabled),
+        "mode": str(mode or ""),
+        "time": str(time_hhmm or ""),
+        "date": str(date or ""),
+        "task_name": PC_SHUTDOWN_TASK,
+        "config_version": int(cfg.get("config_version") or 0) + 1,
+        "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    nxt["config_hash"] = _sd_cfg_hash(nxt)
+    nxt["report_pending"] = True
+    tmp = _sd_cfg_path() + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(nxt, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, _sd_cfg_path())
+    return nxt
+
+
+def _build_sd_config_payload(cfg):
+    """上报体：结构化关机配置（对齐引擎契约形状；非整包快照）。"""
+    return {
+        "kind": "shutdown_config", "schema": 1,
+        "config_version": int(cfg.get("config_version") or 0),
+        "config_hash": str(cfg.get("config_hash") or ""),
+        "updated_at": str(cfg.get("updated_at") or ""),
+        "enabled": bool(cfg.get("enabled")),
+        "mode": str(cfg.get("mode") or ""),
+        "time": str(cfg.get("time") or ""),
+        "date": str(cfg.get("date") or ""),
+        "task_name": PC_SHUTDOWN_TASK,
+    }
+
+
+def report_shutdown_config_sync(reason=""):
+    """同步上报一次（返回 (ok, error)；供单测与回调共用）。
+
+    本地从未配置（v0）也如实上报无配置状态，供中心知晓终端关机配置为空。"""
+    cfg = load_shutdown_config()
+    payload = _build_sd_config_payload(cfg)
+    try:
+        _center_call("POST", SD_CONFIG_REPORT_PATH, body=payload, timeout=15)
+    except CenterApiError:
+        raise
+    try:
+        cur = load_shutdown_config()
+        if cur.get("config_version") == cfg.get("config_version"):
+            cur["report_pending"] = False
+            tmp = _sd_cfg_path() + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(cur, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, _sd_cfg_path())
+    except OSError:
+        pass
+    log("定时关机配置已上报中心（reason=%s v%s）"
+        % (reason, cfg.get("config_version") or 0))
+    return True, None
+
+
+def _report_shutdown_config_async(reason=""):
+    """静默异步上报：断链不弹窗不打扰，失败仅 WARN 日志（下次触发再报）。"""
+    def _run():
+        try:
+            report_shutdown_config_sync(reason)
+        except CenterApiError as e:
+            log("定时关机配置上报暂不可达（reason=%s）: %s" % (reason, e), "WARN")
+        except Exception as e:
+            log("定时关机配置上报失败（reason=%s）: %s" % (reason, e), "WARN")
+    threading.Thread(target=_run, daemon=True,
+                     name="pc-sdcfg-report").start()
+
+
+def on_center_connected():
+    """平台接入连接成功回调（uplink.on_connected 注册）：上报一次关机配置。"""
+    try:
+        _report_shutdown_config_async("connected")
+    except Exception:
+        pass
+
+
+def _register_uplink_connected_hook():
+    """向 uplink 注册连接成功回调（bridge 单进程内生效；独立环境静默跳过）。"""
+    try:
+        import uplink
+        uplink.on_connected(on_center_connected)
+    except Exception:
+        pass
+
+
+_register_uplink_connected_hook()
 
 
 # ======================================================================
 # 桥接处理器（bridge.py ROUTES 直连）
 # ======================================================================
 def handle_pc_snapshot(params=None):
-    """采集本机电源策略快照（只读）。触发 12h 节流的后台自动上报；
-    返回体携带平台存档状态（auto_report + report_state）供 UI 展示。"""
+    """采集本机电源策略快照（只读，4.1.8 起仅读本地不自动上报）。"""
     try:
         snapshot = collect_snapshot()
-        auto = "throttled"
-        try:
-            auto = "triggered" if _auto_report_async(snapshot) else "throttled"
-        except Exception as e:
-            log("自动上报调度失败: %s" % e, "WARN")
         return {"success": True, "snapshot": snapshot,
-                "auto_report": auto, "report_state": _load_report_state(),
                 "active_policy": load_policy_state()}
     except Exception as e:
         log("快照采集失败: %s" % e, "ERROR")
@@ -1392,9 +1605,10 @@ def handle_pc_snapshot(params=None):
 
 
 def handle_pc_report(params=None, data=None):
-    """手动上报：采集并立即推送平台（同步）。
+    """人工登记上报：采集并立即推送平台（同步）。
 
-    data={"human_set": true} 时标记消费线「已在 BIOS 人工设置」登记后上报。"""
+    data={"human_set": true} 时标记消费线「已在 BIOS 人工设置」登记后上报。
+    （4.1.8 起本接口仅剩「登记到平台」按钮这一个调用方。）"""
     try:
         snapshot = collect_snapshot()
     except Exception as e:
@@ -1407,17 +1621,14 @@ def handle_pc_report(params=None, data=None):
     try:
         resp = PlatformReporter().report_snapshot(snapshot)
         _mark_reported()
-        _save_report_state(True)
         log("快照已手动上报平台: %s" % json.dumps(resp, ensure_ascii=False)[:200])
         return {"success": True, "reported": True, "server": resp}
     except RuntimeError as e:
         if str(e) == "not_registered":
-            _save_report_state(False, "not_registered")
-            return {"success": False, "error": "尚未接入中心平台，请先在主页完成平台接入"}
-        _save_report_state(False, str(e))
+            return {"success": False,
+                    "error": "尚未接入中心平台，请先在主页完成平台接入"}
         return {"success": False, "error": str(e)}
     except Exception as e:
-        _save_report_state(False, str(e))
         log("手动上报失败: %s" % e, "WARN")
         return {"success": False, "error": "上报失败（平台不可达或未接入）"}
 
@@ -1430,28 +1641,6 @@ _PC_TASKS = {}
 _PC_TASKS_LOCK = threading.Lock()
 _PC_TASK_TTL = 1800        # 任务记录保留 30 分钟
 _PC_TASK_SEQ = [0]
-
-
-def _report_state_path():
-    return os.path.join(data_dir(), "report_state.json")
-
-
-def _save_report_state(ok, error=None):
-    try:
-        with open(_report_state_path(), "w", encoding="utf-8") as f:
-            json.dump({"last_ok": bool(ok), "last_error": error,
-                       "last_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-                       "ts": int(time.time())}, f, ensure_ascii=False)
-    except OSError:
-        pass
-
-
-def _load_report_state():
-    try:
-        with open(_report_state_path(), "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        return None
 
 
 def _pc_task_create(kind):
@@ -1731,6 +1920,11 @@ def _job_shutdown_set(config, wait_timeout=240):
         res["summary"] = "%s %s" % ("每天" if mode == "daily" else "工作日", t)
     if res.get("ok"):
         log("定时关机任务已应用: %s" % res["summary"])
+        try:
+            save_shutdown_config(True, mode, t, date or "")
+            _report_shutdown_config_async("change")
+        except Exception as e:
+            log("关机配置存档失败（不影响任务本身）: %s" % e, "WARN")
     return res
 
 
@@ -1739,6 +1933,11 @@ def _job_shutdown_remove():
     res["task_name"] = PC_SHUTDOWN_TASK
     if res.get("ok"):
         log("定时关机任务已删除")
+        try:
+            save_shutdown_config(False)
+            _report_shutdown_config_async("change")
+        except Exception as e:
+            log("关机配置存档失败（不影响任务本身）: %s" % e, "WARN")
     return res
 
 
@@ -1747,6 +1946,15 @@ def _job_shutdown_toggle(enable):
     res["task_name"] = PC_SHUTDOWN_TASK
     if res.get("ok"):
         log("定时关机任务已%s" % ("启用" if enable else "停用"))
+        try:
+            prev = load_shutdown_config()
+            save_shutdown_config(bool(enable),
+                                 mode=str(prev.get("mode") or ""),
+                                 time_hhmm=str(prev.get("time") or ""),
+                                 date=str(prev.get("date") or ""))
+            _report_shutdown_config_async("change")
+        except Exception as e:
+            log("关机配置存档失败（不影响任务本身）: %s" % e, "WARN")
     return res
 
 

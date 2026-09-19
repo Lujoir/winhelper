@@ -64,6 +64,8 @@ from power_control import (
     handle_pc_snapshot, handle_pc_report, handle_pc_bios_apply,
     handle_pc_bios_restore, handle_pc_shutdown_set, handle_pc_shutdown_remove,
     handle_pc_shutdown_toggle, handle_pc_task_status,
+    handle_pc_center_tasks, handle_pc_center_task_create,
+    handle_pc_center_task_delete,
 )
 from appctl import (
     get_autostart, set_autostart, update_status, update_apply,
@@ -190,6 +192,10 @@ ROUTES = {
     "/api/powercontrol/shutdown-remove": handle_pc_shutdown_remove,
     "/api/powercontrol/shutdown-toggle": handle_pc_shutdown_toggle,
     "/api/powercontrol/task-status": handle_pc_task_status,
+    # 中心开机任务（4.1.8 页改追加：定时开机=中心任务驱动，终端只读+个性化维护）
+    "/api/powercontrol/center-tasks": handle_pc_center_tasks,
+    "/api/powercontrol/center-task-create": handle_pc_center_task_create,
+    "/api/powercontrol/center-task-delete": handle_pc_center_task_delete,
     # 客户端控制（三大改造②③）：开机自启 + 更新引擎
     "/api/app/autostart": get_autostart,
     "/api/app/autostart-set": set_autostart,
