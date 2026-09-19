@@ -36,7 +36,7 @@ from log_service import (
 )
 from uplink import (
     handle_uplink_status, handle_uplink_save, handle_uplink_register,
-    autostart as uplink_autostart,
+    autostart as uplink_autostart, register_update_exit_hook,
 )
 from home_service import handle_home_network
 from file_search import (
@@ -88,6 +88,13 @@ def _request_exit():
             fn()
         except Exception:
             pass
+
+
+# 中心推送「静默自动更新」（client_update, mode=silent）需要主进程让位给安装器：
+# uplink 命令处理器确认安装包 ready 后调 appctl.update_apply() 拉起 updater 子
+# 进程，再经本回调退出主进程（updater 等主进程退净 → /VERYSILENT 静默安装 →
+# 安装器 postinstall 自启新客户端）。与「立即更新」按钮共用同一条退出链。
+register_update_exit_hook(_request_exit)
 
 
 def handle_app_update_apply(params=None, data=None):

@@ -850,6 +850,109 @@ def _cmd_pc_diag(args):
         return False, {"error": str(e)[:200]}
 
 
+# ---------- client_update（中心主动推送客户端更新；2026-09-19）----------
+#
+# 与既有「心跳捎带 latest_version → 终端自行下载 → 用户点击安装」被动链互补：
+# 控制台可按范围（全量 / 勾选终端）主动下发本命令，终端收到后立即校验并下载
+# 当前发布版本。
+#   mode=notify（默认，安全）：仅下载就绪，沿用既有 UI 提示条，仍需用户点击安装。
+#   mode=silent（无人值守）：下载就绪后拉起 updater 子进程并让主进程退出，
+#     由 updater 等主进程退净后 /VERYSILENT 静默安装并自启新客户端。
+# 回执 data 携带 mode/status/version/current_version，供控制台逐终端展示结果。
+
+_SILENT_EXIT_DELAY_SEC = 8   # silent 模式主进程延后退出秒数（先让回执发出；
+                             # updater 侧最多等主进程 120s，8s 远小于该上限）
+
+_update_exit_hook = {"fn": None}
+
+
+def register_update_exit_hook(fn):
+    """注册「主进程退出」回调（desktop/bridge 侧注册，幂等覆盖）。
+
+    silent 模式必须让主进程退出：updater 子进程要等主进程退净才动安装包
+    （否则覆盖运行中的 winhelper.exe 会失败）。无回调时降级为 notify 语义
+    （只下载不安装），回执如实标注 mode_fallback，绝不假装安装成功。
+    """
+    _update_exit_hook["fn"] = fn
+
+
+def _run_update_exit_hook():
+    fn = _update_exit_hook.get("fn")
+    if fn is not None:
+        try:
+            fn()
+        except Exception:
+            pass
+
+
+@command_handler("client_update")
+def _cmd_client_update(args):
+    """args={mode:"notify"|"silent", version?:str}（version 仅作核对提示）。
+
+    幂等：重复执行只做版本比对；已 ready 且版本一致时 check_and_fetch 内部
+    短路直接复用，不会重复下载 200MB 安装包。
+    """
+    import updater                      # 延迟导入（与其它 handler 同款）
+    args = args if isinstance(args, dict) else {}
+    mode = str(args.get("mode") or "notify").strip().lower()
+    if mode not in ("notify", "silent"):
+        mode = "notify"
+    cfg = load_config()
+    server_url = str(cfg.get("server_url") or "").strip()
+    token = str(cfg.get("token") or "").strip()
+    out = {"mode": mode, "current_version": CLIENT_VERSION,
+           "target_version": str(args.get("version") or "")}
+    if not (server_url and token):
+        out["error"] = "uplink_not_configured"
+        return False, out
+
+    try:
+        st = updater.check_and_fetch(CLIENT_VERSION, server_url, token) or {}
+    except Exception as e:
+        out["error"] = str(e)[:160]
+        return False, out
+
+    status = str(st.get("status") or "idle")
+    out["status"] = status
+    out["version"] = st.get("version")
+    if status == "failed":
+        out["error"] = st.get("error") or "download_failed"
+        return False, out
+    if status != "ready":
+        # idle = 已是最新（无需更新），视为成功；异常中间态如实回报
+        out["applied"] = False
+        out["note"] = "already_latest" if status == "idle" else status
+        return True, out
+
+    if mode != "silent":
+        out["applied"] = False
+        out["note"] = "ready_await_user"     # UI 提示条已可见，等用户点击安装
+        return True, out
+
+    exit_fn = _update_exit_hook.get("fn")
+    if exit_fn is None:
+        # 无退出回调（单测/非桌面态）：降级为 notify 语义，诚实回执
+        out["applied"] = False
+        out["mode_fallback"] = "notify"
+        out["note"] = "no_exit_hook"
+        return True, out
+    try:
+        import appctl
+        r = appctl.update_apply()
+    except Exception as e:
+        out["error"] = "update_apply_failed: %s" % str(e)[:120]
+        return False, out
+    if not (isinstance(r, dict) and r.get("success")):
+        out["error"] = str((r or {}).get("error") or "update_apply_failed")[:120]
+        return False, out
+    out["applied"] = True
+    out["note"] = "silent_install_scheduled"
+    # 延后退出主进程：必须先把本次命令回执发回中心（_dispatch 在 handler 返回
+    # 后才回执），过早退出会让中心看到 timeout 而误判失败。
+    threading.Timer(_SILENT_EXIT_DELAY_SEC, _run_update_exit_hook).start()
+    return True, out
+
+
 # ============================================================
 # 命令分发（幂等 + 不阻塞心跳 + 回执重试）
 # ============================================================
