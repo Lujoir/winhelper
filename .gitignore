@@ -8,6 +8,9 @@ venv/
 *.egg-info/
 dist/
 build/
+dist_new/
+build_new/
+dist_v3/
 
 # installer build artifacts & runtime payloads
 installer/Output/

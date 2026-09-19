@@ -558,11 +558,17 @@ def handle_appdata_migrate(params: dict) -> dict:
 
 
 def _path_allowed(p: str) -> bool:
-    """路径是否在允许的清理范围内（应用数据区域 或 已登记的自定义扫描根）"""
+    """路径是否在允许的清理范围内：应用数据区域，或**本轮扫描会话**登记的根。
+
+    授权来源已从「全局累积集合」改为「会话 + TTL」（见 _SCAN_GRANT）——
+    历次扫描的登记不再叠加，避免授权面随时间扩散。"""
     if _locate_zone(p)[0] is not None:
         return True
+    if not _grant_active():
+        return False
     pn = _norm(p)
-    return any(pn == r or pn.startswith(r + os.sep) for r in list(_EXTRA_ALLOWED_ROOTS))
+    return any(pn == r or pn.startswith(r + os.sep)
+               for r in _SCAN_GRANT["roots"])
 
 
 def handle_appdata_delete(params: dict) -> dict:
@@ -575,6 +581,9 @@ def handle_appdata_delete(params: dict) -> dict:
         if not os.path.exists(p):
             return {"success": False, "error": f"路径不存在: {p}"}
         if not _path_allowed(p):
+            if _locate_zone(p)[0] is None and not _grant_active():
+                return {"success": False, "code": "scan_expired",
+                        "error": "删除授权已过期：请重新扫描后再删除"}
             return {"success": False, "error": f"路径不在允许的应用数据目录内，已拒绝: {p}"}
 
     job_id, reused = _start_task("delete", _run_delete, {"paths": raw})
@@ -598,8 +607,28 @@ handle_appdata_cancel = _cancel_task
 
 INSTALLER_EXTS = {".exe", ".msi", ".msix", ".appx", ".msp", ".msixbundle", ".appxbundle"}
 
-# 自定义目录扫描根（服务端登记，删除白名单据此放行；客户端无法注入任意路径）
-_EXTRA_ALLOWED_ROOTS = set()
+# 扫描会话删除授权（原实现为模块级全局集合，历次扫描登记的根永久叠加 ——
+# 多轮/全盘扫描后集合可覆盖大量目录，删除接口据此放行，构成授权逃逸面。
+# 现改为「单会话 + TTL」：每次扫描开始重置，到期自动失效，不再跨会话累积）
+_SCAN_GRANT = {"scan_id": "", "expires_at": 0.0, "roots": set()}
+_SCAN_GRANT_TTL = 30 * 60          # 秒；覆盖「扫描 → 勾选 → 删除」的正常操作耗时
+
+
+def _grant_reset(scan_id: str) -> None:
+    """开启新一轮扫描会话：清空上轮授权并设定 TTL。"""
+    _SCAN_GRANT["scan_id"] = scan_id or ""
+    _SCAN_GRANT["expires_at"] = time.time() + _SCAN_GRANT_TTL
+    _SCAN_GRANT["roots"] = set()
+
+
+def _grant_add(p: str) -> None:
+    """登记本轮扫描发现的允许删除根（仅当前会话内有效）。"""
+    _SCAN_GRANT["roots"].add(_norm(p))
+
+
+def _grant_active() -> bool:
+    """当前是否存在有效（非空且未过期）的扫描授权。"""
+    return bool(_SCAN_GRANT["roots"]) and time.time() < _SCAN_GRANT["expires_at"]
 
 # Chromium 系浏览器 User Data 目录（解析各 Profile 的 Preferences 获取真实下载目录）
 _CHROMIUM_USER_DIRS = [
@@ -725,12 +754,15 @@ def _run_installer_scan(task, params):
     scope = params.get("scope", "both")
     custom = (params.get("custom") or "").strip()
 
+    # 本轮扫描开启新的删除授权会话（上轮授权立即失效，不再跨轮累积）
+    _grant_reset(task.get("id") or "")
+
     if scope == "custom":
         if not custom or not os.path.isdir(custom):
             task["result"] = {"success": False, "error": f"自定义目录不存在: {custom}"}
             return
-        # 服务端登记自定义扫描根 → 删除白名单放行该根目录内路径
-        _EXTRA_ALLOWED_ROOTS.add(_norm(custom))
+        # 登记自定义扫描根 → 本轮会话内放行该根目录内路径
+        _grant_add(custom)
 
     zones = _installer_scan_zones(scope, custom)
     if not zones:
@@ -743,9 +775,9 @@ def _run_installer_scan(task, params):
         if cancel.is_set():
             task["status"] = "cancelled"
             return
-        # 浏览器下载目录登记删除白名单（通常位于其他盘，正是用户要清理的位置）
+        # 浏览器下载目录登记本轮删除授权（通常位于其他盘，正是用户要清理的位置）
         if zone_key.startswith("browser:"):
-            _EXTRA_ALLOWED_ROOTS.add(_norm(root))
+            _grant_add(root)
             browser_dirs.append({"label": dir_label, "path": root})
         is_disk_root = zone_key.startswith("disk:")
         task["progress"] = {"stage": "installers", "current": dir_label,
@@ -802,9 +834,10 @@ def _run_installer_scan(task, params):
                     "auto": bool(auto), "hint": hint,
                 }
                 items.append(item)
-                # 全盘模式下逐文件登记父目录到删除白名单（服务端受控）
+                # 全盘模式下逐文件登记父目录到本轮删除授权（服务端受控；
+                # 仅本次扫描会话 + TTL 内有效，不再永久累积）
                 if is_disk_root:
-                    _EXTRA_ALLOWED_ROOTS.add(_norm(root2))
+                    _grant_add(root2)
 
     items.sort(key=lambda x: (0 if x["auto"] else 1, -x["size"]))
     auto_items = [i for i in items if i["auto"]]
@@ -822,6 +855,8 @@ def _run_installer_scan(task, params):
         "custom": custom if scope == "custom" else "",
         "browser_dirs": browser_dirs,
         "scanned_zones": [z[2] for z in zones],
+        # 供前端在删除时回传，绑定本次扫描会话
+        "scan_id": task.get("id") or "",
     }
 
 

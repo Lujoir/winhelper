@@ -16,7 +16,9 @@ a = Analysis(
         ('perf-analyzer/libs/*.dll', 'libs'),
         ('perf-analyzer/libs/iperf3/*', 'libs/iperf3'),
         # HTTPS 专项（2026-09-11）：平台自建 CA 随包分发（uplink https 调用验签 +
-        # server_ca_fingerprint 双层校验）；当前为开发占位 CA，正式 CA 由 HTTPS 专项替换
+        # server_ca_fingerprint 双层校验）。资产已是**正式 CA**（CN=EyeTerm Internal CA，
+        # SHA256=733c1039…02126010b，与生产 data/certs/ca.crt 一致，有效期至 2036-09-08）；
+        # 构建前请运行 python tools/check_ca_asset.py 校验（占位/过期即中止构建）
         ('assets/platform_ca.pem', 'assets'),
     ],
     hiddenimports=[
