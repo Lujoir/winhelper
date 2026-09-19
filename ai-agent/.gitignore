@@ -1,0 +1,12 @@
+# AI Agent 架构系统：骨架与规范入库，运行期数据不入库
+__pycache__/
+*.pyc
+
+# 临时区只保留说明文件
+tmp/*
+!tmp/README.md
+
+# 记忆区：声明文件（MEMORY.md/README.md）入库，运行期数据不入库
+memory/*/STATE.json
+memory/*/SESSION.jsonl
+memory/*/archive/*
