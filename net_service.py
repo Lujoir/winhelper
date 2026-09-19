@@ -2280,8 +2280,13 @@ def _ai_diagnose_personal(body):
     if conf["api_key"]:
         req.add_header("Authorization", "Bearer " + conf["api_key"])
     t0 = time.time()
+    # 超时预算（2026-09-19 收紧，ADR-009）：本引擎主要入口是**使用人本机自用**
+    # （个人版用他自己的 API Key），他点了「AI 诊断」就在等结果。原 120s 意味着
+    # 最坏情况干等两分钟且无任何进度反馈 —— 运维场景尚有"任务在跑"的心理预期，
+    # 使用人没有。收紧至 30s：覆盖实测诊断耗时区间（11.3s~30.3s），
+    # 超时即如实返回错误态（AI 是增益项，不阻断其他网络诊断能力）。
     try:
-        with urllib.request.urlopen(req, timeout=120) as r:
+        with urllib.request.urlopen(req, timeout=30) as r:
             resp = json.loads(r.read().decode("utf-8", "replace"))
     except urllib.error.HTTPError as e:
         detail = ""

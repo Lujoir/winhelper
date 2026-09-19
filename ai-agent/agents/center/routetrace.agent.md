@@ -82,12 +82,13 @@ const_ref: "ROUTETRACE_SYSTEM_PROMPT"
 
 | 项 | 值 |
 |---|---|
-| 单次超时 | 复用 `run_ai_analysis` 链（**60s / max_retries=1**） |
-| 最坏耗时 | **120s+** ❌ |
+| 单次超时 | 复用 `run_ai_analysis` 链（现 **10s / max_retries=0**） |
+| 最坏耗时 | 10 × 2 = **20s** ✅ |
 | 场景预算 | 控制台前端 **25s** |
 | 失败降级 | 全链失败 → 502（失败记录仍落库） |
 
-> ❌ **违反 ADR-006**（同 analyze 根因）。
+> ✅ **2026-09-19 已随 analyze 一并收紧（ADR-009）**：原链为 `60s / max_retries=1`，
+> 真实最坏 **240s**。现最坏 20s，在 25s 场景预算内。
 
 ## 7. 隐私边界（准则五）
 
@@ -124,7 +125,7 @@ const_ref: "ROUTETRACE_SYSTEM_PROMPT"
 | 对应常量 | `server-platform/server/ai.py:ROUTETRACE_SYSTEM_PROMPT` |
 | 加载方式 | 现：常量硬编码；目标：从本配置读身份段 + 共用隐私前缀 |
 | 一致性校验 | `const_ref` 存在性校验 |
-| **待迁移项** | ①**修复 `data`/`context` 键名不一致**（当前聚合恒失败）；②超时统一收紧；③身份"企业"→"医院"；④注入隐私前缀 |
+| **待迁移项** | ①**修复 `data`/`context` 键名不一致**（当前聚合恒失败）；②~~超时统一收紧~~ ✅ **已完成**（ADR-009）；③身份"企业"→"医院"；④注入隐私前缀 |
 
 ## 11. 变更记录
 
