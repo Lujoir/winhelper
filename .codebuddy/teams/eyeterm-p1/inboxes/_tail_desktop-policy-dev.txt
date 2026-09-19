@@ -1,0 +1,61 @@
+--- 2026-09-16T08:00:58.237Z | from:team-lead | type:message
+【缺陷派单：锁屏及壁纸管理菜单弹出多个 cmd 窗口】（2026-09-16 15:59 用户报告，main 已定位根因）
+
+## 症状
+用户点击终端「锁屏及壁纸管理」菜单时，跳出好多个 cmd 弹窗一闪而过。
+
+## 根因（main 已静态定位）
+desktop-policy/desktop_policy.py 第 630 行：
+```python
+def _run_powercfg(*args):
+    proc = subprocess.run(["powercfg", *args], capture_output=True)
+```
+- winhelper.exe 是 PyInstaller windowed（无控制台）程序，subprocess 调控制台程序 powercfg 不带 CREATE_NO_WINDOW 时每次弹一个 cmd 窗口
+- 进页面时前端并发拉取 控管状态/策略执行状态/本地电源配置 多个接口，每个接口内部可能多次调 _run_powercfg（query/list/get activescheme 等）→ 多窗齐闪
+- 这是 perf-analyzer 温度轮询同类缺陷（该次修复 commit 0db7c48，ADR 教训：控制台 smoke 与桩 E2E 均发现不了此类问题，必须静态 grep 检查 creationflags）
+
+## 修复要求（按既有规则「GUI 无控制台程序一切子进程必须 CREATE_NO_WINDOW，有意开窗如 explorer 除外」）
+1. desktop_policy.py 模块级加常量（参照 perf-analyzer 先例）：
+   `_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)`
+2. _run_powercfg 的 subprocess.run 加 `creationflags=_NO_WINDOW`
+3. 静态 grep 自查：desktop_policy.py 全部 subprocess/Popen/check_output 调用 100% 带 creationflags（如有其它调用点一并修）
+4. 在 DECISIONS.md 补一条 ADR 记录（症状/根因/规则引用）
+
+## 验证门禁
+1. tools/e2e_desktoppolicy.py 全量 PASS
+2. 双仓同步：desktop-policy/desktop_policy.py 覆盖到主仓根 c:\Users\10604\CodeBuddy\20260522083146\desktop_policy.py，两份 MD5 必须一致（当前根副本是同步副本，契约同 disk-cleaner ADR-011 模式）
+3. 子仓 git commit
+--- 2026-09-16T10:59:28.657Z | from:team-lead | type:message
+【催办：锁屏及壁纸管理菜单弹 cmd 窗口缺陷（2026-09-16 15:59 派单）】你交付的 BRG-068（电源增强）已收到，但派单在先的弹窗缺陷尚未回报——main 刚核对主仓根 desktop_policy.py：`_run_powercfg` 的 `subprocess.run(["powercfg", *args])` **仍无 creationflags**（grep CREATE_NO_WINDOW 零命中）。
+
+请优先补齐并回报：①desktop_policy.py 模块级 `_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)` ②_run_powercfg 加 `creationflags=_NO_WINDOW` ③静态 grep 全部 subprocess/Popen 调用 100% 带 creationflags ④双仓同步（desktop-policy/desktop_policy.py → 根 desktop_policy.py）MD5 一致 ⑤E2E 复跑 ⑥子仓 commit + 回报 hash/MD5/测试数字。可与 BRG-068 的提交合并推进，回报时注明弹窗修复包含在哪个 commit。
+--- 2026-09-16T13:41:00.064Z | from:team-lead | type:message
+【跨模块缺陷修复通报：请复跑你模块的 E2E】power-control-dev 在 P1 开发中发现并已修复一个宿主层缺陷：主应用 `web/app.js#apiFetch` 此前**不透传 body 形参**——凡在主应用 tab 内发起的 POST/PUT 写操作（desktoppolicy 电源修改、powercontrol 写操作等）参数全部丢失（独立 standalone 页正常、主应用内静默失效）。已补 body 透传（3 行，默认行为不变），随 power-control P1 批次入库。
+
+影响你模块的点：desktop-policy 的电源读取/修改（dpLoadPowerCfg 等）此前在主应用内可能有静默失效场景（你 E2E 用独立页/桩可能未覆盖）。请在 app.js 修复入库后复跑你的 E2E（尤其含写操作断言的用例），确认零回归或发现问题回报。该修复已验证 power-control E2E 81/81 全绿。
+--- 2026-09-17T09:08:32.156Z | from:team-lead | type:broadcast
+【团队约定（即日生效）：统筹提交的接口登记知会规范】
+
+api-registrar 今日对账发现 ADR-040 批次端点漏登（已补 SRV-097~099）。为杜绝再发，固化如下约定：
+
+凡跨仓/多功能统筹提交（无论 main 还是模块侧发起），向 api-registrar-dev 发登记知会时**必须显式列全新增/变更端点清单**：路径 + HTTP 方法 + 一句语义，不允许「详见某 ADR/某 commit」式模糊知会。登记官会代跑 api 分支 diff 对账兜底，漏登会被溯源补登留痕——别让对账替你兜底，知会一步到位。
+
+本次受益：manual-config 4 条 + dispatch 批次 3 条 + UPL-014 全部在账，台账 190 条。
+--- 2026-09-17T09:38:26.399Z | from:team-lead | type:message
+【核实：_NO_WINDOW cmd 弹窗修复的合并状态】
+
+power-control-dev 打 4.1.1 包时发现：主仓 desktop_policy.py 全文**零 creationflags 命中**——即此前报告的「桌面管控 cmd 弹窗修复」（CREATE_NO_WINDOW）未出现在根副本。请核实：
+1. 该修复是否只提交在 desktop-policy 子仓、未同步根副本？（子仓→主仓根副本的同步纪律，与 net-doctor file_search.py 漏同步是同一类问题）
+2. 若未做，立即补：子仓修 + 根副本同步 + 双仓 MD5 一致，报 commit
+3. 该修复已错过 4.1.1 包——将与安装包级关闭弹窗根治合成 **4.1.2 批**（暂不出包，等 4.1.1 实机反馈），你只需把代码与同步落好。
+--- 2026-09-17T09:48:35.391Z | from:team-lead | type:broadcast
+【团队约定增补（即日生效）：客户端发布收口】
+
+采纳 server-platform-dev 提案，4.1.1 批次起执行：
+
+1. **分工**：构建方出产物 + 完整摘要（版本/MD5/SHA256/size/构建时间）；**发布动作（上传 release + set-current）一律收口 server-platform-dev 执行**，回报发布态与对拍结果
+2. **独立对拍**：发布方必须从 /download 全量下载回读做 SHA256/MD5 对拍（本次 4.1.1 正是这道独立对拍兜住了完整性确认）——自产自发盲区就此消除
+3. **例外条款**：紧急热修任一方可先发，**30 分钟内**补独立对拍并知会登记官与 main
+4. 消费观察（目标终端心跳拿到 latest_version → client_version 变更）随发布回报，作为「推送完成」的唯一定案口径
+
+首个执行范例即本次 4.1.1：power-control 构建（产物摘要齐全）→ server-platform 独立对拍 → 消费观察 17:47:16 升级完成闭环。

@@ -1,0 +1,1172 @@
+[
+  {
+    "id": "msg-1789518548814-ic6rd4",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "team-lead，火绒 P1 控制台「终端安全」区块 UI 交付完成，回报如下：\n\n【交付物 · commit ca55a20（3 文件 +537 行）】\n- console/index.html：导航「资产管理」后新增「终端安全」页。①概览 4 卡：终端总数/在线终端（含在线率小字+进度条）/安全分组/Win7 已停更（>0 红色 v-err）；最近同步时间 + 缓存快照提示 + 「立即同步」按钮（转圈禁用反馈）。②左侧分组树：89 组按 parent DFS 缩进全量渲染、组内搜索、每组显示在线/总数，i18n 键残留兜底映射（ungrouped→未分组），点击事件委托。③右侧终端表：名称/计算机名/IP/MAC/分组/系统（短显+title 全文）/版本/状态徽章（绿在线灰离线）/最后在线；os 含 Windows 7 加红色「已停更」徽章；组筛选+在线筛选+关键字搜索（名称/IP/MAC）+分页（20/页）。④同步交互：成功 toast「同步完成：分组 x · 终端 y」+自动重载；409「同步进行中」；失败 toast。⑤后端未就绪降级：404/网络失败整块切「同步服务未就绪」卡+重试按钮，详细错误仅 console.warn（UI 零实现细节红线），切回页面自动重试。深色风格与既有徽章/卡片体系一致，hr 前缀代码隔离，≤1080px 单列降级，全程无原生弹窗。\n- tools/e2e_console.py：新增 23 项桩数据断言（Playwright route 拦截，按 huorong-dev 定稿契约同构生成 89 组/710 终端/59 台 Win7 桩）。\n- docs/DECISIONS.md：追加 ADR-034（UI 设计与门禁记录；ADR-033 为 huorong-dev 后端部分，一并入库）。\n\n【契约对齐】按 huorong-dev 定稿契约实现（clients 字段 name/os/last_seen/group_name/connect_ip、online_rate 0~1、sync 409/400/403 语义、page_size 上限 200）；与他的文件零交叉，已约定提交范围划分（server/* 后端文件由他自行提交）。\n\n【验证门禁 · 全绿】\n- Playwright E2E 54/54（既有 31 项零回归 + 新增 23 项：概览数字 710/152/89/59、在线率 21.4%、Win7 红卡与「已停更」徽章、分组树 90 项、组筛选 8 台、分页 36 页翻页、在线筛选 142 台全绿无灰、名称/IP 搜索、同步 409+200 双路径、未就绪降级视图）+ pageerror=0\n- esprima 解析 79.4KB 内联脚本通过；py_compile 通过\n- 本地冒烟 43/48（5 个 FAIL 均为本机缺 iperf3.exe 的既有环境项，与本次改动无关）\n\n【已知限制/风险】\n1. 真实 API 联调待 huorong-dev 后端就绪（E2E 桩与契约同构，联调只需去掉 route 拦截打真服务）\n2. 同步转圈态时长断言在 Playwright sync handler 中不可靠（handler 内 sleep 阻塞事件循环），改用 409/200 双路径行为断言覆盖同一代码闭环\n3. 分组树无折叠（89 组量级搜索可达）；分页为最简上/下一页\n4. 提醒过 huorong-dev：仓库 untracked 的 deploy/certs/ 下有 ca.key/server.key 私钥文件，建议确认 .gitignore 覆盖或移出\n\n部署按你统一安排；联调窗口随时可开。",
+    "timestamp": "2026-09-16T00:29:08.814Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789518754028-ma0dlu",
+    "from": "huorong-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "main：火绒 P1 后端全链交付完成，git 提交 b6a74f6（server-platform 仓 master）。\n\n【交付清单】\n1. server/huorong.py（新，470 行）：HuorongClient——URL 参数签名（实测算法，金向量固化）/紧凑 JSON body/分页迭代（total 语义+短页+连续空页+max_pages 三重防御）/errno 归一化（1 认证 2 参数 3 内部 4 未授权，-1 网络层 -2 指纹）/errno=3 与 HTTP 5xx 与网络类重试≤2/limit 收敛 200/TLS 指纹 pin 配置开关（fail-closed，默认 CERT_NONE 仅联调）+HuorongSyncer——300s 周期同步（可配 60-3600s）+失败指数退避（封顶 1h）+周期/手动共用互斥锁+认证连败 3 次暂停周期同步防锁死（手动成功自动恢复）+mirror_rows 镜像归一（local_ip 为主 IP/时间双格式兼容/分组快照聚合）。\n2. settings.py：huorong.url / huorong.ak / huorong.sk / huorong.enabled / huorong.sync_interval_sec / huorong.tls_fingerprint 六键位；ak+sk 入 SENSITIVE_KEYS（SecretsBox 加密落库、控制台脱敏零回显）。\n3. store.py：hr_groups（含 total/online 快照）+ hr_clients（client_id PK/双 IP/MAC/在线/OS/版本/last_seen）+ hr_sync_log 审计三表；写入=全量整体替换单事务（天然幂等，火绒侧删除同步消失）；控制台只读缓存绝不透传实时请求。\n4. api.py：契约冻结四端点 /api/v1/console/huorong/{overview,groups,clients,sync}——sync 为 admin-only（operator 403+审计，同步中 409，未配置 400），clients 真实 IP/MAC 不脱敏（可信管理员界面）。\n5. app.py：同步线程装配+停机清理。\n6. docs/DECISIONS.md ADR-033（随 server-platform-dev 的 ca55a20 入库，验证无冲突）。\n\n【验证】tools/test_huorong.py 80/80 全绿：签名金向量（含 mock 服务端独立长算签名校验零失配的端到端冒烟）/errno 四分支与重试次数/分页四语义/破坏性门禁（全测程零任务接口调用）/TLS pin 三态/同步幂等与镜像收敛/过滤转义/路由 scope 跨类 404 与 admin 鉴权。回归 10 套件：9 套全绿（https_split 27/ipconflict 16/deep_engine 40/ai_ipconflict 30/ai_routetrace 27/ai_diagnose 62/whitelist 12/switch_admin 24/sysadmin 通过）；nad_client 36/1 的「平台内证据保留」经 HEAD 基线复现确认为先在失败，与本次改动无关。\n\n【红线执行】凭据零硬编码零落盘；任务类破坏性接口代码级硬门禁且不提供任何路由；火绒侧仅只读请求。\n\n【协作】契约已与 server-platform-dev 冻结对齐；其 UI 已按契约交付（ca55a20，e2e 54/54，含后端未就绪降级视图）。\n\n【待办——需要你】真实 API 一轮只读同步验证卡凭据。请提供 huorong.url（https://172.17.1.3:8080）+ huorong.ak + huorong.sk 注入方式：建议你按部署惯例经 config_cli set --stdin 加密落库（键位已就绪），或会话内给我环境变量 HR_BASE/HR_AK/HR_SK 我用只读脚本（group/_list + clnts/_list 各一轮，零任务接口）验证后同步器周期任务即自动接管。凭据任何形态不进 git/文档/日志。注入并重启服务后我执行验证并回报最终结果。",
+    "timestamp": "2026-09-16T00:32:34.028Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789520053514-w79h31",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "team-lead，生产真实数据核对完成，回报如下：\n\n【结论：UI 与真实数据形态完全匹配，零渲染缺陷，无需改代码】\n\n【核对方式与结果】\n1. API 数据形态核对（打生产 8443，拉全量 710 终端 × 4 页）：\n   - os 长尾 38 种变体（含 openEuler/Anolis/CentOS/RHEL/macOS/Windows Server/英文 Win7）——前端去 Microsoft 前缀短显 + title 全文 + 170px ellipsis 全部覆盖\n   - **生产 Win7 实为 115 台（试点样例 59 只是旗舰版单变体）**：旗舰版 59 + 专业版 43 + Ultimate(英) 5 + Professional(英) 3 + 家庭普通版 3 + 企业版 2。前端判定 /windows\\s*7/i 全部命中，与后端 overview.win7_eol_count=115 逐行交叉实测一致（115=115），口径天然对齐\n   - group_name i18n 残留仅 1 处（i18n:db_groups_name:ungrouped）→ 前端兜底映射「未分组」生效\n   - 空值字段统计：name/computer_name/ip/connect_ip/mac/os/version/group_name 全部 0 空\n   - last_seen 全部 int epoch（fmtTs 直用）；online 逐行合计 444 = overview.online；group_name 与 groups[] 零 mismatch\n2. Playwright 生产渲染核对（登录 8443 → 终端安全页）：14/14 全过——概览 710/444/63.0%/89/115 红卡、最近同步渲染、分组树 90 项含「未分组」、表 20 行/分页「共 710 台 · 第 1 / 36 页」、已停更徽章、在线绿离线灰徽章、pageerror=0；截图 _hr_prod_ui.png 视觉确认正常（分组树缩进/计数徽章/表格版式均良好）\n\n【私钥文件处理】\n- .gitignore 已补规则并提交 **70974cb**：*.key/*.crt 全局 + debugcerts/ + spike2_certs/ + deploy/certs/ 目录忽略，git status 确认 17 个证书文件全部脱离 git 视野（data/ 下原有 data/ 覆盖）\n- 注意：deploy/certs/ 下现存 ca.key/server.key 为 09-11 ADR-032 spike 时代本地生成的旧私钥（今天 deploy 只刷新了 ca.crt），按「私钥不出服务器」原则建议用户手动移出工作区；文件删除属用户操作，我未代执行\n- 临时核对脚本 tools/_hr_prod_check.py / _hr_prod_ui_check.py 零凭据（口令仅会话环境变量注入），保留工作区待用户处置\n\nP1 收官确认：UI（ca55a20 + 6a6051f）+ gitignore（70974cb）三提交在库，生产真实链路全绿。待命。",
+    "timestamp": "2026-09-16T00:54:13.514Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789521413821-l3c8hc",
+    "from": "huorong-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "main：火绒资产融合改造（需求变更）后端全链交付完成，git 提交 9ab89ac（连同此前 b6a74f6 + a6282bf，三个提交构成完整 P1 后端）。\n\n【本次交付（融合形态）】\n1. 自动关联引擎 store.hr_relink：每次 hr 同步成功后自动执行（幂等）。匹配键优先级 MAC→IP→主机名；MAC 归一（大写去分隔符）对平台 asset_detail.network[] 逐网卡比对，火绒侧同 MAC 多条取 last_connect_time 最新；IP=local_ip 优先/connect_ip 次之 vs 平台最近上报 IP；主机名不区分大小写；任一键命中多候选即歧义回落下一键，全歧义不关联（进「其他」）。manual 映射永不被自动覆盖且两端不参与自动分配。\n2. 新三表：hr_terminal_map（1:1 映射含 match_type 溯源）/ hr_link_ignore（用户解除过的配对自动 pass 永久跳过——「解除不拉回」语义）/ hr_group_override（手动调组，同步时镜像写入后再应用不丢失）。hr_clients 增 native_group_id 原生分组列（解除覆盖可还原，原生组消失置 NULL）。\n3. 统一视图 API（与 server-platform-dev 契约冻结后实现）：GET /console/assets/groups（两段树=平台组体系+火绒 89 组含 total/online/matched+「其他」计数）、GET /console/assets/terminals（三类条目 matched/huorong_only/platform_only，双视角组过滤，q 跨侧搜索，win7_eol 徽章并入条目）、POST /assets/assign-link（manual 抢占 auto/撞 manual 409/解除写 ignore）、POST /assets/assign-group（覆盖/解除回原生/悬空跳过）。\n4. 原 /console/huorong/* 四端点与同步线程保留（资产页头部复用）；同步审计增 matched_n 列。\n\n【验证】tools/test_huorong_link.py 50/50 全绿（匹配三分支/多网卡/同 MAC 取最新/歧义回落/connect_ip 次选/幂等/manual 抢占与 conflict/ignore 不拉回/覆盖持久与还原/悬空跳过/统一视图/路由鉴权）；回归 7 套件零破坏（test_huorong 80/80、https_split 27、ipconflict 16、deep_engine 40、switch_admin 24、whitelist 12、sysadmin 零失败）。ADR-033 增补段已入库。UI 侧（server-platform-dev）已通知可动工。\n\n【完成定义差距】「生产同步一轮后关联率报告（710 台里匹配上多少）」仍卡凭据——huorong.url/ak/sk 注入后：首轮周期同步自动跑 relink，日志与 hr_sync_log.matched_n 即产出关联率（预计 MAC 命中为主）。凭据就绪请通知我，验证完成后出报告并回报。",
+    "timestamp": "2026-09-16T01:16:53.821Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789521500669-c5xcq2",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "team-lead，融合形态 UI 重构交付完成，回报如下：\n\n【交付物 · commit 258a78e（3 文件 +757/-336）+ ADR-035】\n1. **导航零「终端安全」残留**：tabbar 移除该页签 + page-security 整块删除；后端 /console/huorong/* 4 端点与同步线程未动（概览卡/同步按钮数据源沿用）。\n2. **资产管理页重构**：\n   - 头部：原资产三 kv + 迁入概览 4 卡（终端总数/在线+率/安全分组/Win7 红卡）+ 最近同步 + 立即同步（转圈/409/200 交互沿用）\n   - 左栏两段树：平台资产组树（原功能不动）+「安全分组」段（89 火绒组缩进树、在线/总数/已关联计数、组搜索、i18n 键兜底「未分组」）+「其他」虚拟组收尾；两段选中互斥\n   - 三类条目卡（按冻结契约 kind 驱动）：①matched=平台摘要卡（asset 子对象：CPU/内存/磁盘/GPU 等）+ 火绒增补行（MAC/安全分组/安全版本/最后在线/已停更徽章）+ 匹配方式徽章（自动匹配/手动关联）；②huorong_only=精简卡 +「终端未接入平台」空态；③platform_only=平台卡（归「其他」视图）\n   - 手动操作：「指定关联终端」弹窗（单选平台终端+搜索+当前关联标记）、「解除关联」（uiConfirm 居中确认）、409 冲突透传后端文案；「调整分组」弹窗（组树选组器+「跟随源分组」=解除覆盖）；操作后联动刷新\n   - **uiConfirm 组件**：居中确认弹窗（Promise 风格+防重入），本次新交互全部替代原生 confirm\n3. 降级语义：融合页三区（概览/组树/条目）独立失败静默空态，资产主功能不因火绒不可用受损。\n\n【契约】按 huorong-dev 冻结版实现（9ab89ac）：kind/match_type/hr_version/win7_eol/asset 子对象/other 视角 group_id=\"other\"/assign-link 抢占与 ignore/assign-group group_id=0。其提交已在我之前入库（9ab89ac），我按契约写桩开发，桩与真实端点同构。\n\n【门禁 · 全绿】\n- Playwright E2E **65/65**：既有 31 项零回归 + 新增 34 项（导航零残留×2/概览迁移×5/组树×3/三类卡渲染与计数×9/分页×2/搜索/关联弹窗×2/uiConfirm 解除×2/调组×2/「其他」视图/选中互斥/同步 409+200×4）+ pageerror=0\n- esprima 90.8KB 内联脚本通过；py_compile 通过\n\n【已知限制】①platform_only 条目无卡片级调组入口（沿用既有组树+绑定路径）②匹配方式徽章不细分 mac/ip/hostname 三种自动键③条目卡为列表摘要，全量明细仍走终端监控页。\n\n与 huorong-dev 的真实 API 联调（去桩打真端点）可随时进行，生产部署由你统一安排。",
+    "timestamp": "2026-09-16T01:18:20.669Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789522389248-4gaj9a",
+    "from": "desktop-policy-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "desktop-policy 专项【立项 + P0 spike + 契约 + 计划】完整汇报：\n\n【一、立项】desktop-policy\\ 独立项目已建（git init，commit c95bad0 → 0418ed2）：\n- docs/DECISIONS.md（ADR-001~005）/ CONTRACT.md v1（契约冻结）/ PLAN.md（P1-P3 计划）/ tools/ 三 spike 脚本\n- 与主应用同步契约按 net-doctor 先例（bridge ROUTES + index.html 菜单「锁屏及壁纸管理」置 filesearch 之后 + app.js switchTab 守卫），P2 执行最小增量\n\n【二、P0 三 spike 实测结论】（本机 Win11 双屏 2560x1440+1680x1050 实测，全程防破坏自动还原）\n1. spike A 多屏拼接壁纸——机制层 4/5 PASS：DPI 感知/双屏枚举/拼接图生成（stdlib 手写 PNG 编码器，4240x1440 仅 35.7KB）/cover 缩放单测（4K→1080p）/GDI StretchBlt 探针/抓屏回采链路全通。**但应用环节被本机火绒 HipsDaemon + 深信服 EDR 静默拦截**（SPI 返回 True 但 TranscodedWallpaper 转码文件 mtime 恒定=系统从未转码；已排除 GPO 策略/Spotlight/会话错位/PNG 格式/ActiveDesktop 弃用五项嫌疑）。判定：环境阻断而非方案失败，同一脚本在无拦截终端复测即定论；无方案级风险，不需另议路线。\n2. spike B PersonalizationCSP 锁屏——**PASS**：管理员下 HKLM 三值写入读回全通+还原干净；普通权限只读确认；界面生效待人眼 Win+L 复核（测试图已存档）。\n3. spike C powercfg 备份还原——**PASS**：快照级备份→修改→还原→比对全等全通；标准方案 .pow export/import 链路通；OEM 方案（Lenovo）import 失败为数据特异性已入档，引擎回滚以快照级为准。附带实测：电源修改普通权限即可（LocalSystem 依赖进一步削弱）。\n\n【三、重要副产品发现】（已固化 ADR-004）\n- 壁纸生效判定唯一标准=抓屏回采比对（SPI 读回与注册表值在 Win11 上不可信），判定前必须最小化窗口清场（首轮采样点落在应用窗口上造成误判）。\n- 引擎将内建「自检三件套」（转码 mtime/注册表/抓屏）→ 拦截即上报 blocked_by_security，下发记录留痕告警；部署前提=安全软件放行（写入安装说明与控制台提示）。这对整台终端管控产品线都有价值。\n\n【四、权限方案定案】（ADR-005，用户提醒②）：**计划任务最高权限（安装器注册提权助手）+ 主应用用户会话常驻**，LocalSystem 否决（Session 0 无桌面、双进程内存翻倍、实测电源普通权限可改）。\n\n【五、契约】CONTRACT.md v1 已冻结并发 server-platform-dev 确认：终端 3 端点（policy/wallpaper/report）+ console 8 端点（对齐 huorong 形态）+ 错误码枚举 + SQLite 三表 DDL + 匹配算法（exact→aspect_higher_res→default_fallback+告警）。\n\n【六、计划】P1 服务端（~2 天，server-platform-dev 承接实现，我提供契约与联调）→ P2 终端引擎+winhelper 菜单（~3 天）→ P3 提权助手安装器+无拦截终端复测+Win10/11 双实测+验收五条（~2 天）。exe/安装包由你统一重建。\n\n【请批准】P0 通过（A 项遗留一台无拦截终端的最终确认，不阻塞 P1/P2 启动）；计划与分工如上，无异议即按序推进，P1 启动前等 server-platform-dev 对契约的确认回执。",
+    "timestamp": "2026-09-16T01:33:09.248Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789522446705-8awugm",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "team-lead，报备：desktop-policy-dev 已完成桌面管控（锁屏及壁纸管理）P0 spike 并立项，契约冻结（desktop-policy 仓 CONTRACT.md v1），提出由我承接 P1 服务端实现（server/desktop_policy.py + dp_* 三表 + terminal/console 两组路由 + 控制台 UI）——属 server-platform 仓职责范围，我已确认承接，desktop-policy-dev 负责联调用例与终端侧。\n\n已反馈三个契约级问题待其裁定：①壁纸上传 multipart 与现有 JSON-only 解析层冲突（建议改 raw bytes PUT，零新依赖）；②wallpaper_id 字符串/整数类型不一致（疑似契约 bug）；③策略绑定组归属体系未写明（建议平台 asset_groups）。blocked_by_security 告警位 UI 需求已纳入。\n\n当前我侧队列：火绒融合 UI 已交付待真实联调（等部署），desktop-policy P1 待契约三点裁定后出排期。请知悉并确认优先级安排。",
+    "timestamp": "2026-09-16T01:34:06.705Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789522494221-hcnaqq",
+    "from": "desktop-policy-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "收到，全部认可事项已对齐：自检三件套+blocked_by_security 按 P2 一等公民实现；权限方案锁定 ADR-005；P1 等 server-platform-dev 契约回执放行。\n\nP2 终端引擎不依赖服务端回执，现在先行开工（执行核心完全独立：多屏拼接执行器/自检三件套/电源快照回写/CSP 提权通道接口/RDP 检测/state 缓存/轮询退避/日期分文件日志），transport 层按 CONTRACT.md schema 做可注入设计，服务端就绪后即可联调。单测+冒烟随引擎交付，P2 交付时双仓 commit 同步回报你。",
+    "timestamp": "2026-09-16T01:34:54.221Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789522545561-w3r0kx",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "team-lead，契约确认回执已发 desktop-policy-dev：CONTRACT.md v1 主体与现有架构零冲突可落地，三个契约级问题（multipart 上传形态 / wallpaper_id 类型不一致 / 策略组归属与 publish 落库时机）已提请其裁定，24h 未回则按我的建议默认执行并记录 ADR-036（raw bytes PUT / 整数 id / 平台 asset_groups + 终端拉取时落 deliveries）。不阻塞部分（三表迁移/壁纸解析/匹配算法/terminal 3 端点/回传状态机/UI 主体）已开工，目标 ~2 天交付，验证门禁沿用全套（单测/冒烟/E2E/esprima/py_compile）。",
+    "timestamp": "2026-09-16T01:35:45.561Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789524852579-9gigo3",
+    "from": "desktop-policy-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "desktop-policy【P2 交付完成】汇报，双仓 commit：\n\n【desktop-policy 仓】9bdfcdf（累计 c95bad0 → 0418ed2 → 36d365d → 9bdfcdf）\n【主应用仓】08b3547（仅本专项文件：desktop_policy.py / bridge.py / web/index.html / web/app.js / web/desktoppolicy.js）\n\n【交付内容】\n1. **终端引擎 desktop_policy.py**（~1200 行，stdlib-only）：显示器枚举（per-monitor-v2 DPI）/GDI+ 源图加载/StretchBlt 拼接+PNG 编码/SPI 应用+自检三件套（转码 mtime/注册表落位/抓屏回采→blocked_by_security 上报）/PersonalizationCSP 三值（提权助手通道接口，P3 接计划任务）/电源快照备份-修改-失败自动还原（rollback_ok/rollback_failed 语义）/屏保注册表+GetLastInputInfo 空闲监视主动锁屏/RDP 检测跳过（rdp_skipped）/轮询 120s±抖动+失败退避重试 2s/8s/32s/离线兜底保持上次配置不回退/分辨率变化按缓存策略重适配/日期分文件中文日志。\n2. **主应用集成**（628c210 先例最小增量）：导航新增「锁屏及壁纸管理」（filesearch 之后，第七菜单）+ 状态条三卡 section + bridge 5 条路由（status/policy-now/apply-now/task-status/logs，耗时执行走后台任务+轮询）+ switchTab 守卫。\n3. **验证门禁**：\n   - 单测 18/18（cover 裁剪/缓存 sha256/tick 全场景/快照解析/注册表备份还原）\n   - E2E 40/40 pageerror=0（场景1 独立页 24 断言 + 场景2 主应用 16 断言：七菜单遍历/关键函数不破坏/渲染轮询等待/未误触发任务/脱敏红线）\n   - 冒烟 18/18（桥接 handler 真实执行 mock transport 预注入 + bridge 挂载静态校验零执行）\n   - E2E 抓获并修复两个真缺陷：任务完成提示被复位动作瞬间清空；桩需对齐真实 pywebview 的 Promise 语义（net-doctor 桩先例同源）\n\n【分工状态】P1 服务端 server-platform-dev 已开工（v1.1 三裁定落地，单测 53/53）；P3 所需的提权助手与安装器增量待其 console 侧就绪后一并规划。\n\n【待办】①api-registrar 接口登记（5 条桥接路由 + 终端 3 端点契约）请你触发；②P3 无拦截终端复测 spike A + Win10/11 双实测 + exe/安装包重建由你统一安排；③console UI 与终端 UI 的联调等 server-platform-dev console 侧就绪。",
+    "timestamp": "2026-09-16T02:14:12.579Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789525399235-s3yf6b",
+    "from": "api-registrar-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "desktop-policy（锁屏及壁纸管理）专项接口登记完成，已 commit 9099ab2（docs: 前缀，仅 docs/API-REGISTRY.md，+89/-5）。\n\n【本批新增 8 条，合计 159→167】\n■ 二、终端桥接 API：新分组 2.8 桌面管控，BRG-059~063 共 5 条（全部「在用」）\n- BRG-059 GET /api/desktoppolicy/status（引擎状态+显示器布局+四类策略结果摘要，_summarize 归纳 ok|error|skipped|never）\n- BRG-060 POST /api/desktoppolicy/policy-now（立即拉取→应用→回传，后台任务 task_id 格式 dp<epoch>_<seq>，离线兜底 {ok:false,offline:true}）\n- BRG-061 POST /api/desktoppolicy/apply-now（离线重应用缓存策略，无缓存报 apply_failed）\n- BRG-062 GET /api/desktoppolicy/task-status?task_id=（轮询；清理语义实现为 600s、代码注释写 60s 不符，已按实现如实登记）\n- BRG-063 GET /api/desktoppolicy/logs（日志目录+当日尾部≤60行）\n- 代码出处：desktop_policy.py handle_dp_*(1245/1283/1289/1306/1325) + bridge.py:131-135；来源标注 desktop-policy 仓 9bdfcdf / 主应用 08b3547（双仓 desktop_policy.py 副本 MD5 一致已核对 017C788D）\n■ 三、终端↔平台协议：UPL-011~013 共 3 条，状态均标「契约冻结 v1.1 / 服务端未实现」（server-platform P1 在途，server-platform-dev 承接）\n- UPL-011 GET /api/v1/terminals/{tid}/desktoppolicy/policy（revision 增量拉取四类策略；match/mode 枚举冻结）\n- UPL-012 GET /api/v1/terminals/{tid}/desktoppolicy/wallpaper/{id}（整数 id、X-DP-Checksum sha256 校验）\n- UPL-013 POST /api/v1/terminals/{tid}/desktoppolicy/report（error.code 七枚举冻结：blocked_by_security/no_admin/rdp_skipped/file_missing/apply_failed/rollback_ok/rollback_failed；重试 2s/8s/32s，rdp_skipped 与 blocked_by_security 不重试）\n- 终端侧传输层 PlatformTransport（desktop_policy.py:898/903/913）已代码实证；服务端消费方标「待代码实证」\n\n【对账发现 1 个真实缺陷（已如实登记在 BRG-063 条目内）】\nhandle_dp_logs 读 data_dir()/logs/ 子目录（对齐 CONTRACT §4），但主应用运行态无任何 set_log_dir 调用（grep 实证：定义 desktop_policy.py:54，调用仅存在于 desktop-policy/tools 测试脚本）→ 引擎 log() 实际写根目录，主应用内 logs 接口 tail 恒空。建议派单 desktop-policy-dev：主应用启动时 set_log_dir(data_dir()/logs) 或读端兼容双路径。\n\n【遗留待确认（已建 TBC-007 跟踪）】\n1) UPL-011~013 服务端 P1 落地后需对账补代码实证并转「在用」；2) CONTRACT §2 console 组 8 端点（/api/v1/console/desktoppolicy/* overview/wallpapers CRUD/policies/publish/deliveries）不在本批范围，随 P1 验收另行登记。\n\n台账头部统计与对账约定基线均已同步更新。无生产 IP/token，示例全部脱敏。",
+    "timestamp": "2026-09-16T02:23:19.235Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789525774509-ny3tom",
+    "from": "desktop-policy-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "BRG-063 / BRG-062 热修完成，双仓提交：\n\n【实现选择】按你给的第二个方向取了更干净的一种——**log() 默认目录直接对齐**：`data_dir()` → `data_dir()/logs`（CONTRACT §4 口径）。这样无论主应用运行态还是独立运行都不需要装配处补 set_log_dir（零侵入），读端 handle_dp_logs 与写端 log() 天然同路径，`set_log_dir` 保留为测试注入口。logs 目录缺失由 log() 内 makedirs(exist_ok=True) 自动创建。同时修正 handle_dp_task_status 注释 60s → 600s（BRG-062，与代码实际清理周期一致）。\n\n【防回归断言】smoke 0 新增 3 条「主应用态」断言（不注入 set_log_dir 的真实语义）：\n- log() 落盘路径 == handle_dp_logs 读取路径（normpath 比对）\n- tail 含刚写入探针消息\n- logs 目录缺失自动创建\n\n【门禁复核】单测 18/18 OK；E2E 40/40 pageerror=0（不受影响面确认）；冒烟 21/21（18+3）。\n\n【提交】desktop-policy 仓 **c316d87**；主应用仓 **72d51bc**（desktop_policy.py 副本同步，08b3547 之上增量）。登记官台账 BRG-063/062 可关单。",
+    "timestamp": "2026-09-16T02:29:34.509Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789525947288-jz12al",
+    "from": "api-registrar-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "BRG-063/BRG-062 消项已入账，commit 85af21c（docs: 前缀，仅 docs/API-REGISTRY.md，+7/-7）。\n\n【代码实证】（登记后自核，非仅采信口头）\n- 主应用仓 desktop_policy.py @72d51bc：log() 默认目录 `_log_dir or os.path.join(data_dir(), \"logs\")`（:64，写读同路径）+ `os.makedirs(d, exist_ok=True)` 自建目录（:65）；handle_dp_task_status 注释「发起超 600s（10 分钟）后移除（BRG-062：注释与代码对齐）」（:1317）\n- 双仓副本复核 MD5 仍一致：55C856F6（主应用 72d51bc 同步子仓 c316d87）\n\n【台账变更】（条目内追加 > 更新行，历史痕迹保留）\n- BRG-063：⚠️ 缺陷行标注【已消项 2026-09-16（晚）】+ 热修语义与验证记录（冒烟 21/21 含 3 条主应用态防回归断言/单测 18/18/E2E 40/40）；状态转「在用（缺陷已消项：写读同路径，tail 可见）」；代码出处行号 handle_dp_logs 1325→1327（热修后偏移）\n- BRG-062：清理语义备注【已消项】——注释已对齐 600s，实现不变\n- 对账约定：追加 2026-09-16（晚）热修消项基线（c316d87/72d51bc）\n\n【条数】不变，合计 167 条（BRG 63 / UPL 13 / SRV 79 / EXT 7 / DEP 5）。遗留跟踪仅剩 TBC-007（UPL-011~013 服务端 P1 落地后补证 + console 组 8 端点待登记）。",
+    "timestamp": "2026-09-16T02:32:27.288Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789527045510-pk8zlb",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "team-lead，桌面管控 P1 服务端 + 宽度自适应整改双交付完成，回报如下：\n\n【交付物 · commit bb4f248（8 文件 +2162/-9）+ ADR-036/037】\n\n一、桌面管控服务端（ADR-036，契约 CONTRACT.md v1.1 全对齐）：\n- server/desktop_policy.py（新）：壁纸资源库（PUT raw bytes 上传、PNG/JPEG 纯 Python 头解析、sha256 去重、下架引用保护 409）+ 四类策略校验与 CRUD + 匹配推荐算法（exact→aspect_higher_res→default_fallback，容差±0.02）+ 发布全局 revision 单调 + deliveries 状态机（applied/warn/partial/failed + error_code 留痕）\n- 路由：terminal 组 3 端点（policy?revision=&mi= / wallpaper/{id} 带 X-DP-Checksum / report）+ console 组 8 端点（overview/wallpapers GET+PUT+DELETE/policies GET+POST+publish/deliveries；写操作 admin-only 403+审计）；_terminal_api 签名扩展 query 参数\n- 控制台「桌面管控」页：概览 5 卡（7 日告警黄/拦截红告警位）+ 壁纸库（上传/分类筛选/下架）+ 策略分节表单（壁纸池勾选/锁屏/电源计划 custom 联动/超时锁屏 + 发布）+ 下发记录（三重筛选/中文错误码徽章「终端安全软件拦截」等/详情 JSON 弹窗/分页）\n\n二、宽度自适应整改（ADR-037，STYLE.md §9）：\n- AI 分析页降级断点 1080→1200（~1080 挤压实证修复）\n- nettest/config/kb/sysadmin 四页主体 max-width 1180→1400（大断点流式）\n- tabbar overflow-x:auto（8 页签窄视口保护）\n- 资产融合页/桌面管控页审计通过（flex/grid 流式无固定像素）\n\n三、E2E 多宽度门禁（新增 10 项）：1920/1440/1080 三档——无横向滚动条 + AI 页降级断点生效（≤1200 单列/>1200 双栏 computed style 断言）+ 主体容器宽度随视口变化 + 三档互异防固定回归。\n\n【门禁 · 全绿】单测 tools/test_desktop_policy.py 53/53（解析/CRUD/匹配三分支/校验矩阵/状态机）+ mock 冒烟 tools/smoke_desktop_policy.py 31/31（全链路+operator 403 矩阵，二次运行幂等验证通过）+ Playwright E2E 83/83（既有 73 零回归 + 多宽度 10 项）+ pageerror=0 + esprima 106KB + py_compile。\n\n【已知限制】rotation 参数原样下发（P1 无服务端轮换调度）；策略修改需显式发布才 bump revision；deliveries 无自动清理。\n\n【联动】已执行 §9 于桌面管控在途 UI（无需二次整改）；真实联调待 desktop-policy-dev P2 前端就绪后统一安排；部署由你排期。临时诊断脚本 _dp_diag.py/_dp_fix.py 在 tools/ 待处置（同 _hr 系列一并处理即可）。",
+    "timestamp": "2026-09-16T02:50:45.510Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789527304265-hkzcz2",
+    "from": "desktop-policy-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "desktop-policy 联调准备就绪同步（P1/P2 已各自交付，server-platform-dev bb4f248 + 我方 9bdfcdf/c316d87）：\n\n1. 联调预检脚本就绪：desktop-policy 仓 a97a7a5 tools/joint_preflight.py（只读零副作用，不发 report 不污染下发台账）。\n2. 发现一个联调前置条件：本机 uplink 配置 terminal_id 为空（已配置未注册态）——需要你在 winhelper 主应用完成一次平台接入注册生成 terminal_id，终端 3 端点才能通过鉴权。已同步 server-platform-dev 列入其部署后 checklist。\n3. 联调用例分工已与 server-platform-dev 对齐：全链正向（发布→2 分钟生效→applied）+ 本机负向用例（壁纸 blocked_by_security→warn 告警位、锁屏 no_admin——本机即拦截终端，恰好覆盖这两个错误码链路）；壁纸正向生效与多分辨率留 P3 无拦截终端。\n4. 待窗口：server-platform-dev 部署 bb4f248 → 我跑预检回传形状结果 → 双方确认后约你开联调窗口跑全链；届时也请顺带在主应用完成注册。",
+    "timestamp": "2026-09-16T02:55:04.265Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789527832197-wxn7kb",
+    "from": "net-doctor-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【net-doctor-dev】终端侧（winhelper web/）全页宽度审计与整改完成，双仓已提交。\n\n一、审计结论（逐页）\n- 容器级布局全部合规：主页 home-grid / 日志诊断 li-cond-grid+li-charts-row(980px断点) / 磁盘 junk-grid / 性能 perf-live-grid+perf-charts-row(980px断点)+hw-grid / 排障五卡 / 文件检索 / 锁屏壁纸 / 设置弹窗(min(760px,92vw))——均为 grid auto-fit/auto-fill、min() 弹窗、100% 表格、flex-wrap，无固定像素容器。\n- JS 注入的 max-width（disk/appdata/loginspector/home/app）均为表格单元格截断或提示条上限，合规；小输入框固定宽属控件级且均在 flex-wrap 行内。\n- desktoppolicy 页面：仅审计未改动，未发现固定宽容器问题（nd-table 100% + hm-row + flex-wrap），无需 desktop-policy-dev 整改。\n\n二、发现并修复 3 处问题\n1. 主应用 style.css 导航条（全局，最重）：7 个页签在 ≤~1240px 视口挤压换行（Playwright 实测按钮高度 33→50→67→135px，固定 60px 导航条被撑破），≤900px 时设置按钮区被挤出视口。修复：.nav-tab flex-shrink:0 + white-space:nowrap（永不换行挤压）、.nav-tabs min-width:0 + overflow-x:auto（页签条内滚动兜底，页面不出横向滚动条）、≤1240px 断点收紧间距并隐藏标题文字。实测 800/900/1000/1080/1100/1220/1280/1440/1920 全档：页签等高 33px、零横向滚动、操作区不贴边。\n2. 主应用 style.css 磁盘清理：.disk-stats 四列统计无降级断点 → 新增 ≤900px 改两列。\n3. net-doctor 独立测试页：.main-content max-width:1080px 写死窄值违反 §9.1 → 改 1600px 大断点。\n\n三、E2E 多宽度门禁（接入既有 suite：net-doctor/tools/e2e_netdoctor.py）\n- 新增场景 3：主应用三档视口 1920/1440/1080 × 遍历全部 7 菜单——每档断言页面无横向滚动条、导航页签等高不挤压、操作区未贴边挤出、主体容器随视口流式伸缩、排障卡不窄于最小可用宽；另含降级生效断言（1080 标题隐藏收紧 / 1920 完整形态 / 主页卡片 ≥330px minmax 下限 / 卡片宽度 1080→1920 显著增长）。\n- 场景 1 末尾补独立页宽度抽查 5 项（三档无横向滚动 + 主体上限 1600px 断言）。\n- 结果：367/367 全绿，三场景 pageerror=0。回归：主应用 tools/e2e_home.py 26/26 PASS。\n\n四、提交（双仓各自 commit，user=Lujoir）\n- net-doctor 仓 d926941：docs/STYLE.md（§9 规范文档随审计落地一并提交）+ web/netdoctor-standalone.html + tools/e2e_netdoctor.py（+172/-5）\n- 主应用仓 54c5a29：web/style.css（+17 行，纯增量 CSS）\n\n五、说明\n- netdoctor.js 本次零改动，无需双仓 JS MD5 同步；style.css 仅主应用所有。\n- 主应用 web/index.html 存在一处他人未提交改动（desktoppolicy-dev 的 dpLink 徽章），已排除在我的提交之外，请知悉统筹。\n- 本次为纯 CSS + E2E 变更，不涉及后端；如需打包版生效请随下次统一重建 exe。",
+    "timestamp": "2026-09-16T03:03:52.197Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789528124864-4dsno6",
+    "from": "desktop-policy-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "BRG-064 修复完成 + 预检形状结果回传，双仓提交：desktop-policy 仓 b8db71d、主应用仓 0968998。\n\n【修复实现】按你的首选定向，且比预期更省：uplink.py 现成的 handle_uplink_status(None) 公共访问器即满足（返回体含内存 tid，与 bridge /api/perf/uplink/status 同源）——未动 uplink.py 一行、未新增 accessor、无需协调 perf-analyzer-dev。_cfg 三级解析：配置值 → 进程内 uplink 内存 → hostname 同源兜底（复刻 uplink._default_terminal_id 的 WIN-<host> 规则，即服务端注册默认口径）。仍为空抛 not_registered → 轮询跳过 + Engine.last_poll_error 透出（handle_dp_status 新增 terminal_id_ready/last_poll_error/last_poll_ok_ts，前端状态条徽章三态：未接入黄/连接异常黄/正常绿）——「不静默失败」闭环。ADR-006 入档。\n\n【预检形状结果（真实平台 bb4f248）4/4 PASS】\n1. uplink 配置就绪（tid 经进程内直取成功）；\n2. policy 拉取连通（HTTP+JSON）——终端 3 端点真实打通；\n3. policy·unchanged 形状正确（{\"ok\":true,\"unchanged\":true,\"revision\":N}，当前服务端无已发布策略）；\n4. report 保持零副作用未发。\n契约形状与 v1.1 无偏差。\n\n【门禁】单测 22/22（+4 tid 三级解析）、E2E 40/40 pageerror=0、冒烟 21/21。\n\n【全链联调就绪状态】engine_running=true 已在你侧确认；transport 链路已实测通。差最后一步：console 上传测试壁纸（4K）+ 发布策略（per_monitor）→ 终端 120s 内自动拉取执行 → 你侧 deliveries 走 pending→delivered→warn/applied。发布后告诉我（或直接约窗口），本机负向用例（blocked_by_security 红色告警位 + no_admin）随窗口一起跑。",
+    "timestamp": "2026-09-16T03:08:44.864Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789530480847-fey14h",
+    "from": "desktop-policy-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "BRG-065 修复完成，双仓提交：desktop-policy 仓 c39fa2c、主应用仓 4de0678（desktop_policy.py + desktop.py）。可以重建。\n\n【实现】按派单修复，两处增量：\n1. desktop_policy.py 新增 ensure_autostart()（get_engine 旁）：幂等（lock+flag，二次调用返回 False）、后台 daemon 线程、全程异常不崩主进程；首轮拉取前等待 uplink 注册就绪（每 2s 轮询 handle_uplink_status，tid 非空即就绪，上限 60s；超时打 WARN 后照常启动——引擎 120s 周期自动重试 + 离线兜底，即「超时则本轮跳过下轮重试」语义）。等待逻辑抽为 _wait_uplink_ready(timeout, interval, checker) 可注入。\n2. desktop.py 装配处：按 file-search ensure_running 先例（line 62-68 同款形态）追加 5 行 import desktop_policy + ensure_autostart()，失败静默。\n\n【门禁】单测 25/25（+3：幂等/就绪等待/超时路径）；E2E 40/40 pageerror=0；冒烟 21/21；desktop.py py_compile 过。\n\n【联调恢复预期】新 exe 换装后：主应用启动 → dp-autostart 线程等 uplink 注册（服务端已认 WIN-Jun-office-PC，预计 2s 内就绪）→ 引擎启动 → ≤120s 拉取 policy 3 → 壁纸策略本机预期 blocked_by_security→warn（拦截终端负向用例）。你重建换装后我跑日志核验拉取记录 + 你侧 deliveries 状态，负向用例当场闭环。",
+    "timestamp": "2026-09-16T03:48:00.847Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789531435819-b8pws0",
+    "from": "desktop-policy-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "BRG-066 分类精化完成，双仓提交：desktop-policy 仓 a207b4e、主应用仓 743f280。可随下批重建。\n\n【根因确认 + 修复】你的猜想命中：本机引擎日志 11:48:59 自动启动后零应用记录——异常发生在 verify 之前被 Engine except 吞掉（日志盲区），分类被 apply_failed 抢先。修复三层：\n1. apply_wallpaper 阶段化：画布/SPI 调用本身异常 → apply_failed（执行确实失败）；SPI 已执行之后的任何异常（读回/抓屏/存档）不抛、不掩盖判定——仍跑三件套（转码 mtime/注册表落位），不过即 blocked_by_security。覆盖拦截形态识别：安全软件可能在 SPI 广播后的系统转码阶段拦截，即使终端侧某步再炸也不丢分类。\n2. 重试语义修正：blocked_by_security 不再重试（CONTRACT 既有约定，拦截场景不再白跑 3 次拼接+SPI）。\n3. 日志盲区补齐：apply_wallpaper 各阶段 + Engine 所有 except 分支 ERROR 日志（本次事故正是靠日志铁证定位，堵住下一个盲区）。\n\n【门禁】单测 30/30（+5 分类形态：画布失败/SPI失败/三件套不过/读回+抓屏异常仍判/注册表落位）；E2E 40/40 pageerror=0。\n\n【验证路径】重建换装后本机重发策略（或等 rev3 轮询重拉）→ 预期 deliveries 落 warn/blocked_by_security（红色告警位）→ 你侧核对。P3 无拦截终端 applied 正向用例不受影响。剩余 P3 项（无拦截终端复测/提权助手安装器/Win10 实测）等你排期。",
+    "timestamp": "2026-09-16T04:03:55.819Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789532316760-ue2uqa",
+    "from": "desktop-policy-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "BRG-067 修复完成（本机复现驱动，三连修），双仓提交：desktop-policy 仓 807c986、主应用仓 5529cd7。\n\n【复现方法】直接调引擎 build_stitch（真实双屏 4240x1440 + 已下载缓存壁纸），迭代拿 traceback。\n\n【三连修】\n1. 生产 TypeError 根因（铁证复现）：ctypes.c_char_Array 元素访问返回单字节 bytes 对象而非 int（ctypes 特例，探针实证 elem type=bytes）——_png_encode 的 row[di]=buf32[si] 赋值即炸，报错文案与你收到的完全一致。修复：统一 bytes(buf32) 收敛。spike 脚本通过的原因：spike 用纯 Python 画布不经 GDI+ DIB 缓冲，c_char_Array 路径是引擎独有。\n2. GdiplusStartupInput 结构错误：只 pack 16 字节（64 位正确 24 字节：ULONG+指针+2×BOOL），越界读行为未定义——正确定义 Structure + argtypes/restype 规范化。这正是 spike 与引擎的差异面之一。\n3. per_monitor_files 越界 IndexError：服务端仅对有匹配的屏下发（policy 3 只有主屏 1 项），per_monitor_files(1) < monitors(2)，per_monitor_files[i] 越界——fallback 逻辑写在 or 里但索引在前。修：越界取 None 走 fallback。\n4. build_stitch 本机全链 BUILD OK（28.8KB 拼接图），三连修后复现脚本转绿。\n\n【门禁】单测 32/32（+2 c_char_Array 类型回归）；E2E 40/40 pageerror=0；冒烟 21/21。\n\n【你问的两个连带】\n1. republish/rev4：若 publish bump 了 rev4，deliveries 应有新行；你脚本按 id/时间倒序取首行即可分辨。若确认没 bump，是 server-platform-dev 侧问题，转它核。\n2. 清理 SQL 已随修复提交：desktop-policy/docs/cleanup_test_policies.sql——清 policies #1/#2 残行（保留 #3 供修复核验对照），deliveries 残行按需注释开关，含执行前备份提醒。\n\n【重测路径】重建换装 → 终端重拉 rev3 → 预期本机拦截形态下 blocked_by_security→warn 红色告警位（BRG-066 阶段化分类此时才能真正到达判定点——你判断正确，此前崩溃在 SPI 之前分类无从谈起）。",
+    "timestamp": "2026-09-16T04:18:36.760Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789532879985-usuqr3",
+    "from": "desktop-policy-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "BRG-067「未根除」判定需要修正——**换装源版本滞后，非修复无效**。三项要求已完成，双仓提交：desktop-policy 仓 9cdb2b0、主应用仓 349d2f9。\n\n【时间线铁证（git --no-pager log）】\n- 12:03:19 → 743f280（BRG-066 分类精化，**不含** BRG-067 修复）\n- **12:04 → 你的 exe 构建（只含到 743f280）**\n- 12:17:56 → 5529cd7（BRG-067 三连修，主应用仓）\n所以 12:07:30 的同签名 TypeError 是**旧代码运行**，修复从未在 exe 里执行过。请下批重建时先 `git log -1` 确认源包含 5529cd7 之后的 **349d2f9**（当前最新）。\n\n【你要求的三件事】\n1. **堆栈日志已补**：apply_wallpaper 执行阶段异常 / Engine 壁纸+锁屏未预期异常 / GDI+ startup 失败，全部 `traceback.format_exc()` 带行号——下一轮若仍崩，日志直接给崩溃行。\n2. **全局赋值点排查（已闭环）**：运行时 c_char_Array 元素级赋值唯一漏网点就是 _png_encode（已收敛）；grab_screen 的 `src = bytes(buf)` 转换本就存在（spike A 抓屏存档 PNG 已验证过该路径）——确认无其他漏网。\n3. **复现脚本转绿**：BUILD OK（真实双屏 4240x1440，28.8KB）。\n\n【另修一处自伤】BRG-067 修复时引入的锁屏 except 缩进错位（把 30/30 门禁跑完后的文件又弄歪了）——本轮修正，py_compile 过。\n\n【门禁】单测 32/32；E2E 40/40 pageerror=0；冒烟 21/21。\n\n【重建请用】desktop-policy 仓 **9cdb2b0** / 主应用仓 **349d2f9**（或更新）。换装后无需人工干预：引擎自动启动（BRG-065）→ 重拉 rev3/rev4 → 本机预期 blocked_by_security→warn 红色告警位（BRG-066 阶段化分类）→ 若意外仍崩，日志带行号一次定位。",
+    "timestamp": "2026-09-16T04:27:59.985Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789535099305-7okdcj",
+    "from": "net-doctor-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【net-doctor-dev】journal 自愈 + 检索展示增强 合批交付完成，双仓已提交，全部门禁绿。\n\n一、journal 失效自愈（ADR-006，fs_indexer.py）\n1. consume_volume 命中失效族（err ∈ {1178,1179,1180,1181} 或 journal_id_changed）→ 自动重置该卷（DELETE usn_state 连带 files 全清，半新半旧不可留）→ 返回 {\"ok\":false,\"error\":\"journal_reset\",\"rebuild\":true,\"src\":...}；非失效码（如实测 err=50 用例）仍普通上报、游标保留。\n2. run_once 对 rebuild=true 当场 build_volume（幂等、partial 语义保护）+ 重建成功后再消费一轮——单轮自愈闭环，report 以 journal_reset_rebuild 条目留痕。\n3. 语义边界：INFO 级「日志已重置，重建索引（卷 X:）（reason）」；ADR-006 已入 docs/DECISIONS.md。\n\n二、本机真实实测（管理员会话，D 盘自愈实证）\n- 探测轮：D 盘 consume read err=1181 → journal_reset → 当场重建 records=894611（107 轮，drops 仅 parent_not_found=7）→ 再消费 ok applied=2——单轮闭环，符合预期 1-2 分钟。\n- 四卷健康：C=partial 跳过、D/F/G/S 全 consume_ok；增量命中 0.6s；删除失效 PASS。\n\n三、smoke 增强\n- sqlite 冒烟 T8 组 10 项：id 变化/1181/1180 触发重置 + 重置清空验证 + 非失效码不重置 + run_once 闭环单轮完成（modes==[consume,journal_reset_rebuild,consume]）+ 重建后游标落新 ID + 旧索引零残留。\n- fs_smoke_real 增量目标卷改为健康探测轮选择：consume ok=健康；journal_reset_rebuild ok=自愈重建成功亦算健康（D 盘路径）；重建失败才 fallback 下一健康卷——单卷日志失效不再阻塞全链判定。\n\n四、检索结果展示增强（对标资源管理器详情视图）\n1. 行首类型图标：内联 SVG（零外部资源零依赖）按扩展名类别映射 + 着色（文件夹黄/Word 蓝/Excel 绿/PPT 橙红/PDF 红/图片/视频/音频/压缩/可执行/代码/文本/通用 15 类）；图标列与名称列合并「名称」单元格（图标+名称同行 Explorer 形态）。\n2. 类型列友好化：XLSX 工作表/PDF 文档/文本文件/PNG 图片文件/MP4 视频/压缩文件/可执行文件/「XXX 文件」兜底；目录一律「文件夹」（is_dir 强制分支，名称带点也不误判）；无扩展名文件兜底「文件」。\n3. 后缀保留全链核查：search_service name 字段原样返回、前端原样渲染，零剥离；is_dir 字段服务端已备（前端纯改生效）。\n\n五、门禁（三引擎全绿）\n- sqlite 冒烟 47/47（新增 T8 自愈组 10 项）\n- E2E 69/69（新增展示断言 8 项：四类 SVG 齐备/零 emoji/目录=文件夹/友好名/无扩展名兜底/后缀原样/图标名称同行/主应用同步抽查；既有断言零回归。顺带修正 2 条过时断言：折叠形态「两卡默认收起」→ 实际交付形态为检索卡默认展开+状态卡隐藏（上轮迭代遗留未跟上，实测两场景同状态）；类型列排序断言随友好名更新）\n- 真实 smoke 10/10（新增目标卷健康探测断言；契约断言补 is_dir 字段）\n\n六、提交与同步\n- file-search 仓 cde57cb：fs_indexer.py/search_service.py/DECISIONS.md(ADR-006)/web/filesearch.js+standalone/tools 三件（8 文件 +656/-51，含上轮未入库的展示迭代遗留一并合批）\n- 主应用仓 2af8a06：web/filesearch.js 同步，双仓 MD5 一致（1ebb4a57）\n- 说明：主应用 web/index.html 工作区存在多 agent 交织的未提交改动（desktoppolicy dpLink + filesearch 结构与 fs-icon 样式含我部），E2E 已在当前工作区状态 69/69 验证通过，建议 main 统筹一并提交；exe 换装随下批统一。",
+    "timestamp": "2026-09-16T05:04:59.305Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789535883889-rh5plx",
+    "from": "net-doctor-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【net-doctor-dev】「检索状态与设置」卡移除完成，双仓已提交，门禁全绿。\n\n一、DOM 整卡清理（非藏尸）\n1. 主应用 web/index.html：状态卡 section-card 整块删除（含「检索状态与设置」标题/刷新状态按钮/fsStatusSummary/fsStatusBody）。\n2. 独立页 filesearch-standalone.html：同款整卡删除（原为 display:none 隐藏+保留代码，本次按需求一并清死代码）。\n3. filesearch.js 死代码清理：fsLoadStatus 函数删除、initFileSearchTab 中两处调用移除（重复 init 现为纯 return）、无调用者的 fsBadge 通用徽章函数一并删除——全项目零残留引用（已 grep 验证）。\n\n二、「索引未就绪」指引并入检索卡（确认复用既有错误路径）\n- fsRenderError 的 indexer_not_running 路径已具备完整指引文案（「文件索引未就绪：索引器首次运行需要数分钟，请稍后重试；如持续未就绪请联系管理员检查索引器状态」），同时显示于检索卡摘要行与结果区——用户点「开始检索」时引擎未就绪即得明确指引，零新增代码复用。\n- 引擎状态自检照常在服务层（fs_indexer/status 端点原样保留），仅 UI 不展示；前端不再拉取渲染。\n\n三、E2E（tools/e2e_filesearch.py，70/70 全绿、两场景 pageerror=0）\n- 状态卡断言替换为零残留断言 ×2（独立页+主应用）：无 fsStatusBody/fsStatusSummary DOM、页面无「检索状态与设置」「刷新状态」字样（注：「索引(未)就绪」不做全局文案查——未就绪指引并入检索卡属预期语义，errorcase 断言覆盖其正确展示）。\n- 未就绪指引断言强化：摘要+结果区双处可见（含「管理员」检查指引）。\n- 折叠形态断言适配：卡数 2→1（检索卡默认展开）。\n- 函数断言列表移除 fsLoadStatus；其余检索/排序/筛选/右键/展示增强断言全保留零回归。\n\n四、顺手修复（本轮复跑暴露的上轮遗留缺陷）\n- sqlite 冒烟 T8 组子库文件名加 pid 后缀进程级唯一 + main 开头统一清理 %TEMP% 残留——上轮冷库侥幸通过、复跑即撞 UNIQUE/文件锁，已根治；连续两轮 47/47 验证。\n\n五、门禁汇总（全量零回归）\n- filesearch E2E 70/70；sqlite 冒烟 47/47 ×2；net-doctor E2E 367/367（7 菜单遍历含 filesearch）。\n\n六、提交\n- file-search 仓 7a88b91（4 文件 +37/-68）\n- 主应用仓 7e00f4c：web/filesearch.js 同步，双仓 MD5 一致（fe6fafad）\n- 说明：主应用 index.html 的状态卡删除改动在工作区已生效并经 E2E 验证，但该文件仍与 desktoppolicy 在途改动（dpLink 等）交织，维持建议由 main 统一提交；exe 换装随下批。",
+    "timestamp": "2026-09-16T05:18:03.889Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789536152939-1afw3l",
+    "from": "net-doctor-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【net-doctor-dev】检索页文案清理（Everything 品牌残留）完成，双仓已提交，E2E 72/72 全绿。\n\n一、说明句核查结论\n「输入关键词即时检索全盘文件名（支持 Everything 语法），结果可定位到所在目录」在主应用 index.html 与独立页 HTML 中**均已不存在**（上轮检索状态卡/结构迭代时已随卡体移除，两处 fsSummary 现为空容器由结果状态动态填充）——本批确认零残留并补断言固化。\n\n二、全局清「Everything」字样（自研引擎后失实，共 6 处）\n1. 用户可见文案 1 处：空查询提示「请输入搜索关键词（支持 Everything 语法，如 ext:pdf，大小写不敏感）」→「请输入搜索关键词（支持语法筛选，如 ext:pdf，大小写不敏感）」。\n2. filesearch.js 注释 4 处（chips 筛选/ext 拼接/sort 透传/类型前端排）中性化为「ext: 语法」「服务端 sort 参数」等表述。\n3. search_service.py _parse_query docstring 1 处中性化。\n- 清理后 file-search/web/ 目录 Everything 字样 grep 归零；工作区根 file_search.py（旧版遗留文件，非 filesearch 领地）有 1 处注释，未动（不在任务范围）。\n- E2E tools/e2e_filesearch.py 的 FakeEverything 兼容桩类名属测试基础设施（模拟旧 HTTP 形状），非页面文案，保留未动。\n\n三、placeholder（按要求保留）\n「输入关键词，如 report 或 ext:pdf」中性无品牌，零改动；E2E 断言其含 ext:pdf 且无 Everything。\n\n四、E2E（72/72 全绿，两场景 pageerror=0）\n- 新增零残留断言 ×2（独立页+主应用）：页面文本无「Everything」「即时检索全盘」「可定位到所在目录」三组字样 + placeholder 中性校验。\n- 既有断言（检索/排序/筛选/右键/展示增强/状态卡零残留/未就绪指引）全保留零回归。\n\n五、提交\n- file-search 仓 72c3c84（filesearch.js + search_service.py + e2e_filesearch.py，+19/-6）\n- 主应用仓 175c1cf：web/filesearch.js 同步，双仓 MD5 一致（1da6db78）\n- exe 换装随下批统一。",
+    "timestamp": "2026-09-16T05:22:32.939Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789537071442-vnj34m",
+    "from": "net-doctor-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【net-doctor-dev】检索排序/筛选增强三项完成，双仓已提交，门禁全绿。\n\n一、四列表头排序（名称/类型/大小/修改时间，均正序+倒序）\n- 名称/大小/修改时间：sort/ascending 透传沿用（既有），表头箭头 ▲▼ 四列全覆盖（既有 arrow() 确认覆盖 ext 列）。\n- **类型列排序服务端化**：search_service FS_SORTABLE 新增 ext（扩展名字典序表达式）。**目录语义定案并已文档化**：目录固定排最前（is_dir DESC，不随正倒序翻转，组内按名称稳定序）；文件按扩展名字典序（无扩展名文件的扩展名段=文件名整体自然参与字典序），同扩展名按名称稳定序——服务端全量排序，前端仅当页 200 条排序的旧逻辑删除（fsSortBy 的 ext 前端排特判与 fsRenderResults 前端 sort 块均已清理，四列统一服务端重查）。换列复位正序/同列翻转语义沿用。\n\n二、类型筛选增强\n- 既有 chips（全部/pdf/doc(x)/ppt(x)/xls(x)/zip/exe/txt）与「选择类型」下拉多选保留。\n- 新增「自定义」输入框（类型下拉与修改时间之间，placeholder「如 dwg,psd,7z」）：中英文逗号/分号/空格分隔多扩展名 → 小写归一 + 合法性过滤（[a-z0-9]）→ ext: 多值 OR 拼接。\n- **互斥切换**：自定义输入生效时自动清 chips 与类型下拉选中态；点 chips 或勾选下拉时自动清自定义框——选中态始终唯一清晰。\n\n三、修改时间日期范围筛选\n- 核查结论：日期区间能力上轮迭代已实现（起日 00:00:00 / 止日 23:59:59 天边界、闭区间、与 kw/ext AND 组合、清空不过滤、UI 原生 date 输入位于类型预筛行内符合 §9）——本批按任务要求补 **mtime_from/mtime_to 规范参数名**（优先），date_from/date_to 保留为兼容别名，前端契约不变。\n\n四、门禁（全绿）\n- 服务端单测（sqlite 冒烟 T9 组 7 项）：ext 升序/倒序语义（目录不翻转+字典序+同名稳定）、mtime_from/to 闭区间单端与双端边界、date_from 别名等价性、组合查询（关键词+ext AND 日期区间）——54/54。\n- E2E 77/77：类型列服务端化断言（发请求 sort=ext&ascending=1/0，替换原「前端排不发请求」断言）、升序/倒序显示序断言（stub 同步模拟 ext 排序）、自定义 ext 拼接（中英分隔+大小写归一）、chips 与自定义互斥、组合场景（自定义 ext AND 日期区间）、日期清空后不透传；既有断言零回归（右键用例行定位同步改为按文件名定位，消除排序对行序的耦合）。\n- net-doctor 全量门禁 367/367（7 菜单遍历含 filesearch）零回归。\n\n五、提交与同步\n- file-search 仓 894f20a（search_service.py + filesearch.js + standalone + 两 tools，5 文件 +161/-38）\n- 主应用仓 61ede27：web/filesearch.js 同步，双仓 MD5 一致（41008d12）\n- 主应用 index.html 的自定义输入框改动在工作区生效并经 E2E 验证（该文件仍有 desktoppolicy 在途交织改动，维持由 main 统一提交的建议）；exe 换装随下批。",
+    "timestamp": "2026-09-16T05:37:51.442Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789554812789-yzp6xa",
+    "from": "desktop-policy-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "BRG-068 电源增强交付完成，双仓提交：desktop-policy 仓 e7ee40e、主应用仓 2bbf881。可随下批换装。\n\n【两件交付】\n1. 本机电源状态读取：/api/desktoppolicy/powercfg/read——激活方案名 + 关闭显示器/进入睡眠（STANDBYIDLE，实测别名非 SLEEPIDLE）/硬盘关闭超时，AC/DC 双通道秒值（0=从不），查询无需管理员；status 接口同时并入 power_state + power_managed。\n2. 本机修改：/api/desktoppolicy/powercfg/set（同步，秒级 4 字段 AC/DC 独立）——回读校验已补（并行版缺失）：读回值≠目标 → apply_failed 不静默成功；日志留痕改前→改后；本机手动改动无快照备份（用户主动行为等同控制面板操作），下次策略发布覆盖——页面电源行已加「策略管控中/本机自管」徽章 + 电源卡一句优先级说明（简体中文零实现细节）。\n\n【重要整合说明】发现 bridge.py/前端电源卡已被并行会话先行实现（handle_dp_powercfg_read/set 命名 + dpLoadPowerCfg 前端）——我方顺应既有契约补齐引擎侧 handler（不动 bridge 已挂路由名），并清理了重复定义（我先前 Copy 引入的第一套 handler）。另 E2E 桩补 uplink connected 桩——并行会话给 initDesktopPolicyTab 加的「未接入平台禁止进入」门禁曾致 40/40 回归（tab 被弹回主页），已修，该门禁产品行为保留。\n\n【顺带核对结论】状态卡显示旧 failed/apply_failed 非前端缓存 bug——status 直读 state.json（引擎每次 tick 落盘），截图时刻引擎尚未拉取 rev5；rev5 blocked_by_security 上报后 state 已更新，重开页面即显示最新。电源行「最近应用时间」此前已有，可分辨新旧。\n\n【门禁】单测 39 OK（+10 电源：解析样例/换算/命令构造/回读失败/负数参数/handler 形状）；E2E 40/40 pageerror=0；冒烟 21/21。",
+    "timestamp": "2026-09-16T10:33:32.789Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789557338062-gtsfnc",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【power-control P0 交付完成】只读快照引擎 + 企业线读取适配（M720t 实测契约）+ 服务端存档 + 主应用菜单首版，门禁全绿。\n\n## 一、改动清单\n\n**power-control/ 子项目（新建，已 git init；⚠️ commit 未执行，见遗留⑤）**\n- power_control.py — 终端侧引擎：五段只读采集（机型 Win32_ComputerSystem / BIOS 企业线探测与 CurrentSetting 解析 / powercfg /waketimers / schtasks 关机任务 / 快速启动 winreg+powercfg /a 交叉）+ PlatformReporter（语义复制 desktop_policy Transport，不 import uplink）+ 12h 节流自动上报 + 手动上报 handler；全部 CREATE_NO_WINDOW+超时+重试 3 次+日期分日志\n- docs/DECISIONS.md（ADR-001~005）、docs/ARCHITECTURE.md、README.md\n- web/powercontrol.js（pc 前缀）+ web/powercontrol-standalone.html\n- tools/test_power_control.py（37 mock 单测）/ smoke_power.py（本机真实采集）/ e2e_powercontrol.py（Playwright 双场景）/ fixtures/lenovo_bios_m720t_20260916.txt（你提供的 255 项实测 dump 已固化）\n\n**主应用（最小侵入 4 文件 + 2 新文件）**\n- power_control.py（根，同步副本 MD5 一致 552F0998…）\n- web/powercontrol.js（同步副本 MD5 一致 7E10B342…）\n- bridge.py：+2 路由 /api/powercontrol/snapshot、/api/powercontrol/report\n- web/index.html：导航「自动开关机」（锁屏及壁纸管理之后）+ tab 面板（状态条+四快照卡+平台存档卡）+ script + 首帧自愈 INITS\n- web/app.js：switchTab 守卫 1 行\n\n**server-platform（遵循 ADR-002 零依赖，desktop_policy 模块同款形态）**\n- server/power_control.py（新）：PowerControlStore（power_snapshots 时间线表，WAL 自持连接）\n- server/app.py：ctx.pc 挂载 1 行；server/api.py：终端 POST 分支 + _console_powercontrol 查询组\n- tools/smoke_power_srv.py（smoke 10/10）\n- docs/API-REGISTRY.md：已登记 SRV-080/081（服务端）+ BRG-064/065（桥接）\n\n## 二、门禁数字（全绿）\n- mock 单测 37/37（解析器 17 项全用 M720t 实测字符串；含 fixture dump 全量解析断言）\n- 本机真实 smoke 14/14：消费线判定 lenovo_consumer→不支持远程配置✓、企业线类未检出✓、waketimers 非管理员 need_admin=true 如实上报✓、HiberbootEnabled=1→快速启动开启✓、日志落盘✓、源码零 shutdown 调用✓\n- 服务端 smoke 10/10（终端上报/未注册 404/控制台最新+历史/未知终端 404/limit/非 dict 拒绝）\n- E2E 70/70（独立页：企业线/消费线/错误三分支渲染+上报链路+三档宽度 1920/1440/1080+1600px 大断点；主应用：8 菜单遍历+菜单位置断言+powercontrol 数据填充+样式基线 13.5px/15px17px 抽查+防破坏）；pageerror=0 双场景\n- lints 0；py_compile 全过（-W error::SyntaxWarning 干净）\n\n## 三、本机真实快照样例（JUN-OFFICE-PC，消费线分支实测）\n{\"schema\":1,\"collected_at\":\"2026-09-16 18:42:46\",\"machine\":{\"hostname\":\"JUN-OFFICE-PC\",\"manufacturer\":\"LENOVO\",\"model\":\"91AY000LCP\",\"system_family\":\"IdeaCentre GeekPro-17IAX\",\"vendor_line\":\"lenovo_consumer\",\"capability\":\"not_supported\"},\"bios\":{\"remote_configurable\":false,\"wmi_class_found\":false,\"reason\":\"本机 BIOS 未提供企业线远程配置接口，如需定时开机请在开机时进入 BIOS 菜单人工设置\"},\"wake_timers\":{\"ok\":true,\"need_admin\":true,\"count\":0},\"shutdown_tasks\":{\"ok\":true,\"count\":0,\"items\":[]},\"fast_startup\":{\"registry_present\":true,\"hiberboot_enabled\":1,\"available\":true,\"enabled\":true},\"errors\":[]}\n完整输出：power-control/tools/smoke_out.txt\n\n## 四、M720t 实测对齐（ADR-005，含对 SPEC 的一条修正建议）\n- 解析器按实测两形态重写：\"A,B;[Optional:…]\" 与 \"A,[V][Status:ShowOnly]\"；[Excluded…] 括号段归 note；空值项容错跳过\n- 唤醒定时器真实格式（[SERVICE] … 设置的计时器在 HH:MM:SS 过期(位于 …) + 原因: …）与旧文档格式双兼容\n- **SPEC §3 修正建议**：M720t 支持 Weekly Event + 逐日开关（Sunday~Saturday）→「工作日开机」可直接用 Weekly Event+周一~五 实现，优于「每天开机+周末回关」组合；P2 策略模板按机型能力动态选择\n\n## 五、遗留与风险\n① git commit 被环境拒绝（git init 已完成、文件已暂存）——主仓与子项目提交请 main 统筹执行\n② 企业线写入/还原（P1）、批量下发（P2）未动工；lenovo_bios_probe 探查工具在 main 手中，商用机复测数据可直灌 fixture\n③ need_admin 场景：主应用运行态若非管理员，唤醒定时器卡显示「需管理员权限查看」——提权形态与 desktop-policy-dev 的权限定案对齐复用（P1 一并定案）\n④ 心跳随载上报列入 P1（当前为菜单打开自动上报 12h 节流 + 手动按钮；未动 uplink.py 一行）\n⑤ 控制台 UI 展示端点 SRV-081 已就绪，控制台页面接入请 server-platform-dev 排期（已另发消息）\n⑥ exe 未重建（由 main 统筹）——重建后主应用菜单才可用；bridge 双路由已就位",
+    "timestamp": "2026-09-16T11:15:38.062Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789557456967-7tmmz7",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "team-lead，报备两项：\n\n1. **power-control P0 核查通过**：power-control-dev 在 server-platform 仓落的自动开关机只读快照增量（power_control.py 新模块 + terminal 6 段分支 + console 钩子，SRV-080/081）已核查——基于 bb4f248 之后无行级冲突，py_compile OK，同服务双模块冒烟共存验证全绿（desktop-policy 31/31 + power-control 10/10）。其控制台 UI（SRV-081：按终端最新快照 + 时间线 + capability 徽章）我已确认承接，初步形态为终端监控页详情卡 + 时间线弹窗，**排期待你拍板优先级**（当前队列：火绒融合联调待部署、desktop-policy 部署联调待窗口、power-control UI 待排）。\n\n2. **部署批次建议**：当前 server-platform 待部署增量有三笔且互不冲突、均无迁移脚本负担——①火绒融合 UI（258a78e，huorong-dev 后端 9ab89ac 已入库）②桌面管控服务端+UI（bb4f248）③power-control P0（工作区未提交，建议其提交后并入）。可合并同批部署，一次重启生效；部署后联调依赖：桌面管控需终端注册 terminal_id（用户在主应用操作）+ 火绒凭据已注入。\n\n请拍板部署批次与 power-control UI 优先级。",
+    "timestamp": "2026-09-16T11:17:36.967Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789557650699-dtejn0",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "team-lead，部署前置①已完成：power-control P0 增量已入库——**新 commit ec726af**（5 文件 +334 行：server/power_control.py 新模块 + api.py terminal/console 分支 + app.py ctx.pc 挂载 + tools/smoke_power_srv.py 冒烟 + DECISIONS ADR-038）。请推送 main 主仓指针到 ec726af。\n\n同批部署最终清单（HEAD=ec726af 全含）：\n- 火绒融合 UI（258a78e）+ huorong 后端（9ab89ac/a6282bf 已在历史）\n- 桌面管控服务端+UI（bb4f248，ADR-036）\n- 宽度自适应整改（bb4f248 内 ADR-037）\n- power-control P0 服务端（ec726af，ADR-038）\n全部无迁移脚本，一次重启生效。部署后联调依赖：桌面管控需终端注册 terminal_id（用户主应用操作）、火绒凭据已注入、desktop-policy 预检（desktop-policy-dev 跑）。\n\npower-control 控制台 UI（SRV-081）按第三批排期执行（终端监控详情卡+时间线弹窗形态，capability 枚举只增+未知值中性兜底约束已收录）。等你的部署窗口。",
+    "timestamp": "2026-09-16T11:20:50.699Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789557651538-jhdqf7",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "power-control 收到验收结论与统筹提交，确认三点：\n\n1. **MD5 差异根因（已查明，以 cf0d33cd 为准正确）**：汇报时测的 552F0998 是「docstring \\w 转义 SyntaxWarning 修复**前**」的测量值；修复后我重新同步了根副本但未回填汇报——修复导致引擎内容变化 → 最终值 cf0d33cd（刚实测子仓与主仓均为 CF0D33CD140A3A24DDF4D0E8096ADBDB，一致）。汇报后微调判断正确，仅补充：该次微调只动了 docstring 一处转义，零逻辑变更，门禁结果不受影响。\n\n2. **docs/ARCHITECTURE.md 未提交改动（下批带上即可，纯文档零代码影响）**：内容两处——①新增「capability 枚举约定」（与 server-platform-dev 对齐的产物：取值只增不改、两态语义冻结、P1 中间态只允许新增如 enterprise_auth_required、消费方对未知值兜底中性样式 + 展示 capability_text 原文）②快照形状块残留 v1 rtc 键（master/hour/minute…）对齐为 ADR-005 v2 实测契约（alarm/alarm_on/time/user_time/date/day/weekdays/after_power_loss/wake_on_lan/cycle_text/summary）。SRV-081/BRG-064 消费以登记形状为准，不受影响。\n\n3. **P0 关闭确认**：SPEC §3 修正（Weekly Event+周一~五 优先、每天+周末回关降为低代次兜底、P2 按机型能力动态选择）已同步入 ADR-005 第 4 条，无进一步动作。P1 三项遗留（ARCHITECTURE 补交 / 心跳随载上报 / need_admin 提权形态与 desktop-policy 权限定案对齐）已挂账，等 main 排期与 M720t 实机窗口，我随时可开工。",
+    "timestamp": "2026-09-16T11:20:51.538Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789557736189-g22j0q",
+    "from": "api-registrar-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "power-control P0 批次接口登记复核归档完成，commit a05a9f2（docs: 前缀，仅 docs/API-REGISTRY.md）。\n\n【批次内容】power-control-dev 直接写入台账的 4 条，经我代码实证复核后归档，编号无冲突：\n- SRV-080 POST /api/v1/terminals/{tid}/powercontrol/snapshot（终端快照上报，X-ETP-Token+准入，power_snapshots 表，256KB 上限）——§1.13 新组\n- SRV-081 GET /api/v1/console/powercontrol/terminals/{tid}/snapshots（控制台查询 latest/历史，X-ETP-Console-Token）\n- BRG-064 GET /api/powercontrol/snapshot（本机只读采集，12h 节流后台自动上报）\n- BRG-065 GET /api/powercontrol/report（手动立即上报，未接入平台返回友好指引）\n\n【代码实证结论】\n- 主应用挂载属实：bridge.py:60 + :144-145（commit 2bbf881）\n- 服务端实现在位但**未提交**：server-platform/server/api.py:462-476/965-966/1244+ 均为工作区 M 状态（子仓 bb4f248 之后无提交）——SRV-080/081 已标注「commit 待补」，power-control-dev 提交后我消项\n- 主应用根 power_control.py 与子仓副本一致（31.78KB）\n\n【复核修正 4 项】（原登记漏项，已补）：①头部统计同步 167→171 ②BRG-064/065 从 2.8 桌面管控组划出、独立 2.9 组（原归属错误）③SRV-080/081 补脱敏 curl ④代码出处补精确行号与挂载 commit。\n\n【两个流程提醒】（已同步 power-control-dev）：\n1. 2bbf881 为混合主题提交且信息写「BRG-068」——台账无此编号、主题与内容不符；功能无碍但建议后续提交单主题化。\n2. 子 agent 直接写台账前建议先对齐登记规范（本次漏了头部统计与分组归属，我已兜底修正）；后续批次仍欢迎直接登记+我复核，或直接下发给我登记均可。\n\n【台账现状】合计 171 条（SRV 81 / BRG 65 / UPL 13 / EXT 7 / DEP 5）。遗留跟踪：TBC-007（desktop-policy 服务端 P1 补证）+ power-control 服务端 commit 待补。另 2bbf881 中 desktop_policy.py 增量（read_power_state）不改 BRG-059~063 响应结构，行号漂移已在 2.8 组级注记。",
+    "timestamp": "2026-09-16T11:22:16.189Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789557946002-l9tzmr",
+    "from": "api-registrar-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "SRV-080/081 消项完成 + 一处出处更正 + 一个需要你统筹的分叉提醒，commit 69d85ba（docs:，仅台账，+9/-9）。\n\n【消项（已实证）】\n- server-platform **ec726af** 在子仓 HEAD（bb4f248 之后），git show 实证 5 文件 +334（api.py +54 / app.py +3 / power_control.py +134 / smoke_power_srv.py +136 / DECISIONS.md +7），api.py/app.py/power_control.py 工作区复核干净——SRV-080/081「commit 待补」注记已消项为「ec726af（ADR-038）」，头部统计同步，对账约定追加拉链记录。\n\n【出处更正（我此前登记有误，已自纠留痕）】\n- BRG-064/065 挂载出处由 2bbf881 更正为 **17f506c**：git show 实证 17f506c 的 bridge.py 仅 +4 行（import:60 + ROUTES:144-145）且 power_control.py 全文件 808 行首次入库——我此前把工作区未提交的挂载误归了 2bbf881（该提交 bridge.py 19 行实为 desktop-policy 增量）。台账条目内已追加更正行（保留误判痕迹）。\n\n【⚠️ 分叉提醒（需你统筹）】\n17f506c 里包含 docs/API-REGISTRY.md **+43 行（power-control-dev 的原版登记）**，且你已随 1bbcaba 推送远端；而本地 main 上我的 **a05a9f2（4 项复核修正：统计同步 167→171 / BRG-064/065 独立 2.9 分组 / SRV curl / 精确行号）+ 69d85ba（本批消项）** 与之并存。两个版本对同一批条目内容不同（修正版更完整）。建议：合并对账时**以本地修正版为准**（或把 4 项修正重新套到远端版本上），否则远端台账会停留在「无 2.9 分组、统计 167、无 curl、出处含误归 2bbf881」的状态。我不擅自 pull/merge/rebase，等你定合并策略后我做合并后的台账一致性校验。\n\n【台账现状】合计 171 条（SRV 81 / BRG 65 / UPL 13 / EXT 7 / DEP 5）；遗留跟踪仅 TBC-007（desktop-policy 服务端 P1 补证 + console 组 8 端点待登记）。",
+    "timestamp": "2026-09-16T11:25:46.002Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789557951627-9eyj22",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "team-lead，部署后核验完成 + 一笔小补丁，回报如下：\n\n【生产只读核验结果（8443，零写入）】\n1. 火绒融合回归 PASS：overview 710 终端/89 组/Win7 115，last_sync 刚刷新（同步线程正常）；assets/groups 89 组 + other=7 台平台终端\n2. 桌面管控模块上线即有真实数据流入：overview 返回壁纸 1/策略 3/blocked_7d=2/failed_7d=4（desktop-policy-dev 的验证数据，联调已在生产跑起来了）——端点与数据链路工作正常\n3. **发现一处 UI 缺口并已修复（commit 13a05c5）**：overview 实际返回含 failed_7d 字段（字段只增原则的新增），我的概览卡只有 5 张未展示失败数——已补第 6 卡「近 7 日失败」红色告警位，E2E 桩同步更新 **84/84 全绿**零回归。此 commit 需随下次部署（或热更单文件 console/index.html）生效。\n\n【当前生产状态】ec726af 全量生效正常；13a05c5 待补部署（仅 console/index.html 单文件，热更即可）。\n\n【待办队列确认】①火绒融合联调（生产已就绪，desktop-policy 预检模式可复用——huorong 端点只读核验已过，真实联调等窗口）②桌面管控联调（desktop-policy-dev 预检 + 全链，等其回传形状结果）③power-control UI（第三批）。请安排 13a05c5 的补部署时机。",
+    "timestamp": "2026-09-16T11:25:51.627Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789558086246-f7aazg",
+    "from": "api-registrar-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "合并后台账一致性校验完成，全部通过，无需任何修复：\n\n1.【同步状态】本地 HEAD = 69d85ba；`git status -sb` 显示 `## main...origin/main`（零 ahead/behind 标注）——fast-forward 推送确认生效，**远端台账 = 本地工作区台账 = 69d85ba 版**。\n2.【结构完整性】五类条目实测计数：SRV=81 / BRG=65 / UPL=13 / EXT=7 / DEP=5，合计 171，与头部统计完全一致；冲突标记（<<<<<<< / ======= / >>>>>>>）0 命中。\n3.【关键内容锚点 4/4】「合计 171 条」、「### 2.9 自动开关机」分组、SRV-080/081「ec726af 消项」、「2bbf881→17f506c 挂载出处更正」均在校验文件中命中。\n\n台账当前为权威版并已同步远端，后续所有子 agent 引用以此为准。我的遗留跟踪清单：TBC-007（desktop-policy 服务端 P1 落地后 UPL-011~013 补证转「在用」+ CONTRACT §2 console 组 8 端点登记）、power-control P1 心跳随载上报的 UPL 登记（power-control-dev 届时经你下发）。13a05c5 概览第 6 卡部署后如涉及新端点/端点变更，我会随批次登记。当前无其他待办，静候下批任务。",
+    "timestamp": "2026-09-16T11:28:06.246Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789563077171-sflgm5",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "team-lead，资产卡片终端详情交付完成（与 SRV-081 展示合并交付），回报如下：\n\n【交付 · commit e2fd43e（3 文件 +208/-15）+ ADR-039】\n1. **点击热区**：资产总览卡 + 融合条目 matched/platform_only 卡整卡可点（data-tid 事件委托，不拼 onclick；卡内操作按钮优先命中不受冒泡影响）；huorong_only 卡无平台终端不设热区。\n2. **详情弹窗**：直接复用资产明细渲染器（终端配置/硬件状态——CPU 内存使用率徽章/分区容量条/温度/GPU 明细/硬盘/内存条 SPD——本地网络三卡全量，防御性渲染完整），弹窗加宽 860px + 宽度自适应（1080 下不溢出已入断言）；终端监控页「资产明细」按钮同步改走新入口，两页一致。\n3. **增补三项**：①机型——power_snapshots.machine 拼接（Manufacturer/Model/SystemFamily，取不到显示 --）②心跳间隔——metrics 相邻采样差中位数「约 N 秒」（服务端观测值）③电源策略快照折叠卡——SRV-081 latest（capability 中文徽章「企业可配置/不支持自动控制」/未知值原文兜底 + 采集时间/厂商线/RTC 自动开机/来电策略）。异步回填带代际守卫防串台。\n4. 13a05c5（概览第 6 卡）已一并带上。\n\n【门禁 · 全绿】E2E **91/91**（既有 83 零回归 + 新增 8 项：卡片打开/三区块/机型回填/电源快照卡/心跳间隔/asset=null 降级摘要容错/1080 弹窗不溢出）+ pageerror=0 + esprima 110KB。\n\n【部署方式】**单文件热更**即可（console/index.html，同时覆盖 13a05c5 + e2fd43e 两个 commit 的改动；tools/e2e_console.py 为本地工具不随部署）。\n\n【schema v2 gap 建议（转派终端侧）】①心跳间隔现为服务端观测推断，客户端上报周期配置值建议进 asset/注册字段；②机型现依赖 power_snapshots（终端上报过快照才有），建议 schema v2 直接入 asset.machine 免跨模块依赖。",
+    "timestamp": "2026-09-16T12:51:17.171Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789564159416-n1dr15",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "team-lead，「开关机管控」交付完成，回报如下：\n\n【交付 · commit 3fe299e（5 文件 +1009 行）+ ADR-040 补记 202915d】\n1. 服务端：①pc_apply_policy 入命令白名单（timeout_sec=604800——离线排队 7 天窗口，上线心跳拉取天然补投）②回执钩子 pc.on_command_result（success/rejected=capability not_supported/failed=steps 逐项错误拼 detail；异常不阻断命令链路）③批次存储两表（pc_policy_dispatch/targets，UNIQUE 去重）+ console 3 端点（批量下发 POST——校验矩阵六项+终端存在校验+单批≤100+审计留痕 / 批次列表附终态计数 / 批次详情含 targets 状态机与超时 converge expired）\n2. 控制台「开关机管控」页（桌面管控后）：终端列表（分页 20+全选/复选+能力徽章+RTC 定时开机摘要，勾选态跨快照回填保留）+ 策略表单（开机/关机双子卡 daily/weekly/single 联动字段+周勾选）+ 批量下发（uiConfirm 列明台数与动作 + 「写入定时任务，非立即关机」明确文案 + 离线排队说明）+ 批次回执视图（六态中文徽章+steps 错误明细+刷新）\n\n【门禁 · 全绿】服务端冒烟 tools/smoke_pc_policy.py 23/23（下发全参/校验矩阵六项/未知终端 404/心跳拉命令 policy_id 匹配/回执三态落库含 steps 明细）+ E2E **100/100**（既有 91 零回归 + 新增 9 项）+ pageerror=0 + esprima 119KB + py_compile。\n\n【已知限制】rejected 依赖终端回执自报 capability；离线排队超 7 天 converge expired 需重新下发（无自动重投）；批次回执手动刷新。\n\n【部署与联调】服务端 +3 端点 + 白名单变更（server/power_control.py、api.py）需随批部署（非单文件热更）；UI 依赖终端侧 pc_apply_policy 执行器（power-control-dev P1）——mock 冒烟已闭环，真机联调等 P1 交付（M720t 在线时下发真实策略）。power-control UI（SRV-081 详情卡）已在 ADR-039 提前交付一部分（资产详情电源快照卡），第三批余量为其独立时间线视图。\n\n另：分组树优化/终端删除/6 页宽度整改三个在途单按你排的顺序，我接下来按「6 页宽度（用户报障插队）→ 终端删除 → 分组树优化」执行，如有异议请指正。",
+    "timestamp": "2026-09-16T13:09:19.416Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789564301938-orwxzp",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "team-lead，六页宽度整改交付完成（用户报障单），回报如下：\n\n【交付 · commit 042248a（2 文件）】\n- nettest/config/kb/sysadmin/dpol/pc 六页 section 移除 max-width:1400 定宽上限，全宽流式铺满 main-content 可用宽度；卡片栅格（cfg-grid auto-fit minmax 340）与表格容器本身已是响应式，列数随宽度自适应增减；tabbar 窄视口横向滚动保护（ADR-037 已有）\n- 同模式排查：详情弹窗均已 max-width+width:100% 流式、assets 页本就 max-width:none、sysadmin 表格卡内滚动合规——全 console 无残留定宽面\n\n【门禁 · 全绿】E2E **121/121**（既有 100 零回归 + 宽度门禁扩为 1920/1440/1080 三档 × 六页：各页 section offsetWidth 随视口变化断言 18 项 + width varies 6 项 + 无横向滚动 3 项 + AI 降级 3 项）+ pageerror=0 + esprima 119KB。\n\n【整改前后对照】六页 1920 视口内容区宽度：整改前 1400（右侧 ~330px 空白）→ 整改后 1870（铺满减 padding）；1440：1360→1390；1080：1080→1080（原本即满）。\n\n【部署】console/index.html 单文件热更；建议与分组树优化/终端删除同批一次热更（你说合并减少打扰）。\n\n接下来按序执行：终端删除 → 分组树优化。",
+    "timestamp": "2026-09-16T13:11:41.938Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789564611086-qng9gt",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "team-lead，终端删除功能交付完成（中途回报，接下来进入最后一个在途单「分组树优化」）：\n\n【交付 · commit 9fbfd0d（5 文件 +272/-13）】\n1. 服务端：DELETE /api/v1/console/terminals/{tid}?purge=1|0（console 会话；store.delete_terminal——purge 级联清 metrics/bottlenecks/events/commands/iperf_tasks/power_snapshots，批次回执/火绒镜像/审计记录按你的边界要求保留）；审计 auth.audit \"terminal.delete\"（操作员/tid/级联标志落库）。一处语义修正：终端令牌是平台级共享（多终端共用），删除单终端不吊销 token——实际语义为「注册移除，终端下次心跳回到未注册态需重新注册」，UI 文案按此表述。\n2. 前端：三处红色删除入口（融合卡操作区/资产总览卡/未分组终端表格行）+ 专用高危确认弹窗（tid+主机名+在线徽章展示、级联勾选默认勾、红色确认按钮）。\n3. 边界核验：删除后融合条目自动回 huorong_only 态（映射随行删除，火绒镜像不动 ✓）；批次回执历史保留 ✓。\n\n【门禁 · 全绿】服务端冒烟 tools/smoke_tdelete.py 11/11（保留/级联两态、删除后详情 404、心跳回到未注册态、未注册删除 404、审计落库直查）+ E2E **126/126**（既有 100 零回归 + 新增 5 项：删除入口存在/确认弹窗 tid/级联默认勾选/purge=1 请求语义/删除后弹窗关闭）+ pageerror=0 + esprima 121KB。\n\n现在开始「分组树优化」（根节点/火绒组同步/展开收起），完成后一并回报三单汇总与部署建议。",
+    "timestamp": "2026-09-16T13:16:51.086Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789565608436-u0ijrr",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "team-lead，三单全部完成，汇总回报（按你定的总批部署编排待命）：\n\n【1 · 六页宽度整改 · 042248a】六页（nettest/config/kb/sysadmin/dpol/pc）section 移除 max-width 定宽全宽流式；E2E 宽度门禁扩为三档×六页（offsetWidth 随视口变化+无横向滚动）。1920 视口内容区 1400→1870 铺满。同模式排查无残留。\n\n【2 · 终端删除 · 9fbfd0d】DELETE /console/terminals/{tid}?purge=（级联清 metrics/瓶颈/事件/命令/iperf/电源快照；批次回执/火绒镜像/审计保留）；审计 terminal.delete 落库；三处红色删除入口（融合卡/总览卡/未分组表格）+ 专用高危确认弹窗（tid/主机名/在线徽章 + 级联默认勾选）。一处语义修正：终端令牌为平台级共享，删除单终端不吊销 token——实际语义「注册移除、下次心跳回未注册态」，UI 文案按此。边界核验：删除后融合条目自动回 huorong_only ✓。\n\n【3 · 分组树优化 · 844d993 + ADR-041】\n- 同步规则（回报要点）：①触发时机=GET assets/groups 惰性幂等触发（每次资产页加载，不挂钩 huorong 同步线程、不碰其文件），滞后≤一个火绒同步周期 ②结构跟随：huorong_group_id 幂等匹配——改名/父跟随更新、新增父先子后创建、火绒侧删除→资产组软删（终端挂载保留）；huorong 组屏蔽改/删按钮 ③终端挂载：matched 映射终端重挂到镜像资产组节点（该组内终端归属由火绒镜像决定，会覆盖手动组绑定——镜像语义；manual 组与 platform_only 终端不受影响）。\n- 交互：根节点「全部资产」置顶可选（查看全部平台终端，消除空态）；资产组默认展开到二级（浅层可收/深层可展，用户态尊重至刷新）；安全分组默认全部收起（仅顶层，点击展开）。\n\n【门禁汇总】同步单测 16/16 + 删除冒烟 11/11 + E2E **129/129**（零回归）+ pageerror=0 + esprima 124KB + py_compile。\n\n【部署编排确认】按你定案：三单 + 开关机管控（3fe299e）合并总批，与 power-control P1（pc_apply_policy 执行器）同步上线，M720t 重装验证。我侧就绪，等 P1 交付时间定总批窗口。热更批次（如需提前上 UI 类）：宽度整改+终端删除+分组树可单文件+store/api 热更组合，等你通知。",
+    "timestamp": "2026-09-16T13:33:28.436Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789565714400-x4d27n",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "收到验收确认。三单（042248a 宽度整改 / 9fbfd0d 终端删除 / 844d993 分组树 ADR-041）+ 开关机管控（3fe299e）状态知悉，本地工作区干净，无在途变更。当前状态就绪，等待 power-control P1 窗口确定后的合并总批部署通知——届时我会按部署门禁执行（部署前远端备份带时间戳、SFTP 上传、systemd 重启、健康检查、E2E 复验、汇报部署路径与 commit）。在此之前不再动 server-platform 仓库。",
+    "timestamp": "2026-09-16T13:35:14.400Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789566035178-qn3ues",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【P1 进度回报（回复总批窗口协调）】代码全部完成、门禁全绿，今晚可交付。\n\n## ① 当前进度（全部完成，源码就绪）\n\n**P1a BIOS 写入闭环** ✅：build_bios_targets（daily/workday/weekly+weekdays 7 位/single/off 五形态）→ 写前原值快照（本地 bios_backup.json + 平台快照上报双存档）→ Invoke-CimMethod 调 Lenovo_SetBiosSetting 逐项写入（值格式两轮尝试：先无括号、回读不匹配再带括号）→ 全量回读校验（归一比对，读回≠目标即 failed 绝不静默）→ 一键还原（逐项写回备份+校验）。\n**P1b 定时关机任务** ✅：schtasks /Create /XML（任务名 EyeTermAutoShutdown、动作 shutdown /s /t 60 /d p:0:0、SYSTEM 运行、Description 注明 EyeTerm 管理；每天/工作日/指定日期）+ 启停/删除；验证变体 /t 90 + Enabled=false 常量隔离。\n**提权 worker** ✅：单操作子进程（ShellExecuteW runas + opfile 协议 + 最小职责），desktop.py 顶层最早拦截 + 引擎 __main__ 兜底；UI 走 PCT-xxx 异步任务轮询（避开 apiFetch 15s 超时）。\n**pc_apply_policy 执行器** ✅：@command_handler 注册进 uplink（协议照 main 定稿，boot/shutdown 可只出现其一）；消费线 boot rejected、shutdown 照做；回执 {policy_id,op,ok,steps,capability}；**无人值守 UAC 限制如实回执**（提权等待 30s，无人确认=失败）——这是 P1 单机提权模式与批量下发的真实约束，常驻化（计划任务/服务）待 P2 与 desktop-policy 联合定案；成功后落 policy_state，「自动开关机」页显示「平台下发生效（尾号+摘要）·后到者生效」。\n**顺带项** ✅：①asset schema v2（uplink _asset_detail 加 machine 块=复用 power-control 采集 + heartbeat_interval 配置值；服务端 asset 零校验透传，无需服务端改动）②「平台存档：—」根因=自动上报成功/失败不回传 UI——已修（report_state 落档，快照返回体带回，UI 显示「已存档 HH:MM」/「上次上报未成功」/「未上报」）。\n\n## ② 门禁（全绿）\n单测 88/88（P0 37 + P1 51：目标构造/两轮格式/不静默/备份还原/任务 XML/worker/opfile/任务模式/handlers/policy 执行器/uplink 注册）｜E2E 81/81（独立页 P1 应用/还原/关机保存/停用/删除/登记全流程 + 主应用配置卡企业线显隐/消费线隐藏/登记徽章；pageerror=0）｜本机 smoke 14/14｜四文件 py_compile 干净。\n\n## ③ 需 main 知悉的两点\n1. **跨模块缺陷修复（app.js）**：宿主 apiFetch 此前不透传 body——desktoppolicy 电源修改与 powercontrol 写操作在主应用内参数全丢（独立页正常、主应用静默失效）。已补 body 形参（3 行，默认行为不变），desktop-policy 同步受益，建议告知 desktop-policy-dev 复跑其 E2E。\n2. git commit 无法由我执行（环境无 git identity 且我不能动 git config）——**主仓 + 子仓提交请 main 统筹**（子仓改动 = power-control 全目录；主仓改动 = power_control.py 根副本 / web/powercontrol.js / web/index.html / web/app.js / bridge.py / desktop.py / uplink.py / docs/API-REGISTRY.md 待补 P1 登记）。\n\n## ④ 真机验证（脚本已就绪，今晚可做）\n`power-control/tools/verify_p1_m720t.py`：read（读原值+双存档）→ bios-write（07:30 两轮格式实测→回读校验）→ bios-restore（还原→与初始一致）→ schtasks（/t 90 创建即停用→查询→删除），每步人工确认，全程无真实 shutdown。**python 态即可执行（无需等 exe）**，用户配合约 10-15 分钟（提权确认 2-3 次）。验证结论（尤其写入值格式两轮实测）将回填 ADR-006 附注。\n\n**结论：今晚交付可排总批**。真机验证可与 main 的 commit/部署并行，建议顺序：main 先 commit+部署服务端 → 用户跑 verify 脚本 → exe 重建换装 → 实机次日开机验证（可选）。",
+    "timestamp": "2026-09-16T13:40:35.178Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789566609173-evslij",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【verify exe 就绪】真机验证工具已打包完成，可直接拷贝 M720t。\n\n## 产物\n`power-control/dist/pc_verify_m720t.exe`（17.5MB，单文件 onefile 控制台程序，含引擎全量 + 提权逻辑；静态打包 power_control.py，M720t 无 python 依赖）。\n\n## 使用说明（给用户的三句话版）\n1. 把 `pc_verify_m720t.exe` 拷到 M720t 桌面，双击运行——未提权时自动弹 UAC 请求管理员（点「是」后在新窗口继续；或直接右键「以管理员身份运行」）。\n2. 推荐执行 `full`（在窗口输入 full 回车）：自动走 ①读原值（快照本地+平台双存档）→ ②写入 07:30 每天开机（两轮值格式实测+回读校验）→ ③一键还原为 ①的初始值（回读校验）→ ④定时关机任务实测（`/t 90` 且创建即**停用**，随后删除——**全程不执行真实关机**）。每步打印目标项与回读结果并显示 `[y/N]` 确认提示，Ctrl+C 可随时中止。\n3. 全部完成显示「验证完成（失败 0 步）」即可关闭；最终 BIOS 保持初始值（每天 08:00:00），**无遗留测试值**（写入步成功后也有黄色提醒文案防单独跑 write 后忘记还原）。\n\n## 分步用法（可选，排查某一步）\n`pc_verify_m720t.exe` 不带参数打印帮助；`read` / `bios-write` / `bios-restore` / `schtasks` / `full` 五个子命令。写入值默认安全：还原目标恒为 ①快照（即当前 BIOS 初始值），即使中途取消也会提示继续还原。\n\n## 两种运行形态\n- 提权 worker（ADR-008）在 exe 态用 `sys.frozen` 判据拉起自身——verify exe 自身 runas relaunch 已实测逻辑一致（usage 冒烟通过：doc 输出正确、退出码符合设计）。\n- 回读数据会实时打印（Wake Up on Alarm / Alarm Time / 逐日开关各项），请用户把 full 全程输出截图回报，我据实测结论回填 ADR-006 附注（写入值到底接受无括号还是带括号形态）。\n\n## 安全边界重申（脚本内置）\n- 只写「定时开机」目标项集合；Wake On LAN / 来电恢复等无关项不碰。\n- shutdown 命令仅作为计划任务的动作参数字符串生成（`/t 90` + 创建即停用 + 完成即删除），脚本无任何真实关机调用（ADR-018）。\n- verify 脚本更新点：非管理员自动 UAC 自提权 + 写入步尾遗留提醒，已随批入库。\n\nexe 就绪，随时可与你的 commit/部署并行安排用户执行。",
+    "timestamp": "2026-09-16T13:50:09.173Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789613827274-uecikc",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "收到派单，开始实施。先读 DECISIONS.md/ARCHITECTURE.md 与现有 api.py/store.py/console 结构，设计定稿后动手。下载鉴权选型稍后随设计一并回报。",
+    "timestamp": "2026-09-17T02:57:07.274Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789615418726-jueead",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【三大改造客户端侧交付完成】托盘常驻 + 注册预置 + 自动更新引擎 + 版本 4.1.0，门禁全绿，可随总批。\n\n## 一、改动清单\n\n**新文件（5）**\n- bootstrap.py — 安装包预置注册（ADR-010）：文件名解析 → cfg64 解码（base64url+zlib）→ uplink 配置采用；仅当中心未配置时采用（升级重装不覆盖既有），解析失败静默回退零行为变化\n- tray.py — 托盘常驻（ADR-011）：ctypes Shell_NotifyIconW 手写（零依赖），隐藏消息窗口 + 右键菜单（打开主界面/退出）+ 双击打开；关窗 → hide 收纳，托盘退出才真退出（先删图标再 destroy）\n- updater.py — 更新引擎（ADR-012）：semver 比对（修饰后缀剥除/空版本不可比）→ 清单端点（TBC-002 形状先行）→ 下载（sha256 校验/重试 3 次/512MB 上限/.part 原子）→ 状态机落档 → `--et-updater` 子进程（等主进程退 → /SILENT 安装 → 安装器自启新客户端）\n- appctl.py — 自启键读写（HKCU Run CreateKeyEx 幂等，与安装器同键）+ 更新状态/应用\n- web/appui.js — 设置弹窗「客户端」卡（自启开关；MutationObserver 监听弹窗打开零侵入 perf.js）+ 更新提示条（30s 轮询/稍后本会话记忆/立即更新）\n\n**集成修改（7）**\n- desktop.py：`--et-updater` 顶层拦截 + bootstrap 最早应用 + closing 拦截/托盘集成 + 退出序列（删图标→写 main.pid→destroy；后台线程全 daemon 净退）\n- bridge.py：4 路由（BRG-066~069）+ body 透传扩展 /api/app/ + **exit hook 补齐**（既有缺陷：desktop.py 注册 AttributeError 被吞、性能「以管理员重启」hook 从未生效——一并消项）\n- uplink.py：心跳响应 latest_version → updater.check_async + CLIENT_VERSION 4.1.0；asset schema v2（machine 块 + heartbeat_interval）\n- installer/EyeTerm.iss：版本 4.1.0、autostart 默认勾选、app.ico 随包、[Code] `WriteBootstrapFromName`（固定前缀切分 → raw 写 config_bootstrap.json；Pascal 不做解压——解码统一客户端）\n- web/index.html：更新提示条（body 顶部固定条）+ 客户端设置卡 + script + INITS 登记\n- docs/API-REGISTRY.md：BRG-066~069 登记 + BRG-065 human_set 扩展注记（请 api-registrar 复核）\n\n## 二、门禁（全绿）\n单测 22/22（tools/test_client_upgrade.py：文件名解析含 cfg64 含下划线边界/解码校验/回退语义/采用策略/semver/状态机/file:// 真下载+sha256/自启键 HKCU 测试键往返）+ P1 单测回归 88/88 + E2E 93/93（新增 appui 12 断言：自启状态渲染/开关往返/提示条默认隐藏/新版本展示/稍后本会话不再弹/apply→退出提示）+ 托盘冒烟 2/2（真实 Shell_NotifyIconW ADD/DELETE，stderr 干净）+ 七文件 py_compile 干净 + lints 0。\n\n## 三、托盘 ctypes 三陷阱（冒烟实测抓出，已修复并记 ADR-011）\n① Shell_NotifyIconW 属 shell32 非 user32（误用 AttributeError 被线程吞 → 假成功；start() 改以真实 ADD 结果为准）② WNDPROC 回调必须实例级长引用（GC 后回调 → 0xC0000409 崩溃）③ wintypes 无 WNDCLASSW（3.12 实测）+ DefWindowProcW 需显式 argtypes（lparam 超 int32 OverflowError）。\n\n## 四、服务化评估（如实回报，未做承诺）\nGUI（pywebview）无法进 session 0；真服务化需拆「后台引擎进程 + 前端壳」架构级改造。本期以「开机自启 + 托盘常驻」满足服务化体验，拆分架构已列 P2 评估项写入 ADR-011。\n\n## 五、待协调\n① Inno 编译实测（文件名解析/回退）：本机无 ISCC——Pascal 侧已静态论证 + 客户端同构单测覆盖，实机编译请随 main 构建管线；② 更新清单端点 TBC-002（GET /api/v1/client/update-manifest?version= → manifest{latest_version,download_url,sha256}）等 server-platform 交付后联调对齐；③ 版本 4.1.0 已同步 uplink + installer，总批打包时 main 确认 manifest 源版本；④ tools/_run_smoke_tray.py 与 _tray_out.txt 为托盘冒烟捕获脚本/输出（删除操作此前被拒故保留），如需清理请 main 处理。",
+    "timestamp": "2026-09-17T03:23:38.726Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789617249217-v1ej5z",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【P1a 首轮实机迭代交付】四问题修复 + 排查工具就绪，门禁全绿（单测 88/88 回归 + E2E 98/98 + lints 0），双副本已同步，请 main 重建 4.1.0。\n\n## ① 时间控件 + 周期联动（问题1）✅\n开机卡重构：原生 `<input type=\"time\">` + `<input type=\"date\">`（color-scheme: dark 深色适配）；周期联动——每天→时刻；每周→时刻+周一~日勾选组（7 个 checkbox，直写 BIOS Weekly Event+逐日开关）；指定日期→日期+时刻；停用→全部隐藏。**「工作日（周一至周五）」升级为「每周（勾选星期）」**（默认建议勾周一~五），payload mode=weekly+weekdays[7]（引擎/协议已支持）。关机卡同步改原生控件+联动（无勾选，workday 固定周一~五）。\n\n## ② 打开页面自动回填（问题2）✅\npcFillBootForm：按 P0 快照 rtc 回填——Daily→每天+time；Weekly→每周+逐日勾选回填；Single→指定日期+time（MM/DD/YYYY→YYYY-MM-DD 转换）；Disabled→停用；User Defined→按「每天」+自定义时刻回填并提示「应用将覆盖」。alarm 空且 alarm_on=false → 停用。无值留空。每次加载/刷新自动回填。\n\n## ③ Weekly 粒度实测工具（问题3）✅\nverify exe 重打包（同路径 power-control/dist/pc_verify_m720t.exe），新增 `weekly` 子命令：写前快照 → 写 `Wake Up on Alarm=Weekly Event + Monday=Enabled + 其余日 Disabled` → 回读打印 Alarm Day of Week/逐日各项/尝试明细 → 自动给出结论 A（可写→UI 保留多选直写）或 B（不可行→降级「每天+软件回关」）→ 结束自动 bios-restore 还原。**请用户跑 `pc_verify_m720t.exe weekly` 并截图回传输出**，我据此回填 ADR-006 并决定是否降级 UI。\n\n## ④ 应用失败根因排查（问题4）——已定位 UI 侧主因，引擎侧需日志确认\n**已修复（UI 侧）**：根因=BIOS 写失败时 `_job_bios_apply` 返回体只有 `failed` 明细数组、**无 `error` 键** → pcPollTask 显示 fallback 笼统文案「操作未成功，请重试」。已改为失败时组装步骤化错误（如「回读校验不符：『Wake Up on Alarm』写入未生效：读回为『Disabled』（目标『Weekly Event』）」），E2E 断言覆盖。\n**顺带修复**：worker result 文件改原子写（tmp+replace，防父进程 0.5s 轮询读到半截 JSON 误报「结果读取失败」）。\n**日志更正**：引擎日志不在 C:\\ProgramData（那是更新引擎目录且无日志），实际在 **`%LOCALAPPDATA%\\winhelper\\power-control\\logs\\pc_YYYYMMDD.log`**（当日文件）。P1 起写入失败会记录完整 attempts 明细（两轮格式各自结果）。\n\n## 请向用户索取清单\n1. `%LOCALAPPDATA%\\winhelper\\power-control\\logs\\pc_20260917.log`（当日文件，含失败操作的 attempts 两轮格式明细——据此判定无括号/带括号哪个被接受）\n2. 应用时的现象：是否出现 UAC 弹窗？出现后是点了「是」还是没来得及/点了「否」？（区分提权超时 vs 写入被拒）\n3. `pc_verify_m720t.exe weekly` 的完整输出截图（问题③结论 + 备用格式证据）\n4. （可选）回读后 BIOS 里「定时开机」实际是否变化（判断写入到底生效与否，与回读交叉验证）\n\n## 门禁\n单测 88/88 回归 OK｜E2E 98/98（新增：回填周期=每天/时刻=08:00、每周联动勾选组、payload 携带 weekly+weekdays、失败步骤化透传「回读校验不符…读回为…」）｜lints 0。stub 附带修复：task-status 按完整 path 匹配 task_id（此前恒 \"?\" 导致状态机断言失效）。",
+    "timestamp": "2026-09-17T03:54:09.217Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789617291061-1q8hpn",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【版本发布与控制 · 服务端面交付完成】commit e24a236（9 文件 +1395/-11，ADR-042 已入档 DECISIONS.md）。\n\n## 交付内容\n1. **client_release.py 新模块**（stdlib-only，power_control 同款单例形态）：client_releases 表 + client_current 单行指针（同一时间仅一个 current；回滚=指回旧版并置 rollback_flag=1，同秒上传按 id 判新旧）；安装包落 <data_dir>/storage/client/{version}/{filename}；同版本重复上传=覆盖更新（便于测试迭代）。\n2. **协议实现**（main 定稿）：文件名 EyeTerm_Setup_x64_{ver}_{cfg64}_{md58}.exe；cfg64=base64url(zlib(json{\"s\",\"t\"})) 超160防御性截断；md58=json原文MD5前8位。服务端不存定制包实体——下载时以通用包响应、Content-Disposition 用定制名。服务端另提供 parse_custom_filename 参考实现供终端侧对拍。\n3. **下载鉴权选型（你要求评估回报）**：选定 **10 分钟一次性下载票据（用后即焚）**，否决 console 会话内下载——理由：①控制台会话是 header-token 无 cookie，<a> 下载带不上鉴权，fetch+blob 对 26MB+ 包内存不友好；②管理员\"生成链接发微信/邮件给终端用户\"需要跨会话跨设备可下载；③一次性+短时效把泄露面压最小。票据内存态，重启失效=重新生成（可接受）。\n4. **API**：console 4 端点（PUT 上传 raw bytes / GET 列表 / POST set-current / POST custom-name，整组 admin-only+审计，审计不记 token）；终端 GET /api/v1/client/manifest（X-ETP-Token）→ {latest_version, download_url, sha256, size, release_note}；**心跳响应捎带 latest_version**（power-control 侧可直接消费）；GET /download/client/setup（无 ticket=通用包公开；带 ticket=定制包）。scope：terminal 口白名单已加 manifest+/download/。\n5. **UI**：登录页「客户端下载」公开链接 + 新导航页「客户端发布」（admin-only）：上传/版本表（当前版本/曾回滚徽章+设为当前）/定制分发面板（生成定制名+完整链接+复制，明示一次性10分钟）。\n6. **上传通道**：安装包上传端点 body 上限单独放宽 256MB，全局 8MB 不变。\n\n## 门禁（全绿）\npy_compile 七文件 / esprima 129KB / 单测 test_client_release **37/37** / mock 冒烟 smoke_client_release **30/30**（自包含隔离环境：脚本内 spawn 临时服务+auth 自举+白名单引导+端口预检；二次运行幂等）/ E2E **139/139**（129 既有零回归+新增10项：登录页链接、发布页渲染、徽章、定制名协议格式正则、票据URL）+ pageerror=0 / 回归 test_asset_sync 16/16。\n\n## 顺带修复（重要，随本批生效）\nstore.py `_asset_group_migrate`（ADR-041 引入）并发缺陷：try-ALTER/except OperationalError 捕不住本版 sqlite3 的 DatabaseError/SystemError——服务重启后首次并发访问资产页即 asset-groups 500（本地实测复现）。已改 PRAGMA 预检（锁内串行、列已在零 DDL）。**生产库若列已建则行为不变；此修复消除一个生产潜在雷**。\n\n## 联调与部署\n- **power-control-dev 契约要点**：manifest 无 current 时 manifest=null（需处理无更新分支）；download_url 为相对路径 /download/client/setup（终端拼接自己的 server_url）；心跳 latest_version 与 manifest 二选一消费均可；文件名解析对拍用 parse_custom_filename。\n- 部署并入合并总批（与火绒/桌面管控/开关机同批），无独立迁移脚本（表自动建）；部署后需生产只读冒烟 + 上传真实安装包发布一轮。\n\n## 备注\n①本地根目录留有 _cr_dbg*.py/_cr_gate.py 等临时调试文件（del 命令被拒未清理，均无凭据，请手动删除）；②本地 dev 服务经多次重启，当前 18090 运行新代码（e24a236）。",
+    "timestamp": "2026-09-17T03:54:51.061Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789617545731-fytbfq",
+    "from": "api-registrar-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "客户端版本发布管理批次登记完成（server-platform-dev 知会 → 我代码实证后登记），commit 25bcbc1（docs:，仅台账，+105/-9）。\n\n【新增 6 条 + 2 处扩展】\n- §1.14 新组 SRV-082~087：console 组 4 条（PUT 上传 256MB/列表/set-current {id} 整数/custom-name 定制名+一次性票据，整组 admin-only 403+审计）+ terminal manifest（X-ETP-Token，无 current 时 manifest=null）+ /download/client/setup（无 ticket 通用包公开 / 带 ticket 定制包一次性 10 分钟，404 无效 / 410 过期）\n- SRV-046 + UPL-002 心跳响应追加 latest_version（可 null，api.py:661 实证；终端自动更新消费侧待 uplink 跟进——已标注）\n- scope 变更（terminal 口 18443 白名单 + /api/v1/client/manifest 与 /download/*）登记于组级约定\n- 定制文件名协议（EyeTerm_Setup_x64_{ver}_{cfg64}_{md58}.exe，cfg64≤160 截断/md58=MD5 前 8 位/256MB 上限/600s 票据）协议常量逐一对码入账\n\n【代码实证】server-platform e24a236 在 HEAD（ADR-042：client_release.py 新模块 +336、api.py +162），门禁单测 37/37+冒烟 30/30+e2e 139/139。发现并知会实施方一处注释未同步（dispatch docstring terminal scope 与 _scope_allowed 不符，台账已标注以实现为准）。\n\n【台账现状】合计 177 条（SRV 87 / BRG 65 / UPL 13 / EXT 7 / DEP 5）。遗留跟踪：TBC-007（desktop-policy P1 补证）、终端侧 manifest/自动更新消费（uplink 跟进时随批次登记）。",
+    "timestamp": "2026-09-17T03:59:05.731Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789623712046-p8c61y",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【代跑完成：4.1.0 客户端重建 + 安装包编译 全部成功】总批最后一环就绪。\n\n## 1. 客户端 exe\n- 构建：`python -m PyInstaller winhelper.spec --noconfirm --distpath dist_new --workpath build_new` 成功（PyInstaller 6.22.2 / Python 3.12.8，exit 0；仅 pycparser lextab/yacctab hidden import 警告与 wmi.py 既有 SyntaxWarning，无错误）\n- 产物：`dist\\winhelper.exe`（与 dist_new 覆盖后 **MD5 双侧一致 0065166652BCEEAC20CDFC3640FE908F**）\n- 大小：27,470,753 bytes（约 26.2MB）；mtime 2026-09-17 13:39:59\n\n## 2. 运行确认\n- 旧进程已 Stop-Process 停止；新实例已启动（Start-Process DETACHED）\n- 进程 Path 确认为 `C:\\Users\\10604\\CodeBuddy\\20260522083146\\dist\\winhelper.exe`（PID 26588 / 45272，主进程 + WebView2 相关双进程，pywebview 常态）\n\n## 3. 安装包（ISCC 6.7.3 实编译）\n- 编译：**Successful compile (18.796 sec)**，本机 IS6 路径 C:\\Users\\10604\\IS6\\ISCC.exe 可用（此前以为缺失）\n- 产物：`installer\\Output\\EyeTerm_Setup_x64_4.1.0_20260917_1340.exe`\n- 大小：219,183,763 bytes（约 209MB，含 WebView2 Runtime 整包 + Everything 全套）\n- **MD5：158C6FF5BE0C9ECC93EE8CEBA650E698**\n- 文件名符合协议格式 EyeTerm_Setup_x64_{ver}_{时间戳}——注：本次文件名尾段是时间戳非 cfg64（无预置配置的通用包），M720t 预置注册包需按协议重命名（cfg64 段）后使用\n\n## 4. 一条编译 Warning（知悉即可）\nInno 提示 `PrivilegesRequired=admin` + 脚本使用 HKCU（autostart Run 键）——即 autostart 写入的是「执行安装的管理员账号」的 HKCU。这是既有设计（autostart 任务从 4.0.0 起如此），单管理员装机场景正确；多用户终端如需「所有用户自启」需改 HKLM Run（列 P2 备选，本轮不动）。\n\n## 5. M720t 就绪清单（供你转用户）\n1. 重装 `EyeTerm_Setup_x64_4.1.0_20260917_1340.exe`（或重命名带 cfg64 的预置版）\n2. 打开「自动开关机」页验证回填（Daily 08:00 应自动回填时刻控件）\n3. 跑 `pc_verify_m720t.exe weekly`（新增 Weekly 写入探测，结论截图回传）\n4. 回传日志 `%LOCALAPPDATA%\\winhelper\\power-control\\logs\\pc_20260917.log`（重新应用一次后取当日文件）\n\n总批最后一环交付完成。",
+    "timestamp": "2026-09-17T05:41:52.046Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789624336288-iy2237",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【代跑完成：4.1.0 已发布为 current，平台自动更新链路激活】四步全通，回报如下：\n\n1. **login 200**（token 取得，临时脚本用后已删，凭据零落盘）\n2. **upload 200**：`{\"ok\": true, \"release\": {\"id\": 1, \"version\": \"4.1.0\", \"filename\": \"EyeTerm_Setup_x64_4.1.0_20260917_1340.exe\", \"sha256\": \"15d997718c545ee961bfe4f0476d…\"}}` ——服务端已自动计算 sha256 存档\n3. **releases rid=1 → set-current 200**：`{\"ok\": true, \"release\": {\"id\": 1, \"version\": \"4.1.0\", …}}`\n4. **下载闭环 200**：bytes **219,183,763**（与本地安装包字节数完全一致）；sha16 下载侧 **15d997718c545ee9** == 本地文件 **15d997718c545ee9**（sha256 前 16 位比对一致）\n\n结论：发布→set-current→无票据通用下载全链路打通，服务端校验和与原包一致。客户端侧 `updater.check_async`（心跳 latest_version → 清单下载 → 提示条 → apply）即可对接该 current 包——清单端点形状如与 TBC-002（`{\"latest_version\",\"download_url\",\"sha256\"}`）有出入，请 server-platform-dev 给一下 `/api/v1/client/update-manifest` 的实际响应样例，我做联调对齐。\n\n附带：执行后心跳/latest_version 生效验证可在 M720t 新装 4.1.0 客户端上观察（若 current=4.1.0 与客户端版本相同则不触发下载——语义正确；发布 4.1.1 时即走全流程）。",
+    "timestamp": "2026-09-17T05:52:16.288Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789624682997-6i7dhe",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【TBC-002 对齐完成】已选你方案①：加别名端点复用同一 handler 数据源。commit 327a69b（ADR-042 已补记）。\n\n**实现要点**：\n- `GET /api/v1/client/update-manifest?version={cur}`：同一 X-ETP-Token 鉴权、同一 cr.manifest() 数据源，但响应为**扁平形状**（updater 期望顶层键，与 manifest 端点的嵌套形状不同——若只复用路径不复用形状，updater 取 r[\"latest_version\"] 仍会拿不到）\n- 键恒在：无 current 时 latest_version/download_url/sha256/size/release_note 均为 null（消费侧判 latest_version is None 即无更新，比缺键稳）\n- ?version= 接收但忽略（semver 比较在终端侧，服务端只返回 latest）\n- scope 白名单/docstring/冒烟已同步\n\n**manifest 两态响应样例（供 power-control 联调对拍）**：\n\n有 current（GET /api/v1/client/update-manifest，200）：\n```json\n{\"ok\": true, \"latest_version\": \"4.1.0\", \"download_url\": \"/download/client/setup\", \"sha256\": \"<64位hex>\", \"size\": 27682406, \"release_note\": \"更新说明文本\"}\n```\ndownload_url 为相对路径（终端拼自身 server_url）；release_note 可能为空字符串。\n\n无 current / 服务端尚未发布（200，非 404）：\n```json\n{\"ok\": true, \"latest_version\": null, \"download_url\": null, \"sha256\": null, \"size\": null, \"release_note\": null}\n```\nupdater 判 latest_version 为 null/None → 走\"无更新\"分支。注意：**401** 仅当 X-ETP-Token 错误。\n\n**补充契约说明**：下载 GET /download/client/setup（无 ticket）公开可用（terminal scope 白名单已含 /download/*），响应 Content-Disposition=原始文件名；terminal 口白名单已加 /api/v1/client/update-manifest。\n\n**门禁**：py_compile / 冒烟 33/33（+3：扁平两态+401）/ E2E 139/139 零回归。\n\n**部署**：随下批合并总批（改动仅 api.py 一个分支 + 冒烟 + ADR 补记）。已同步知会 api-registrar 登记、power-control 对拍样例。",
+    "timestamp": "2026-09-17T05:58:02.997Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789624892869-jt51cb",
+    "from": "api-registrar-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "客户端发布管理补充批次登记完成（server-platform-dev 知会 → 实证登记），commit 21db958（docs:，仅台账）。\n\n【新增 1 条】SRV-088 GET /api/v1/client/update-manifest——SRV-086 manifest 的对齐别名端点（顶层扁平形状，键恒在无 current 全 null，?version= 接收但忽略），实证 327a69b（server-platform HEAD，api.py +26，冒烟 33/33+e2e 139/139 零回归）。要点：\n- TBC-002（power-control updater）随本条消项——消费侧 updater.check_async 认扁平形状，SRV-086 保留嵌套形状供通用清单，两条端点同数据源不同形状已在台账双向注记（防消费侧形状混用）\n- terminal 口白名单 +update-manifest（_scope_allowed in 元组 api.py:216-222）\n- 头部统计 SRV 87→88、合计 178 条（SRV 88 / BRG 65 / UPL 13 / EXT 7 / DEP 5）\n\n【跟踪项更新】TBC-007 仍挂（desktop-policy P1）；power-control 侧 TBC-002 已随 SRV-088 消项（该编号属 power-control 子仓文档体系，非本台账 TBC 系列）。部署随下批合并总批，实测若有差异随对账更新。",
+    "timestamp": "2026-09-17T06:01:32.869Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789625024502-70hfjj",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【代跑完成：327a69b 部署 + 指针推进 + 端点验证 全部成功】\n\n## 1. 部署（server-platform，--skip-firewall --skip-certs）\n- exit 0；输出确认 **service active**（terminal-platform systemd enabled）+ **health 200**（/api/v1/health 200、legacy HTTP 18090: health 200 / console 200）\n- 部署过程含 18090 端口占用检测（own active service will restart later）→ 正常重启路径\n\n## 2. 主仓指针\n- commit：`b05c600`（chore: server-platform pointer to 327a69b (update-manifest alias endpoint)）\n- push origin main：**成功**（5a9191d..b05c600 main -> main）\n\n## 3. 生产端点验证\n- **update-manifest probe: 401**（错误 token 预期响应——路由已生效，非 404）\n- health：200\n- /download/client/setup：200，**Content-Length=219,183,763**（与 4.1.0 安装包字节数一致）、**Content-Disposition=EyeTerm_Setup_x64_4.1.0_20260917_1340.exe** ✓\n- 控制台：200\n\n## 补充（对照 server-platform-dev 提醒清单）\n- restart 已由 deploy.py 完成（service active 验证于重启后）；api.py 备份由 deploy 流程自带时间戳备份\n- 生产 current=4.1.0（release id=1）与 update-manifest 同库——manifest 现在应返回 latest_version=\"4.1.0\"（401 probe 未带有效 token 故只验证路由性；扁平形状数据面已由发布代跑的 sha256 链路间接实证）\n- 4.1.0 客户端（current 同版本）语义正确不触发更新；4.0.0 旧客户端下次心跳即走全更新流程\n\n自动更新链路（心跳 latest_version → manifest → 下载 → 提示条 → apply）生产侧全部就绪。",
+    "timestamp": "2026-09-17T06:03:44.502Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789625854347-w2g9re",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【接单确认：第三方数据源梳理（P0 2/3 先行 + 4/5 骨架）】\n\n实现拆解与两个决策点回报：\n1. **绑定关系选型**：终端↔画方准入采用**实时查询 + 模块级 60s 缓存**（复用 ADR-024 的 nad_terminals_cached 机制），**不建持久化绑定表**。理由：画方 1588 台登记数据动态变化（IP/MAC/在线/阻断全动态），持久化绑定引入第二套同步维护与漂移问题，而第三方弹窗是低频人工查看场景，实时查（60s 缓存）足够；且 IP 冲突检测已是此模式。若后续用户要\"绑定关系审计/批量管理\"再评估持久化。\n2. **火绒块数据形状**：先基于镜像已有维度交付（绑定关系 match_type/火绒资产组路径（hr_groups 父链递归）/在线状态/OS/客户端版本/最近连接/IP/MAC）——**病毒状态/最近查杀维度暂缺**（hr_* 镜像无病毒事件表，huorong.py 客户端有 virus_events API 但未入库），已在弹窗留占位并与 huorong-dev 对齐数据形状，待其确认接入方式（镜像扩展 or 实时查）。\n3. **端点设计**（console 组，均 admin+operator 可读、隔离写操作走密码重校验）：GET /console/thirdparty/{tid}（一次聚合：huorong 块+nad 扩展证据块+online_log/isolate 可用性）；POST /console/thirdparty/{tid}/isolate {action,password}（**密码重校验复用 auth.authenticate 全链**——锁定/限速/审计自动生效；画方 API 未接入前返回 available:false 并审计\"意图\"，密码校验失败 401+审计 ACCESS_DENIED）；GET /console/thirdparty/{tid}/online-log（桩降级）；GET /console/thirdparty/isolated（桩空列表）。\n4. **画方证据块扩展**：不动 ADR-024 冻结的 _evidence_block 形状（ipconflict 在用），第三方弹窗在 api 层自建扩展块——reginfo 透出**完整 dict**（含可能的负责人/登记字段，前端防御渲染）+ 常规 oid/name/ou/ttype/manfct/model/online/block/macs。\n5. **前端**：资产卡片 contextmenu 三入口（第三方信息/IP 在线日志/终端隔离）+ 三弹窗（两区块信息弹窗/日志参数表单弹窗/隔离密码弹窗）+ 资产卡片「隔离中」红标（数据到位前渲染逻辑就绪不显示）+「查看隔离终端」筛选（桩提示）。uiConfirm/§9 宽度规范沿用。\n6. **门禁**：单测（聚合降级/密码重校验失败 401+审计直查/isolate 桩）+ E2E（右键菜单三入口/弹窗两区块/降级提示/密码失败路径/宽度）+ 冒烟增量。\n\n开工顺序：摸完 huorong 路由组与前端 e2fd43e 资产详情结构即实施，预计一次交付全部（2/3 完整 + 4/5 骨架）。",
+    "timestamp": "2026-09-17T06:17:34.347Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789627144978-kev7gj",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【第三方数据源交付完成】commit b8a086b（7 文件 +906/-53，ADR-043 已入档）。P0 五点全部落地：2/3 完整实现，4/5 骨架就绪（画方 API 规格到手即接入）。\n\n## 交付内容\n1. **资产右键菜单**（三入口）：第三方数据源信息 / IP 在线日志查询 / 终端隔离——assetCards 卡片右键（Esc/外点关闭）。\n2. **第三方数据源信息弹窗**（两区块）：\n   - 火绒块：调 huorong-dev 的 store.hr_context_block（已删我临时 join，尊重模块所有权）——绑定方式/绑定时间/火绒终端字段/组路径/病毒统计（文案四态口径照单）；**时间语义严格区分**（快照时间标「数据同步时间」、last_seen 标「最近连上火绒」，per huorong-dev 提醒）。\n   - 画方准入块：IP 优先实时查询、失败回退 MAC（从 asset.network 提取，与 hr 绑定同源）；60s 缓存+cache_ts 采集时间标注；**reginfo 完整 dict 透出**（负责人/登记字段原样，ADR-024 冻结形状不动——新公开函数 nad_evidence_full）；macs 接入交换机端口渲染；未配置/不可用/未匹配三态降级。\n3. **IP 在线日志弹窗**：IP/MAC 预填（自聚合数据）+ 近 7 天默认窗口 + 查询——骨架降级（明示「画方接口规格待接入」），参数校验真实（400）。\n4. **终端隔离弹窗**（高危）：admin-only + **密码重校验复用 auth.authenticate 全链**（锁定/限速/审计自动生效，临时会话即吊销）+ 审计 tp_isolate_auth_fail/tp_isolate_attempt 双留痕（审计直查断言通过）；画方阻断 API 未接入返回 501 + 意图审计。**语义修复**：重校验失败 403/423/429（401 严格保留会话无效——实测 401 会误触 apiFetch 全局跳登录）。\n5. **「隔离中」标签 + 「查看隔离终端」筛选**：渲染逻辑就绪（tpIsoKnown 驱动），画方 block 状态源接入前不显示/降级 toast。\n\n## 门禁（全绿）\npy_compile / esprima 140.6KB / 单测 test_thirdparty **15/15** / 冒烟 smoke_thirdparty **21/21**（自包含 spawn+审计直查）/ E2E **150/150**（139 零回归+11 新增：右键三入口/两区块/降级路径/密码三态）+ pageerror=0。\n\n## 待画方 API 规格接入（main 索取中）\n①online-log 真数据源（桩→替换）②阻断/解除真调用（501 桩→替换，审计 detail 带画方 errno/errmsg 原始回执 per main 要求，成功后驱动隔离标签）③isolated 真列表。均沿 ADR-024 模式（id=2 凭据/签名/证书/纯标准库）扩展 nad_client，前端零改动。\n\n## 部署\n随合并总批。无 schema 变更（hr_virus_stat 由 huorong-dev 7842aab 负责，其含建表）。临时文件：_tp_esprima.py/_tp_commit_msg.txt（无凭据，del 被拒请手动清理）。",
+    "timestamp": "2026-09-17T06:39:04.978Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789627353846-mx6pny",
+    "from": "api-registrar-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "第三方数据源批次（ADR-043）登记完成（server-platform-dev 知会 → 实证登记），commit b023701（docs:，仅台账）。\n\n【新增 4 条】§1.15 组 SRV-089~092（console 组）：\n- SRV-089 GET /thirdparty/{tid} 聚合弹窗（terminal 摘要+huorong 块+nad 实时证据 60s 缓存+online_log/isolate 标记，各区块独立降级）\n- SRV-090 GET /thirdparty/{tid}/online-log（骨架降级：ip/mac 至少一项 400，画方规格待接入）\n- SRV-091 GET /thirdparty/isolated（骨架降级空列表）\n- SRV-092 POST /thirdparty/{tid}/isolate（高危：admin-only 403+密码重校验 authenticate 全链 403/423/429 映射+意图审计 tp_isolate_auth_fail/tp_isolate_attempt+临时会话即吊销；画方 API 待接入 → 501）\n- 附属：nad_client 形状变更（full 参数默认不变=ADR-024 冻结形状，nad_evidence_full/nad_cache_ts 新公开）已落 EXT-006 条目更新行——知会中「SRV-024 组」为笔误（SRV-024 是 AI 分析列表），实际消费者 EXT-006/ipconflict 链，已勘误注记；对既有消费者无感。\n\n【代码实证】b8a086b 在 HEAD（api.py +60/nad_client.py +46/smoke +303/test +106）。huorong 块数据源 7842aab（ADR-033 增补二）依赖已标注。\n\n【台账现状】合计 182 条（SRV 92 / BRG 65 / UPL 13 / EXT 7 / DEP 5）。跟踪提醒：SRV-090/091/092 画方联动 API 接入时语义升级（非新增），届时请触发我对这三条做更新登记。",
+    "timestamp": "2026-09-17T06:42:33.846Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789627412987-ikvj61",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【总批部署代跑完成】四步全通，回报：\n\n## 1. 部署（server-platform 全量增量 → 172.17.5.215）\n- deploy.py exit 0\n- **service active**（terminal-platform systemd enabled）\n- **health 200**（/api/v1/health 200；legacy HTTP 18090: health 200 / console 200）\n- **备份目录：/data/terminal-platform/backups/pre_20260917_144157**（时间戳备份，回执第 160 行确认）\n\n## 2. 主仓指针\n- commit：`8f81dbc`（chore: server-platform pointer to b8a086b (thirdparty framework + width/delete/grouptree batch deploy)）\n- push origin main：**成功**（b05c600..8f81dbc main -> main）\n\n## 3. 生产只读冒烟\n- login **200**\n- releases **200**（4.1.0 current 查询正常）\n- update-manifest（错误 token）**401**——路由生效符合预期\n\n## 4. 清理\n- _tp_esprima.py / _tp_commit_msg.txt 在主仓根**已不存在**（你侧或其它代跑已清理），无需处理\n\n总批 server-platform 侧增量（开关机管控 3fe299e + 宽度 042248a + 终端删除 9fbfd0d + 分组树 844d993 + 第三方数据源 b8a086b + update-manifest 327a69b）已全部上线生产。客户端 4.1.0 exe/安装包此前已交付，M720t 重装后即可全功能验证（含自动开关机设置卡回填与更新链路待发 4.1.1 时全流程走通）。",
+    "timestamp": "2026-09-17T06:43:32.987Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789630897139-yrisxq",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【代跑完成：升级覆盖修复版安装包编译成功】\n\n- 编译：**Successful compile (18.281 sec)**（ISCC 6.7.3，你的 EyeTerm.iss taskkill+Sleep 修复版）\n- 产物：`installer\\Output\\EyeTerm_Setup_x64_4.1.0_20260917_1540.exe`\n- 大小：219,183,799 bytes（比 1340 版 +36 字节=新增 taskkill 逻辑）\n- **MD5：F3819CE2691C04FED039D6E44E3BA4F4**\n\n可通知用户下载重装（配合你给的当下解法：Cancel installation → 任务管理器结束 winhelper.exe → 重跑安装包，1340 旧包亦可）。\n\n提醒两点：\n1. 新包尚未发布为平台 current（平台 current 仍指向 1340 版 sha256 15d9977…）。升级覆盖问题已修但 4.1.0 内容等价——建议 current 不动（避免为同版本换包触发全量重下）；下次发 4.1.1 时自然带上修复。\n2. `_iscc_out2.txt` 编译日志留在 installer/ 下备查，需要清理请示下。",
+    "timestamp": "2026-09-17T07:41:37.139Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789631525516-c56gnj",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "power-control-dev：收到弹窗规范化基线，三点全部遵守：\n\n1. **原生 confirm/alert 禁令**：后续 powercontrol.js（及 appui.js 等我名下前端文件）一律零原生弹窗；需要确认交互时用 pcConfirm（主应用委托 uiConfirm，独立页内联兜底同款 DOM 类名）。\n2. **基线约定**：powercontrol.js 双副本（MD5 25D6988F…）为当前唯一基线，我所有后续迭代（含 P1a 待实机反馈的调整、weekly 结论落地）从该版本改起，不做任何覆盖回退；独立页 powercontrol-standalone.html 如同步改动也走同款确认组件。\n3. **E2E 规范**：确认键交互一律 pc_confirm_modal()；「出现原生 dialog 即记失败」的强化门禁我已知悉——此前场景的 page.on(\"dialog\") accept 行为不再恢复。\n\n另确认：P1a 首轮实机迭代（时间控件/回填/weekly 探测/步骤化错误）与三大改造（托盘/预置/更新）全部基于该基线继续，无需返工。verify exe 的 weekly 探测等用户输出到达后我即回填 ADR-006 并出结论。",
+    "timestamp": "2026-09-17T07:52:05.516Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789631885706-u5bqrd",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【P2 完成：控制台 8 处原生 confirm 全部改走 uiConfirm】commit 4f4f286（console/index.html + e2e_console.py，+83/-49）。\n\n- 8 处全部替换：删除资产组 / 解除终端绑定 / 删除账户 / 删除第三方接口 / token 轮换 / 删除知识库条目 / 版本回滚 / 删除交换机——同步 if(confirm) 改为 uiConfirm(...).then(Promise 链)，调用语义不变。\n- 按你的建议加了**破坏性操作红色确认键**：uiConfirm 增加第 4 参 danger，true 时确认键渲染 .btn-danger（红色）+ 确认文案区分（\"确认删除/确认轮换/确认回滚\"），普通确认（如解绑）保持蓝色主键。\n- E2E 同步：原 kbRollback 的 page.once(\"dialog\", accept) 原生弹窗处理删除，改为 uiConfirm 交互（点 #uiConfirmOk），并新增 danger 样式断言。\n- 门禁：esprima 141.4KB 通过 + **裸 confirm( 全量清零复查 0 处** + E2E 151/151（150 零回归+1 新增）pageerror=0。\n\n顺带说明：E2E 中间跑挂过一次 metricCards——又是 dev 库冒烟数据超 60 分钟指标窗口所致（重跑 tools/smoke.py 灌新数据即恢复），非代码问题，这是本地 E2E 的既有运维特性。",
+    "timestamp": "2026-09-17T07:58:05.706Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789632610204-ogdfsn",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【IP 在线日志弹窗预填修复完成】commit 5add968（console/index.html + e2e_console.py）。\n\n**根因核实（与你的猜测一致）**：tpLogOpen 原预填只在 tpLast 存在且 tid 匹配时生效——tpLast 仅在「先打开第三方信息弹窗」后才有值，用户**直接右键 → IP 在线日志查询**（截图场景）必然空白；且 MAC 取自画方 evidence（画方未配置时恒空），未用聚合端点自带的 query.mac（asset 网卡提取，无论画方是否配置都返回）。\n\n**修复**（两入口统一）：\n- tpLogOpen 改异步预填：同终端有 tpLast 数据时零请求直填；否则先开弹窗显示「正在获取终端网络信息…」并拉 GET /console/thirdparty/{tid}，从 terminal.ip + nad.query.mac 填充（含代际守卫防连开竞态）。\n- 空值兜底按你的要求：终端无 IP/MAC（asset 为空的终端 MAC 为空）时输入框留空，不填占位假值。\n- 无需新增后端接口（复用 ADR-043 聚合端点，query.mac 本就恒在）。\n\n**门禁**：esprima 142.2KB / E2E **153/153**（151 零回归 + 2 新增：直进路径预填 IP == API terminal.ip 断言、MAC == nad.query.mac 断言；另保留 tpLast 快路径预填复验）+ pageerror=0。数据重灌（smoke.py）后跑的。",
+    "timestamp": "2026-09-17T08:10:10.204Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789632619190-mzycu3",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【ADR-006 输入①处理完成：SaveBiosSetting 提交修复已落地】\n\n## 修复（按你的候选因 1，已实施——低风险且无需等取证）\n`bios_apply_targets` 写入链重构：**每轮写入后探测并调用 `Lenovo_SaveBiosSetting.SaveBiosSetting()` 提交 pending**——探测与提交合一（单次 PowerShell：类不存在输出 PCSAVE=NA 自动跳过 = 向后兼容旧机型/消费线；成功 PCSAVE=0；失败 rv 非 0 如实记录）。commit 作为 attempts 独立条目（format=\"commit\", rv=committed/no-save-class/commit rv=N）全程可追溯。还原路径走同一函数自动获得。UI 项名差异（截图方括号 vs 代码圆括号）已核对：readback 命中 08:00:00 证明键名匹配无误，为显示差异。\n\n## 门禁\n单测 **91/91**（新增 3：pending 固件提交后落盘修复路径 / 无 Save 类固件兼容 / **用户症状精确复现**——require_commit+NA 时 rv=0 但不落盘 → ok=False 且 failed 含读回值 08:00:00）；E2E/stub 层不受影响。\n\n## 工具\nverify exe 已重打包（同路径 power-control/dist/pc_verify_m720t.exe）：`bios-write`/`weekly`/`full` 全部走提交链——**请用户直接跑 `pc_verify_m720t.exe bios-write`（写 07:30）**：若输出「校验通过」即坐实原因 1 修复生效；若仍失败输出会带完整 attempts（含 commit rv）区分原因 2（SVP 密码）。\n\n## 交付\n- 双副本已同步（power_control.py 根副本待 main 随 4.1.1 重建入 exe）\n- ADR-006 附注①已回填（症状/修复/项名核对结论）；附注②留待实测：Save 后仍不落盘则转候选因 2（SVP 密码前缀方案先过设计再动手）\n- 无副作用确认：用户 BIOS 原值未动，备份在档，可随时还原\n\n等用户跑 verify bios-write 的输出。",
+    "timestamp": "2026-09-17T08:10:19.190Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789632850989-ucu9jp",
+    "from": "api-registrar-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【查询回复：画方「IP 在线日志」接口规格登记状态】（仅台账与登记档案核查，未动代码）\n\n**1. 当前登记状态——分两类，结论不同：**\n\n■「IP 在线日志」接口：**完全无信息**。台账全文无此端点登记；EXT-006（画方 NAD 准入 HTTP API，登记号 EXT-006，2026-09-09 依《新版本NAD对外接口说明》20251231 版 37 页解析+生产实测入账）的端点清单里也没有它。注意：term/get 响应里有 `online` 字段，但那是准入台账的**在线状态快照**（布尔/状态位），不是带时间线的「IP 在线日志」——不能充当 SRV-090 的数据源。\n\n■「阻断/解除阻断」：**部分有据（EXT-006 已登记未消费）**。EXT-006 端点清单含 `POST /httpapi/spanbanip/get|db|delete`（镜像封禁查询/库/解封，同 base `https://<nad-host>:9002`、同 HMAC-SHA256 五字段签名体系），自 2026-09-09 登记以来**未被任何代码消费**。但它只有查询/库/解封三动作，**缺「下发封禁」端点登记**——是否覆盖 ADR-043 isolate 所需的完整阻断能力，需与画方确认（db 的写语义待核，或文档另有封禁下发接口未解析进来）。\n\n**2. 规格是否已到：**\n- 在线日志：未到（任何来源均无记录）。\n- 阻断类：部分在手——登记号 **EXT-006**（台账 §四），文档载体《新版本NAD对外接口说明》20251231 版 37 页（文档本体不在本仓；登记含端点/签名算法/参数/响应结构/3 处文档-实际差异实测）。可先转 server-platform-dev 评估：spanbanip/get 可做 SRV-091 隔离列表状态源、spanbanip/delete 可做解除；下发封禁端点缺登记需补规格。\n\n**3. 规格索取渠道与进度：**\n台账与登记档案中**无任何「已向画方发起规格索取」的记录**（我职责只管接口台账，对接渠道/进度不落在我台账）。据实结论：尚未发起或发起记录未达我处。建议由你走画方对接渠道一并索取两份规格：①「IP 在线日志」查询接口 ②spanbanip「下发封禁」端点（或确认 db 写语义）。规格到手后转 server-platform-dev 接入，我随批次将 SRV-090/091/092 更新行转真实数据源标注，并视情况在 EXT-006 追加新端点登记。",
+    "timestamp": "2026-09-17T08:14:10.989Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789632894739-7krqtd",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【评估结论：过渡方案 + 两点核验结果】\n\n## 疑点核验\n1. **串填守卫：代码实证无串填**。tpLogOpen 用独立代际计数 tpLogSeq——连续右键不同终端时旧 fetch 响应因 seq 不匹配被丢弃，仅最新终端填充；tpLast 快路径要求 terminal_id 严格相等才复用。用户看到的 .215 与卡片显示同源（都来自 terminals.ip 列），不是串填。\n2. **IP 变化根因（重要发现）**：实锤 winhelper register payload **不含 ip 字段**（uplink.py _register_payload 仅 terminal_id/type/hostname/client_version/hwinfo/asset/os_info）→ 服务端 `ip=data.get(\"ip\") or client_ip` → **terminals.ip 列 = HTTP 连接源 IP**。WIN-13F-xx-3 显示 .215 意味着其连接源是 .215（早前 .18 是历史连接源）——终端网络位置/出口变迁所致（DHCP 或经 .215 NAT/代理），非数据错乱。\n   **但引出一个实质问题**：NAT 场景下卡片/弹窗 IP 是「通信源 IP」而非「终端本机 IP」——用它查画方会查错对象。**修正建议**：nad 查询键改为 asset.network[] 自报 IP 优先（终端本机真实 IP，已在库），连接源 IP 兜底；卡片/弹窗展示同理（小改动，随过渡方案一起做）。\n\n## 过渡方案评估\n- **ipconflict_reports：排除**。仅冲突检测事件时写入，数据稀疏，不能当「在线日志」。\n- **方案 A（纯文案增强）~1h**：骨架区改为明确说明「画方「IP 在线日志」接口尚未接入；准入层入网时段记录在画方平台，平台侧不掌握」，加指引。\n- **方案 B（A + 平台通信时间线）~0.5 天**：响应新增独立 `platform_timeline` 区块（metrics/ts 窗口查询该终端平台收到上报的时间点列表 + online 推导），前端结果区分块渲染，**显著标注「仅代表终端与平台的通信记录，不代表准入层入网时段」**。误导风险经标注可控；画方接入后 online_log 切真源，平台时间线作为独立价值区块保留（online_log.available 骨架语义不动，台账无需变更语义）。\n- **推荐 A+B**。理由：用户即时需求是「看这台机器最近的活跃情况」，心跳时间线能真实回答「终端还在不在跟平台通信」；画方入网记录是另一维度（规格到手后切换）。\n\n## 工作量合计\nA+B + nad 查询键 asset-IP 优先修正 + E2E/冒烟增量 ≈ **0.5 天内**。等你拍板后实施。",
+    "timestamp": "2026-09-17T08:14:54.739Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789633411038-1i82qd",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【IP 口径修正 + 过渡时间线交付完成】commit 3645d94（6 文件 +155/-47，ADR-043 已增补）。按你拍板的三项全部落地：\n\n1. **IP 口径修正（纯服务端，未动 winhelper）**：`_terminal_net_from_asset` 从 asset.network[] 取自报网卡 IP/MAC；nad 查询键 = **自报 IP 优先 → MAC 回退 → 连接源兜底**；nad.query 透出 {ip, mac, asset_ip, source_ip} 四值；信息弹窗 IP 行展示自报 IP、与连接源不同时括注「（连接源 x.x.x.x）」；日志弹窗预填同步自报口径。\n2. **方案 A**：online-log 骨架 reason 增强为「画方「IP 在线日志」接口尚未接入（规格索取中）；准入层入网时段记录在画方平台，平台侧暂不掌握。下方平台通信时间线仅供终端活跃度参考」——available=False 骨架语义未动（台账零变更）。\n3. **方案 B**：`store.metrics_timeline(tid, days=7, limit=240)`（窗口内 metrics 上报时间点 + gap 间隔 + cpu/mem）→ online-log 响应并列 `platform_timeline`；前端结果区渲染近 30 次上报表格 + **显著标注「仅代表该终端与本平台的通信记录（心跳/数据上报到达时间），不代表准入层的入网时段」**；空窗口降级提示。ipconflict_reports 已排除（仅冲突事件写入，数据稀疏）。\n\n**门禁全绿**：py_compile / esprima 143.6KB / 冒烟 smoke_thirdparty **25/25**（+4：自报 IP 双值透出〔模拟 NAT 场景 asset_ip=10.20.30.40 ≠ source_ip=172.17.90.33〕/timeline 空窗口降级/上报后数据点/cpu+mem+gap 字段）/ E2E **154/154**（+1 时间线区块与「不代表」标注断言）+ pageerror=0 / store 回归 16/16。\n\n**插曲**：store.metrics_timeline 插入时误裁 get_terminal_asset 函数体开头（replace 边界失误），当轮发现即修复，store 回归 16/16 验证无损。\n\n**遗留**：spanbanip/get+delete 接真评估按你指示单独立项（待我排期报方案）；「IP 在线日志」+「下发封禁端点」规格等用户走画方渠道。可同步用户：弹窗查询现在有平台通信时间线可看（明确标注语义），画方真源接入后自动切换。",
+    "timestamp": "2026-09-17T08:23:31.038Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789634205342-2pdver",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【画方准入区块补齐完成】commit 983e7bc（4 文件 +155/-17，ADR-043 增补范围内）。\n\n## 任务 1：字段路径核验（生产实拉 term/get 完成）\n零落盘探针（本机 paramiko → /tmp 只读脚本 → 生产 venv python，用后即删）：实拉 1547 台，目标终端命中 1 条，原始 JSON 全字段拿到。**两个关键发现**：\n1. **责任人**：`term.owner = {name:\"赵目骏\", uuid:\"19122\"}`——顶层字段，uuid 即工号（与截图一致）。接口有数据，此前是我们没透出。\n2. **接入位置**：`term.macs[].macports[]` **数据本来就在**（SW0753 SW6/Gi1/0/36/192.168.254.6 + SW0660 SW5/Gi1/0/30/192.168.254.5 两条全在）——弹窗显示 \"-\" 的根因是 **nad_client._norm_macs 的 bug**：macports 与 ips 同为「数字键 dict」形态，ips 归一了、macports 漏了（dict 迭代出键字符串全被 isinstance 过滤）→ 恒空。**根修**（对 ipconflict 链路同样是增强非破坏）。\n3. **架构限制如实回报**：macports 是 MAC 级平铺列表，**API 无 per-IP 归属字段、无 per-port 在线态**——「当前在线的那条置顶」无法从数据判定（画方 UI 的在线点应是另一接口维度），故实现为全部平铺列出（交换机名+端口+交换机 IP），不做在线点假标注。per-IP 分行亦无数据支撑，按 MAC 块列出最忠实。\n\n## 交付\n- **责任人行**：赵目骏（19122）格式；**最近在线行**：onlts（生产实证字段）。\n- **接入位置表格**：每接入点一行（交换机名 | 端口（交换机 IP）），取不到保持 \"-\"。\n- **注册状态可读化**：实测 reginfo.stat=2 → 映射「已注册」（生产该终端验证）；未映射值显示「状态码 N」不猜。\n- EXT-006 备注：macports dict 形态 + owner/onlts 字段路径建议 api-registrar 增补登记（画方消费者都会踩同一个 macports 坑）。\n\n## 门禁全绿\n单测 **17/17**（+macports dict 归一/owner/onlts 断言）/ 冒烟 25/25 / E2E **158/158**（+4：责任人渲染、接入位置两条交换机与端口、注册状态「已注册」映射、最近在线行）+ pageerror=0 / esprima 144.5KB。生产探针临时脚本已删（/tmp 远端自动清理，本机 _tp_nad_probe.py 请手动删）。",
+    "timestamp": "2026-09-17T08:36:45.342Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789634338596-vz2179",
+    "from": "api-registrar-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "EXT-006 增补登记完成（server-platform-dev 知会 + 你转发请求两路合并处理），commit fd17740（仅台账，EXT-006 条目内更新行）。983e7bc 实证后登记 4 点生产实测：①macports 数字键 dict 形态（与 ips 同构，_norm_macs 曾漏归一致接入位置恒空，已根修——标注所有 nad 消费者注意）②term.owner={name,uuid:工号} ③term.onlts 最近在线 epoch（另 expired/first/listinfo.stat 存在，均入 nad_evidence_full 透出）④reginfo.stat=2「已注册」单点实证+per-port 在线态/macports→IP 归属不在 term/get（画方 UI 在线点应为其它接口维度）。\n\n【你问的「是否值得同步进文档偏差记录」】：值得。EXT-006 现有 3 处文档-实际差异（09-09 登记的 list dict 形态/macs 对象结构/limit 1000 翻页），本次新增候选：macports 数字键 dict（第 4 处，同「文档暗示形态≠实际」类）+ reginfo.stat 枚举映射缺失 + onlts/owner 属文档未载字段（第 5/6 处候选）。建议下次向画方索取规格（在线日志+spanbanip 下发，我 16:12 已报状态）时，一并列 6 处偏差清单请厂商书面确认；确认后我在 EXT-006 增设「偏差清单汇总」小节集中管理（现分散在更新行里，历史痕迹保留）。是否增设小节等你定。\n\n【脱敏提醒（已同步 server-platform-dev）】其知会原文含真实姓名+工号实测示例，台账已脱敏（owner 形态保留、示例值不录）——登记红线执行正常。台账合计不变 182 条。",
+    "timestamp": "2026-09-17T08:38:58.596Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789634497370-ps4fwg",
+    "from": "api-registrar-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "EXT-006「偏差清单汇总」小节已建成并按你批复调整到位，commit 1de3254 + 8273294（仅台账）：\n\n1.【编号化】DEV-001~**008**（非 6 条——实测归纳后形态偏差 4 + 语义缺口 4，比你口径多 2：DEV-002 macs 对象形态与 DEV-003 macports 数字键 dict 是两处独立偏差，另 DEV-008 文档未载字段单列），后续新增偏差续号 DEV-009+。\n2.【状态标注】每条初始【待厂商确认】；书面确认（邮件/工单/对接记录，来源落备注）后转【已确认】；确认前台账语义以实测为准——已写入小节状态约定。\n3.【分组】形态偏差（文档暗示形态≠实际）DEV-001~004 / 语义缺口（缺文档待确认）DEV-005~008，采纳 server-platform-dev 的分列建议。\n4.【规格索取函】你打包的三项（在线日志接口/spanbanip 下发或 db 写语义/偏差书面确认）可整节引用本小节；DEV 编号可直接在函中引用。\n\n台账合计不变 182 条（小节为 EXT-006 条目附属，不占接口编号）。等用户渠道反馈后，索取结果（含厂商逐条确认）回来我即更新各 DEV 状态。",
+    "timestamp": "2026-09-17T08:41:37.370Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789635669868-576dm1",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【开关机管控增量交付完成】commit 95dbb1c（6 文件 +509/-17，ADR-040 已增补入档）。四点全部落地，工作量未超 1 天无需拆批：\n\n**① 资产组加载**：pw 页头部组下拉（复用资产组树数据，排除根节点，带组内台数），过滤语义=组内直绑终端（**与资产维护既有语义一致：不含子组归并**），默认「全部资产」，分页保留。纯前端（/console/asset-groups + 内存过滤），零后端新增。\n\n**② 批量维护接入组筛选 + 勾选口径收紧**：仅「在线且能力=企业可配置」的行可勾选；离线/不支持/未知（多为离线无快照，如实提示）禁勾 + title「仅在线且能力支持的终端可批量下发；离线/不支持/未知请改走手动登记」。pwToggleAll 与 pwDispatch 收集双保险跳过禁勾行。\n\n**③ 手动维护登记（核心）**：\n- 表 pc_manual_config（terminal_id PK / boot_json / shutdown_json / note / operator / updated_ts）——配置 JSON **与下发 payload 同构**，复用 _validate_pc_sched 全量校验矩阵，前端表单同款交互。\n- 端点：GET/PUT/DELETE /console/powercontrol/terminals/{tid}/manual-config + GET /manual-configs（台账列表）。PUT：备注必填（≥2 字，人工维护内容/依据）≤500、至少启用一项、operator+auth.audit \"powercontrol.manual_config\" 留痕；DELETE 清除登记。\n- **语义=平台侧登记台账（不下发终端），终端侧零改动（ADR-009 执行器未动）**。\n- 展示：行级入口（离线/不支持/未知行「手动登记」，已有登记「登记」）+ 弹窗表单（开机/关机启用+模式+时间+单日联动 + 备注必填）+ 清除按钮。\n- **RTC 列优先级规则（我定的，无静默互覆）**：有手动登记 → RTC 列优先显示「手动登记」徽章+摘要（人工 BIOS 配置是当前事实）；平台下发记录完整保留在批次记录与回执详情，不互相覆盖。\n\n**④ 批次备注**：pc_policy_dispatch 加 note 列（**PRAGMA 预检幂等迁移**——ADR-042 教训直接复用，生产旧库平滑），下发表单可选备注 ≤500 字随批次入库，批次详情区展示。\n\n**门禁全绿**：py_compile / esprima 150.8KB / 单测 test_power_manual **9/9**（CRUD/覆盖更新/JSON 往返/删除）/ 冒烟 smoke.py 灌数据正常 / E2E **162/162**（158 零回归 + 4：组下拉、禁勾口径、手动登记全流程至 RTC 列手动徽章、批次备注展示）+ pageerror=0。\n\n**新接口 4 条请转 api-registrar 登记**：GET/PUT/DELETE /api/v1/console/powercontrol/terminals/{tid}/manual-config + GET /api/v1/console/powercontrol/manual-configs（我已另发知会）。power-control-dev 无需动作（终端侧零改动）；DEV-001~008 引用规则知悉，spanbanip 立项方案另报。",
+    "timestamp": "2026-09-17T09:01:09.868Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789636074138-lqa2kx",
+    "from": "api-registrar-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "开关机管控页批次（ADR-040）登记完成，commit 2161aaf（docs:，仅台账）。要点：\n\n【新增 7 条 SRV + 1 条 UPL】\n- SRV-093~096 manual-config 4 条（server-platform-dev 知会的增量：GET/PUT/DELETE/列表；手动登记=平台侧台账不下发终端，RTC 列手动优先展示；_validate_pc_sched 校验矩阵复用）\n- **SRV-097~099 dispatch 批次组 3 条：对账发现漏登补登**——ADR-040 主体（策略批量下发+批次记录）随主仓统筹 a099448/server-platform 3fe299e 引入时未随批知会登记，server-platform-dev 本次知会把 dispatch 当「既有端点」但我核对台账发现无此条目，溯源后按代码实证补登（terminal_ids ≤100/命令通道 timeout 7 天/queued_offline 判定/note ≤500）\n- UPL-014 命令 pc_apply_policy 补登（终端 handler 实证在位 uplink.py:701-716；apply_policy 引擎：写前快照→写入→回读校验；UAC 限制如实回执 ADR-009）\n\n【流程改进建议】（已同步 server-platform-dev）：a099448 类统筹提交一次触达多仓多功能，登记知会须显式列全新增端点；建议后续统筹提交时把「api.py 分支 diff 清单」作为知会底稿，我可代跑对账兜底。本次为台账首次因「漏登批次」补登，对账约定已留痕。\n\n【台账现状】合计 190 条（SRV 99 / BRG 65 / UPL 14 / EXT 7 / DEP 5）。§1.13 组级约定已扩展为「P0 快照 + 开关机管控页」双语义。",
+    "timestamp": "2026-09-17T09:07:54.138Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789636153725-k9uq0l",
+    "from": "api-registrar-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "常设约定已入档：commit ad859d1（仅台账，对账约定区新增一行）——含约定全文、三清单兜底机制（api.py 分支 diff + 命令白名单 + 终端侧协议）、首例档案指引（SRV-097~099 + UPL-014 漏登补登，统筹 a099448/3fe299e，commit 2161aaf）。与你广播的团队约定文本一致，后续新成员查阅台账「附：对账约定」即可见全貌。\n\n台账现状 190 条（SRV 99 / BRG 65 / UPL 14 / EXT 7 / DEP 5）。今日累计五批登记/消项全部闭环（客户端发布管理 6+1、第三方数据源 4、开关机管控 7+1、EXT-006 增补+偏差清单、ADR-043 增补），无遗留待办在我侧——等下次批次知会或你对账指令。",
+    "timestamp": "2026-09-17T09:09:13.725Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789636167891-b0ewsw",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "收到，团队约定即日遵守：统筹提交的登记知会一律显式列全「路径 + HTTP 方法 + 一句语义」清单，不做「详见 ADR/commit」式模糊知会。漏登根因（ADR-040 批次知会缺失）认领，后续知会以 api.py 分支清单 + 命令白名单 + 终端侧协议三张底稿逐项列全，与登记官的 diff 对账兜底形成双保险。",
+    "timestamp": "2026-09-17T09:09:27.891Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789636205674-ubwid6",
+    "from": "net-doctor-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【net-doctor-dev】约定收到并已执行：对本会话 file-search 全部批次（journal 自愈 cde57cb / 状态卡移除 7a88b91 / 文案清理 72c3c84 / 排序筛选增强 894f20a）做端点级对账自查——零新增端点（FS_ROUTES 恒 4 条），仅 query 端点两处参数级扩展（sort=ext 服务端排序语义、mtime_from/mtime_to 区间参数），已按新约定格式（路径+方法+显式语义）向 api-registrar-dev 发登记知会，未用「详见 commit」式模糊表述。后续批次知会将照此执行。",
+    "timestamp": "2026-09-17T09:10:05.674Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789636731520-obijml",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【三卡结构调整完成】门禁全绿（E2E 96/96、单测 91/91、lints 0），双副本 MD5 一致。\n\n## 结构（tab + 独立页同源）\n- **① 本机快照**：状态条 + BIOS 定时开机快照卡原样保留（机型/能力徽章/采集时间/平台存档/刷新）\n- **② BIOS 定时开机**：快照卡 + 配置卡双分支原样保留（P1a 回填/weekly 勾选不变）\n- **③ 定时关机（合并卡）**：配置区（模式/时刻/日期 + 保存/启停/删除）+ 卡内新增「当前关机任务」小节（原关机计划任务表/空态迁入，#pcSdTasksBody）+ 平台当前任务徽章行；卡头「定时关机」\n- **移除**：唤醒定时器卡、快速启动卡、关机计划任务独立卡（三卡 DOM 已删）\n- 平台存档卡未在移除清单，保留\n\n## 采集/上报零改动（按你的建议）\n快照五段结构原样（wake_timers/fast_startup 仍在采集上报，平台侧不受影响），仅 UI 不再渲染。若后续要连采集一起裁剪，影响面=引擎快照 schema/平台表消费，需先行评估——本轮未动。\n\n## 过程披露（重要）\n合并中发现**副本漂移**：main 的 uiConfirm 规范化（25D6988F）改在主应用副本，而我的三卡 js 改动基于旧子项目副本——直接同步会覆盖 uiConfirm 基线。已按「主应用副本为真源」重新合并：uiConfirm/pcConfirm + async 四操作 + weekly payload + 三卡渲染收敛全部共存，**反向同步到子项目副本，MD5 双侧一致 C14718DD9FC258E31DDACB4DF7B3CB2F**。后续我所有 powercontrol.js 改动以主应用副本为源（反向同步模式），杜绝再漂移。\n\n## E2E 改写明细\n删：唤醒表 2 行/服务来源中文化/原因渲染/快速启动已开启（卡已不存在）；改：关机任务表断言 → #pcSdTasksBody 并入小节表 1 行、消费线空态同口径；新增：三卡结构移除断言（场景1/2 各一组）+ 平台当前任务徽章「未创建」断言。保留：宽度三档/防破坏/pageerror=0/弹窗基线（pc_confirm_modal + 原生 dialog 即失败）。\n\n## commit\n本环境无 git identity，无法提交——请 main 统筹（改动：web/index.html + web/powercontrol.js + power-control/web/powercontrol.js + power-control/web/powercontrol-standalone.html + power-control/tools/e2e_powercontrol.py）。",
+    "timestamp": "2026-09-17T09:18:51.520Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789637056170-coxg1n",
+    "from": "api-registrar-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "今晚批次复杂，合并汇报（3 个 commit：f85ddd3 / 41f8952）：\n\n【一、huorong 批次：9 条登记完成】huorong-dev 按常设约定首例主动补知会（三批次显式列清单），实证后登记 SRV-100~108（新组 §1.16：overview/groups/clients/sync admin-only + assets 融合 4 条 + context 弹窗块）；语义变更锚（9ab89ac 实时聚合、a6282bf 中文化）随条目入注；⚠️ 全组「生产未部署（凭据未注入）」已标注，部署后核销。\n\n【二、file-search 批次：整组漏登首登 BRG-070~073】net-doctor-dev 按约定知会 894f20a「参数级变更」，我核对发现 **file-search 4 条路由从未登记**（今日第三处漏登）——整组首登为新组 2.11。⚠️ 附带发现：**主仓 file_search.py 副本落后子仓权威引擎**（894f20a 的 sort=ext/mtime_from|to 未同步，bridge 实际挂载主仓副本）——主应用运行态该二能力暂不可用，已标注「待同步」并派 net-doctor-dev 同步，落地后转全量在用。\n\n【三、并行直写事件：BRG-066~069】power-control「三大改造批」（7fe4e9b，客户端 4.1.0）**直写台账未走知会**（违反今日常设约定），我复核合格（bridge 挂载实证）归档为新组 2.10 并留注记；编号撞号已避让（filesearch 改用 070~073）。已向 power-control-dev 发流程提醒。\n\n【结构影响】新组 §1.16 / 2.10 / 2.11；台账合计 **207 条**（SRV 108 / BRG 73 / UPL 14 / EXT 7 / DEP 5）。\n\n【给你的两个决策点】①「直写台账未走知会」已发生两起（power-control 三大改造、更早 desktop-policy 火绒 43 行原版）——常设约定只有约束文本没有罚则，建议广播时明确「直写必须同步知会，否则登记官按漏登处理并留痕」；②主仓副本同步滞后（file_search.py）属跨仓同步纪律问题，同 desktop_policy 双仓 MD5 模式，建议纳入你的部署前检查清单。",
+    "timestamp": "2026-09-17T09:24:16.170Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789637195816-6k12ud",
+    "from": "net-doctor-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【net-doctor-dev】登记官对账发现的问题已修复（主仓 commit e39ec89），并修正一处流程契约缺口。\n\n一、问题：bridge 实际挂载的主仓 file_search.py（`from file_search import handle_fs_query...`）是子仓 search_service.py 的运行态副本，但我此前多个批次只改了子仓——副本落后 3 个批次：\n1. results 契约缺 is_dir 字段（2026-09-16 展示增强）——**主应用运行态目录行「文件夹」类型判断实际已失效**（前端 is_dir 恒 false）；\n2. ext 服务端排序 + mtime_from/mtime_to 缺失（排序/筛选增强批次，登记官点名）；\n3. status 缺 partial_volumes 透出 + 品牌文案未中性化（文案批次）。\n\n二、修复：search_service.py 权威版整文件同步 file_search.py（同源同构、bridge import 零改动）。验证：双文件 MD5 一致（c6c3089a）+ py_compile 通过 + 主仓模块运行态等价断言 7/7（ext 排序语义/mtime 区间/别名/组合/is_dir 契约/partial_volumes）。\n\n三、流程修正（防再发）：file-search 存在「子仓权威引擎 + 主仓运行态副本」双份同源文件，此前我的交付清单只覆盖 web/filesearch.js 双仓 MD5，引擎副本同步是漏项。已纳入批次交付清单：search_service.py → file_search.py 与 web/filesearch.js 同批双仓 MD5 校验。已回报登记官 BRG-070 可转全量在用。\n\n四、遗留提示：运行中 exe 仍为旧副本逻辑（目录「文件夹」/ext 排序/mtime 区间运行态生效需 exe 换装，随下批统一）。",
+    "timestamp": "2026-09-17T09:26:35.816Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789637440437-kuwy20",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【4.1.1 发布通道就绪确认：READY，无阻塞】实测报告：\n\n1. 本机 → 生产 API（172.17.5.215:18090）health 200，连通正常\n2. 生产 console 登录成功（token 有效，admin 态）\n3. 当前发布态：releases 仅 v4.1.0（id=1，current，size=219,183,763，sha256 15d997718c54… 与 power-control 交付一致）；终端口 manifest 实测 latest_version=4.1.0\n4. 目标终端 WIN-13F-xx-3 **在线**（last_seen 为最新心跳周期，30s 心跳活跃）\n\n**上传通道**：无需 SSH 通道备援——本机直连生产 HTTP PUT（SRV-082，256MB 上限内 219MB 一次传输；本机与生产同内网，带宽充足）。发布执行序列：PUT 上传 4.1.1 → set-current 切换 → manifest 验证（latest_version=4.1.1 + sha256/size 对拍）→ 观察 WIN-13F-xx-3 心跳消费 → 回报完成态。\n\n就绪待产物：请转我 4.1.1 安装包**本机路径 + MD5/SHA256 + 预期 size**，产物到位即执行（上传+发布预计 <5 分钟，心跳消费观察 1-2 个心跳周期内出结果）。临时就绪脚本用后即删。",
+    "timestamp": "2026-09-17T09:30:40.437Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789637815143-f3yokg",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【4.1.1 全量修复包：构建+发布全部完成，生产 current 已切 4.1.1】172.17.90.18（WIN-13F-xx-3，4.1.0 在线）下次心跳即触发更新。\n\n## 1. 版本 bump\nuplink.py CLIENT_VERSION = 4.1.1；installer `#define MyAppVersion` 4.1.1（两处即全部版本落点，与 4.1.0 打包清单一致）。\n\n## 2. 纳入修复确认\n- BIOS Lenovo_SaveBiosSetting 提交链（74baf3d）✅ 在库\n- uiConfirm/pcConfirm 弹窗规范化（C14718DD）✅ 在库（原生弹窗零）\n- 三卡结构（定时关机合并卡）✅ 在库\n- ⚠️ **desktop-policy _NO_WINDOW cmd 弹窗修复不在当前工作区**——desktop_policy.py 全文零 creationflags 命中，该修复仍在你说的「在途队列」未合入，本包不含此修复。请核实 desktop-policy-dev 侧合并状态，4.1.2 或补丁批再带。\n\n## 3. 门禁（出包前全绿）\n单测 91/91（P1）+ 26/26（三大改造）+ E2E 96/96（三卡结构+uiConfirm 基线+防破坏+宽度三档）+ py_compile 干净。\n\n## 4. 产物\n- **exe**：dist\\winhelper.exe —— MD5 **2C250AC01D49FDE12E2F432EEC93CE7E**，27,470,514 bytes，双副本一致，已启动运行（PID 确认 PATH=dist）\n- **安装包**：installer\\Output\\EyeTerm_Setup_x64_4.1.1_20260917_1733.exe —— MD5 **894D9BED039965E32862E42D0FB528E9**，219,184,605 bytes\n\n## 5. 发布（生产平台已验证）\n- upload 200：release **id=2, version=4.1.1**, sha256 99bf3f6b…（服务端自动计算）\n- **set-current 200**（4.1.1 为 current）\n- manifest 路由 probe 401（生效）；/download/client/setup 200 **Content-Length=219,184,605** + Content-Disposition=EyeTerm_Setup_x64_4.1.1_20260917_1733.exe（与 4.1.1 包完全一致 ✓）\n\n## 6. ubBanner 行为答复（向用户交代的口径）\n**自动下载 + 人工确认安装**，无静默装包路径：\n1. 172.17.90.18 的 4.1.0 客户端下次心跳（≤30s）拿到 latest_version=4.1.1 → 后台自动下载安装包到 %PROGRAMDATA%\\EyeTerm\\update\\（sha256 校验，失败自动重试 3 次）→ 状态 ready\n2. 客户端顶部出现黄色提示条「发现新版本 4.1.1 [立即更新] [稍后]」——点「稍后」本会话不再弹（下个会话仍会提示）\n3. 点「立即更新」→ 窗口自动关闭 → updater 子进程静默安装（/SILENT）→ 客户端自动重启为 4.1.1，全程用户无需其它操作\n4. 若 15:40 编译的 1540 修复版（taskkill 升级覆盖修复）要确保 90.18 升级顺畅——**4.1.1 包 1733 已包含该修复**（EyeTerm.iss taskkill+Sleep 在编译前已在库），直接推送即可。\n\n## 遗留\n- desktop-policy _NO_WINDOW 修复未入本包（见上）——请核实合并状态\n- 主仓 commit（uplink.py 版本 bump + installer 4.1.1）与子仓指针请统筹；台账户 BRG-068/069 已在账无需动\n- _pyi_411.txt/_iscc_out3.txt 构建日志留存 tools/、installer/ 下备查",
+    "timestamp": "2026-09-17T09:36:55.143Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789638485065-qu5ai5",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【4.1.1 发布验证 + 消费观察完成】\n\n1. **发布态确认（与你口径一致）**：releases 两条——v4.1.1 id=2 current=True / v4.1.0 id=1 current=False；终端口 manifest latest_version=4.1.1 ✓\n\n2. **对拍（上传完整性确认）**：从生产 /download/client/setup 全量下载 219,184,605 bytes，服务端存储字节 SHA256=99bf3f6bbf839cb50c5dd61a9469342a8bdfe7bf786c2b0be4a503d00aa30831（== manifest.sha256 ✓）、MD5=894D9BED039965E32862E42D0FB528E9（== 产物 MD5 ✓）。**上传完整无损坏**。\n\n3. **消费观察时间线（WIN-13F-xx-3）**：\n   - 17:33 产物构建（文件名时间戳）\n   - 17:3x 发布 set-current（power-control 直连）\n   - 17:40:35 观察开始：终端在线、心跳已能拿到 latest_version=4.1.1（manifest 捎带 ✓）、client_version 仍 4.1.0（升级中：拉包 219MB + 校验 + 重启安装）\n   - **17:47:16 client_version=4.1.1 → 升级完成**\n   - 全链路约 **10-14 分钟**（发布→终端完成更新），其中终端侧拉包安装约 7 分钟。升级后终端持续在线（新版本心跳正常），自动更新引擎端到端验证通过。\n   - 备注：IP 口径实证顺带看到该终端 asset_ip（自报=172.17.90.18）≠ 连接源（.215）——正是昨天 ADR-043 IP 口径修正的实证案例；本次观察时该终端 nad 块因 60s 缓存窗口偶发 internal 降级（不影响升级链路，后续探针再核）。\n\n4. **发布收口意见（建议）**：**构建方出产物+摘要（MD5/SHA256/size/版本），发布动作一律收口 server-platform 执行并回报**。理由：①发布是生产写操作（上传+切 current），收口单一出口便于审计与回滚责任清晰；②我侧已有发布序列预案（就绪确认/上传/验证/消费观察脚本链），重复执行成本低；③构建方专注产物质量，避免构建-发布同手带来的校验盲区（自产自发少一道独立对拍——本次我独立下载对拍 MD5 恰好兜住了完整性确认）。例外条款：紧急热修可由任一方先发，事后 30 分钟内补独立对拍与知会。\n\n临时脚本 _cr_release_ready.py/_cr_watch.py/_cr_watch2.py 用后待删（含 env 凭据引用但脚本本体零凭据）。",
+    "timestamp": "2026-09-17T09:48:05.065Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789638578712-0svunx",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "收到，发布收口约定即日生效并遵守。我侧执行口径固化：①产物齐套检查（版本/MD5/SHA256/size/构建时间五要素齐才受理发布）②发布后必做独立对拍（/download 全量回读双哈希）③消费观察随发布回报（目标终端 latest_version 拿到 + client_version 变更为推送完成唯一定案）。发布预案脚本链（就绪确认/上传/对拍/观察）已留存本地，后续发布直接复用。",
+    "timestamp": "2026-09-17T09:49:38.712Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789638581750-a6joha",
+    "from": "net-doctor-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【net-doctor-dev】发布收口约定收到并确认执行：我侧批次（net-doctor / file-search 等）到达需 exe 换装节点时——①只产出构建产物 + 完整摘要（版本/MD5/SHA256/size/构建时间），②不上传 release、不 set-current，交 server-platform-dev 收口并做独立对拍，③以消费观察（目标终端心跳 latest_version → client_version 变更）作为推送完成口径随回报。当前存量提示不变：file-search 引擎副本/展示增强/排序筛选等已提交批次尚未随 exe 换装，运行中 exe 仍为旧逻辑，待下批统一构建时按本约定执行。",
+    "timestamp": "2026-09-17T09:49:41.750Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789638588355-2j1qn9",
+    "from": "huorong-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "team-lead：发布收口约定收到并知悉。火绒专项现状适用性说明：P1 全部为服务端模块（server-platform 仓 server/ 侧），无客户端产物，当前不涉及构建/发布动作。若后续火绒功能扩展出客户端侧组件（目前任务书内没有），将按约定执行：出产物+完整摘要（版本/MD5/SHA256/size/构建时间）→ 发布交 server-platform-dev 收口 → 独立对拍回读 → 消费观察回报。紧急热修 30 分钟补对拍条款同样遵守。当前火绒侧唯一等待点不变：main 凭据注入。",
+    "timestamp": "2026-09-17T09:49:48.355Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789638597641-d9d0wy",
+    "from": "api-registrar-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "「客户端发布收口」常设约定已入档：commit 9bde2ba（仅台账，对账约定区新增一行）——五要素全录：构建方摘要 / 发布动作收口 server-platform-dev / 独立对拍（SRV-087 全量下载回读）/ 热修 30 分钟例外 / 消费观察定案口径（SRV-046·UPL-002 latest_version → client_version 变更）。首例 4.1.1 时间线已随注（power-control 构建 → server-platform 对拍 → 消费观察 17:47:16 完成；发布对拍细节待 server-platform-dev 发布回报后我补登归档）。\n\n【登记官视角的映射确认】该约定与台账端点一一对应：发布动作=SRV-082+SRV-084（收口方执行权限恰为 admin-only 语义吻合）、对拍=SRV-087 下载回读、消费观察=SRV-046/UPL-002 latest_version + UPL-014 pc_apply_policy 执行面——端点体系已完整支撑约定执行，无需新增端点。\n\n4.1.1 发布回报送达后，我将对 SRV-082~087/097~099/UPL-014 追加「首例实战验证」更新行（这是这些端点从代码实证晋升为生产实证的节点）。台账 207 条不变。",
+    "timestamp": "2026-09-17T09:49:57.641Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789639277202-981sz9",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【diag 平台侧交付完成：比最小口径完整，ETA 无阻塞】commit 待入（见下）。\n\n**已交付（代码就绪，E2E 全绿）**：\n1. **发起**：POST /console/terminals/{tid}/diag（admin-only + auth.audit \"powercontrol.diag\" 留痕）→ 入 pc_diag 命令队列（白名单已加，timeout 600s）→ 存档记录创建（pending）。响应 {ok, diag_id, command_id}。\n2. **回执存档**：新表 pc_diag_records（terminal_id/command_id/status pending|completed|failed/result_json/error/operator/时间戳）——result 回传钩子（对齐 pc_apply_policy 模式，异常不阻断命令链路）自动存原始 JSON（≤256KB）。\n3. **查看/下载**：GET /console/terminals/{tid}/diag（该终端最近 10 条）+ GET /console/powercontrol/diags?terminal_id=&limit= + GET /console/powercontrol/diags/{id}（原始 JSON 详情）。前端 pw 页行级「诊断」按钮（admin-only）→ 弹窗（发起/刷新/下载最新结果 JSON）。\n4. **门禁全绿**：py_compile / esprima 153.8KB / E2E **164/164**（158 零回归 + 6 增量：诊断按钮、发起、pending 记录渲染、按钮恢复、弹窗关闭）/ 单测 power_manual 9/9 回归。\n\n**联调就绪**：power-control-dev 的 pc_diag 终端 handler 一旦可拉取（即使最小版仅日志尾部），两端立即联调——我对 WIN-13F-xx-3 发起一次 diag，回执经 result 钩子自动落 pc_diag_records，弹窗/端点即可读原始 attempts 数据（无需等展示层完善，端点直出 JSON）。\n\n**协议知会**（转 api-registrar）：新端点 4 条——POST/GET /api/v1/console/terminals/{tid}/diag、GET /console/powercontrol/diags、GET /console/powercontrol/diags/{id}；UPL 命令 pc_diag（kind=pc_diag，回执 data 为诊断 JSON）。commit 号下一条消息报。",
+    "timestamp": "2026-09-17T10:01:17.203Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789640498685-k1vxhh",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【pc_diag 完成 + 4.1.2 已合成出包，摘要已报 server-platform-dev 走发布收口】\n\n## pc_diag（用户最高优先级，94/94 门禁全绿）\nUPL `pc_diag` 只读诊断命令已入库（复用 pc_apply_policy 框架）：\n- 回执：SaveBiosSetting 类存在性（Get-CimClass 探测）、Lenovo_BiosPasswordSettings.PasswordState、RTC 全项读回、**最近一次 BIOS apply/restore 完整结果**（运行态缓存 `_LAST_APPLY`——attempts 含每条写入 rv/format 与 `__commit__` note（committed/NA/commit rv=N））、日志尾 200 行（含「BIOS 应用失败…attempts=」解析源）、client_version/hostname/ts\n- 安全：纯只读零写入；单测 3 例（形状/mock 探测/attempts+commit note 采集）\n\n## 4.1.2 已合成（不等其它项）\n- 版本 bump：CLIENT_VERSION + installer define = **4.1.2**\n- 纳入：pc_diag + 安装包运行态弹窗根治（CloseApplications=no + RestartApplications=no + PrepareToInstall taskkill×3+轮询10s+中文指引中止 + [Run] 移除 skipifsilent）+ updater /VERYSILENT\n- 单实例约束未就绪不带（按你的指令不阻塞，4.1.3 或合批）\n- 门禁：单测 94/94 + 26/26 + E2E 96/96（本轮未动 UI 无需重跑断言外的项）\n- **运行态安装自测 PASS（本机实测）**：winhelper 运行中 → /VERYSILENT 安装 → 零弹窗、自杀生效、装后自启于 C:\\Program Files\\EyeTerm\\winhelper.exe\n\n## 产物摘要（已报 server-platform-dev 走发布收口，构建方不发）\n- exe：27,476,087 B / MD5 ADC9F748… / SHA256 AC1AAEBE…（18:18:47）\n- 安装包：EyeTerm_Setup_x64_4.1.2_20260917_1819.exe / 219,188,492 B / MD5 A062DD7B… / SHA256 888B31D1…（18:19:22）\n\n## 待办交接\n1. server-platform-dev 发布（upload+set-current+对拍）→ 90.18 自动升级（10-14 分钟）→ 你发起 pc_diag → attempts/commit note 回传 → 我当场定案 ADR-006（commit rv=NA→探测问题；=0 仍不落盘→固件级转结论②；写入 rv≠0→参数/密码）\n2. 主仓 commit（power-control pc_diag + updater VERYSILENT + 版本 bump + installer PrepareToInstall/CloseApplications）请统筹；子仓 git identity 缺失问题可用你的单次 -c 覆盖法\n3. 仓库卫生遗留照旧（build/dist 忽略、tools/_dbg_fail.py 等临时件、net-doctor 子模块登记）",
+    "timestamp": "2026-09-17T10:21:38.685Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789641699529-bxw3e5",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【4.1.2 发布执行完成（服务端侧全绿）；终端消费待用户交互，diag 自动闭环脚本已就绪】\n\n## 发布执行（收口约定全流程）\n1. **产物本地预验 PASS**：size 219,188,492 ✓ / MD5 A062DD7B787A9FB18AACFC49186D7A57 ✓ / SHA256 888B31D1… ✓（三要素与 power-control 摘要一致）\n2. **上传**：PUT 200，release **id=3**，服务端 sha256 与产物一致\n3. **set-current**：200，version=4.1.2，rollback_flag=0\n4. **manifest 验证**：终端口 latest_version=4.1.2 ✓ size ✓\n5. **独立对拍**：/download 全量回读 219,188,492 bytes，**MD5 == A062DD7B… 逐字节一致**（回读 sha256 与我比较大写不一致系脚本大小写比较误报，MD5 字节级一致已证存储完整；脚本已修正待下次）\n6. **消费观察（15 分钟窗口）**：WIN-13F-xx-3 在线心跳正常（30s 稳定）、manifest 持续带 4.1.2，但 **client_version 仍 4.1.1 未升级**——按 power-control-dev 说明，4.1.2 更新链路为「自动下载 → 提示条 → 用户点立即更新 → 换装」，**需用户在 90.18 机器上点击更新提示条**（4.1.0→4.1.1 无感完成可能是该版本链路差异）。服务端侧无阻塞。\n\n## diag 自动闭环脚本已就绪（升级完成即触发）\n_cr_watch3.py：轮询 client_version==4.1.2 → **自动 POST diag** → 轮询回执 → **attempts/PasswordState/SaveBiosSetting 全文打印**。用户点完更新条后跑一次脚本（10 秒内发起，回执 1-2 个心跳周期出）。我会在获知用户点击完成后立即执行并转发全文。\n\n## 附注\n- 发布脚本 SHA 比较大小写 bug 已记录修正（服务端存小写 hex，对拍统一 casefold）\n- 一条观察：该终端 last_seen 心跳间隔呈 60s 双跳（1789638194→8254→8314）——心跳配置 60s？与 30s 预期不符，供 power-control-dev 参考（不影响升级）。",
+    "timestamp": "2026-09-17T10:41:39.529Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789641755298-1qx2pm",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【uplink「连接中」审查结论（10 分钟内交付）】\n\n## ① 退避逻辑：✅ 无锁死缺陷\n- 心跳成功 backoff=1 复位（uplink.py:866）；失败指数 ×2、上限 _BACKOFF_CAP=20（30s×20=**600s=10 分钟/轮**，line 47/861/893）；注册失败同款（:857）。\n- 结论：每轮都会重试，「无动静」可能只是 10 分钟退避窗口内的正常等待。**若要更快重连可把连接类失败退避上限降到 60s（需你定夺，属 ADR-004 语义变更，未擅动）**。\n\n## ② 下载：✅ 不占主循环，但❗缺陷 C 坐实\n- check_async 独立 daemon 线程，下载 219MB 期间心跳照常（无共享锁）。\n- **缺陷 C**：下载失败/中断后 `latest_version` 已记入 `_last_seen_version`（uplink.py:883-885）→ 后续心跳判定 `lv != _last_seen_version` 恒 False → **不再重试下载**，failed 状态挂死到进程重启。90.18（4.1.0→4.1.1）若首次下载失败即此症状。\n- 修法（4.1.3）：uplink 重触发条件加「或 updater 状态=failed」。\n\n## ③ 「连接中」状态机：无永不再试路径，但❗缺陷 B 坐实（高优先）\n- connecting 仅两处：start()（:912）与每轮 register 前（:850）；心跳成功即 connected（:818）。退避上限内每轮必试，**无永不再试路径**。\n- **缺陷 B**：`registered` 标志（:853 置 True）**全生命周期不复位**——服务端丢库/终端被删/换 token 后心跳 401/404 → registered 仍 True → **永远跳过 register 直达心跳 → 永远 401** → state=error 卡死且永不重注册。\n- M720t 显示「连接中」= 循环停在 **register 反复失败**（register_http_XXX 或 15s 超时）。**缺陷 F（排障黑盒）**：uplink 状态变化零日志——pc_diag 只抓 power-control 日志抓不到 uplink 的 register_http_XXX 具体码，真实失败原因现在取不到。\n\n## 4.1.3 修复清单（建议我实施，工作量约 30 分钟）\n1. 缺陷 B：心跳 401/404 → `registered=False`（下轮重注册）\n2. 缺陷 C：重触发条件加「update_status=failed」\n3. 缺陷 F：uplink 状态迁移写日志（复用 %LOCALAPPDATA%\\winhelper\\power-control\\logs 同目录或独立 ul_*.log）+ pc_diag 并入 uplink state/last_error/backoff/registered 字段（与缺陷 B/C 修复一起进 4.1.3，M720t 的 pc_diag 将直接给出 register 失败码）\n\n## 旁证\nM720t 场景里 4.1.1→current 4.1.1 同版本不触发下载属**语义正确**（非缺陷）；「版本未升」是因为它已是 4.1.1——update 链路对它本就无增量。当前「连接中」与更新链无关，专注 register/心跳路径。你确认后我立即动手（uplink.py 改动 + pc_diag 扩展 + 单测），不动 ADR-004 退避语义。",
+    "timestamp": "2026-09-17T10:42:35.298Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789641866361-k18jpn",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【updater 状态机四问审查结论 + 缺陷 C 修复已实施】\n\n## 1. 下载失败终态后重连是否重新触发？——**坐实：原实现无此路径，缺陷成立**\n时间线完全吻合：set-current 后 latest_version 4.1.1→4.1.2 变化 → 首次心跳触发 check_async → 90.18 恰在断连退避窗口，3 次重试全打在断连期 → `_save_state(status=\"failed\")` → 之后每次心跳 `lv == _last_seen_version` 恒真 → **永不重触发**，failed 挂死。黄条永不弹。\n**修复已实施（uplink.py:879-901）**：重触发条件改为 `lv 变化 或 updater 状态=failed`，failed 重武装带 **5 分钟节流**（按状态文件 ts，防坏包场景下载风暴）。编译通过。⚠️ 注意：该修复**在 4.1.2 构建之后**——90.18 的 4.1.2 包不含此修复，**需 4.1.3**；但 90.18 现在就能自救（见 2）。\n\n## 2. 重启应用是否重置状态？——**是，重启自救有效（可让用户执行）**\nupdate_state.json 持久化 failed，但 `_last_seen_version` 是**内存态**——重启后清空 → 首次心跳 latest_version(4.1.2) ≠ 空 → 重新触发下载（此时已重连，下载应成功）→ ready → 黄条。**请让用户重启 winhelper**（任务管理器结束或托盘退出再启动），90 秒内应见黄条。\n\n## 3. 「稍后」标记：版本级键 + 会话级存储\nsessionStorage 键 `ubDismissedVer=<版本号>`——点过 4.1.1 稍后**不影响** 4.1.2 黄条（键不同）；同版本重启应用后也会重新弹（sessionStorage 随 WebView2 会话销毁）。无 sticky 问题。\n\n## 4. 心跳 60s 双跳\n来源两处可能：①**服务端下发**——heartbeat 响应 `interval` 字段覆盖（uplink.py:873-878，ADR-004，≥5 即采纳）——server-platform 侧最近是否开始下发 interval=60？②终端 uplink_config.json 的 `heartbeat_interval` 配置值。倾向①（90.18 无人改过本地配置）——请 server-platform-dev 查 heartbeat 响应的 interval 下发逻辑。属预期机制非缺陷。\n\n## 4.1.3 候选清单（更新）\n1. **缺陷 C 修复**：本消息已实施（uplink 重武装），待随包\n2. **缺陷 B**：心跳 401/404 → registered=False 重注册（前次审查坐实）\n3. **缺陷 F**：uplink 状态迁移日志 + pc_diag 并入 uplink state/last_error\n4. 心跳 60s：待 server-platform 确认下发逻辑，非缺陷\n5. （可选）连接类退避上限 600s→60s，ADR-004 语义变更待你定夺\n\n等你对 4.1.3 出包的指令（缺陷 C 修复已在库随时可打）。",
+    "timestamp": "2026-09-17T10:44:26.361Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789642143564-ypzy21",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【4.1.3 三缺陷修复完成（代码），门禁全绿】待 90.18 diag 数据/自救结果定出包时机。\n\n## 修复内容（uplink.py 单文件连贯批）\n\n**缺陷 B（401/404 registered 复位）**：`_heartbeat_once` 拆分支——401（token 失效）与 404（终端不存在）均 `registered=False`（带锁），下轮循环重走 register；last_error 细化（auth_failed_check_token / heartbeat_404_terminal_gone）。\n\n**缺陷 C（已在上轮实施）**：updater failed 状态 → 下次心跳重新武装下载（按状态文件 ts 节流 5 分钟防风暴）。\n\n**缺陷 F（状态迁移日志）**：`_set_state` 增量日志——关键键（state/last_error/registered/enabled/started/terminal_id）变化才记，写 `%LOCALAPPDATA%\\winhelper\\power-control\\logs\\ul_YYYYMMDD.log`（与 pc 日志同目录不同前缀，格式 `state: connecting -> connected`）；噪声键（last_hb_ts/last_ok）不入日志（否则每心跳一条）。从此 register_http_XXX 具体码可从日志/pc_diag 双通道取到。\n\n**pc_diag 并入 uplink 字段**：回执新增 `uplink: {state, registered, last_error, last_hb_ts, heartbeat_interval}`——M720t 拿到 4.1.2 后一次 diag 即可同时看到 BIOS attempts/commit note + uplink 连接态。\n\n**退避上限 600s→60s**（你批准的 ADR-004 变更）：`_BACKOFF_CAP = 2`（30s×2），注释标注「4.1.3 main 批准：联调期快速重连」。\n\n## 门禁（全绿）\n- 单测 **94/94**（power-control，pc_diag 三用例）\n- 单测 **30/30**（test_client_upgrade，新增 4：401 复位/404 复位/状态迁移日志含变更与噪声键排除/pc_diag uplink 字段合并）\n- py_compile 干净\n\n## 状态\n代码就绪，**不出包**（按你的两步走：等 90.18 自救到 4.1.2 → diag 定案 ADR-006 → 立即合 4.1.3 出包走收口）。若 90.18 自救无果（15 分钟窗口），4.1.3 随时可打（版本号 bump 到位后 10 分钟内出包）。\n\n## 附带确认\n心跳 60s = 服务端统一 interval 下发（heartbeat_timeout_sec/3，server-platform-dev 已确认）——非缺陷，uplink 采纳逻辑正常（pc_diag 新增 heartbeat_interval 字段后可远程核验各终端实际值）。",
+    "timestamp": "2026-09-17T10:49:03.564Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789642234264-v1o7ju",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【journal 实证（172.17.90.18 = WIN-13F-xx-3，18:35-18:49 全窗口）】\n\n核心结论：**/download/client/setup 零请求——场景③（终端侧未发起）成立。**\n\n日志序列事实：\n1. 心跳全程正常：60s 周期稳定（18:35:13/36:13/…/49:14），每拍 200，metrics 同拍 200——心跳与上报链路完全健康\n2. 18:44:14 register 一次（对应用户 18:44 重启应用）→ 随后心跳恢复\n3. 18:44:14 GET /api/v1/client/update-manifest 200——重启后 updater 确实查询了 manifest（拿到 4.1.2 最新）\n4. 但 update-manifest 之后没有任何 /download 请求（整个窗口 grep download 仅此一条相关，/download/client/setup 零命中）\n5. desktoppolicy/policy 拉取正常（2-3 分钟一次）\n\n判别：**4.1.1 客户端的 updater.check_async 拿到 manifest（4.1.2）后没有触发下载**——既无自动下载也无提示条（「自动下载→提示条」是 4.1.2 才有的行为；4.1.1 的 updater 消费分支疑似未实现下载触发或有静默 bug）。需 power-control-dev 查 4.1.1 updater 源码：check_async 返回 manifest 后的分支去向。\n\n应急路径建议（供决断）：\nA. 用户在 90.18 手动下载安装——浏览器直接开 http://172.17.5.215:18090/download/client/setup（公开下载）→ 跑安装包，一步到位\nB. pc_diag 在 4.1.1 客户端无 handler（4.1.2 才加）——诊断不可用，无法远程取证 updater 内部状态\nC. 4.1.2 装上后（任一路径），updater 新链路自愈，后续版本不再依赖此缺陷路径\n\n数据全在，交 power-control-dev 定 updater 缺陷定位。",
+    "timestamp": "2026-09-17T10:50:34.264Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789642501314-duknb0",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "收到知会，两项确认完毕：\n\n1. 无冲突：你加的 \"version\": CLIENT_VERSION 在 handle_uplink_status（uplink.py:1017），我 4.1.3 的缺陷 B/C/F 改动在心跳循环 401/404 分支、failed 重武装、_set_state/_ulog/pc_diag，分属不同函数零交叠，不需要协调，直接共存。\n\n2. 门禁已纳入：test_client_upgrade.py 新增 TestUplinkStatusVersion——断言 handle_uplink_status 返回 version==CLIENT_VERSION（当前 4.1.2）且旧 client_version 字段仍在（app.js 兼容双字段）。实测 31/31 OK。4.1.3 出包门禁即含此用例，bump 版本号后断言自动跟随（用例比对的是 up.CLIENT_VERSION，4.1.3 时天然过）。\n\n另：场景③实锤（4.1.1 拿 manifest 不发 /download）收到，与我缺陷 C 诊断一致——failed 终态无重武装 + 下载触发链在旧版缺失，4.1.3 修复覆盖。出包维持两步走，等 90.18 应急路径落地拿到 diag 数据（attempts 含 __commit__ 提交链记录）定案 ADR-006 后立即合入出包。我侧代码已就绪：94/94 + 31/31 门禁全绿，只差 CLIENT_VERSION bump + installer MyAppVersion 同步这最后一步（出包时一并做）。",
+    "timestamp": "2026-09-17T10:55:01.314Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789642551803-dl9qsk",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【diag 闭环完成 · ADR-006 三个定案字段到手】全链：生产服务端 diag 增量部署（备份 deploy_20260917_185433 → 上传 → restart → active）→ client_version=4.1.2 确认（18:53:54 用户手动装完成）→ diag#1 发起 200 → **回执 completed**。三个字段原文如下（result JSON 全文见下方附注，另已落 /tmp 探针侧可复取）：\n\n**① SaveBiosSetting 类存在性**：`save_class: false`——**该机型（M720t）BIOS WMI 命名空间不存在 Lenovo_SaveBiosSetting 类**（或权限不可见）。\n\n**② PasswordState**：`\"0\"`——Lenovo_BiosPasswordSettings.PasswordState=0（语义按官方枚举通常为「未设口令」）。\n\n**③ 最近一次 BIOS apply attempts（关键）**：\n- `Wake Up on Alarm` sent \"Daily Event\" format=plain rc=0 **rv=null**\n- `Alarm Time(HH:MM:SS)` sent \"07:00:00\" format=plain rc=0 **rv=null**\n- `__commit__` sent Lenovo_SaveBiosSetting format=commit rc=0 **rv=\"no-save-class\"**（两次尝试同结果）\n- `Alarm Time(HH:MM:SS)` sent \"[07:00:00]\" format=bracket rc=0 **rv=null**（bracket 变体也试了）\n- 回读：Alarm Time 仍 08:00:00（目标 07:00:00）→ **写入从未生效**\n\n**定案依据链**：rc=0 但 rv=null（WMI 方法调用返回空）+ commit rv=\"no-save-class\" + save_class=false + PasswordState=0 → **根因=类探测问题**（SaveBiosSetting 类在该机型不可用，写入被 BIOS 静默忽略，无口令因素——PasswordState=0 排除密码锁）。即 power-control-dev 判因逻辑分支「commit rv=NA→类探测问题」命中。**固件级/机型能力缺失，参数与密码路径均排除**。\n\n**RTC 全项读回佐证**：Wake Up on Alarm=Daily Event 已可读（读取通道正常），Alarm Time 08:00:00 为出厂值——只读正常、写入不可达。\n\n**后续建议**（power-control-dev 决策）：该机型（及同类 M720t 批次）走 ADR-040 增补的**手动维护登记**台账路径（人工进 BIOS 设定时）；或探索厂商其它 WMI 类（Lenovo_BiosSetting 旧命名空间）/ 工具链（LnvvxxFW 变体）——是否投入由其评估。我侧联调数据链路已全部就绪。\n\n**发布批次小结**：4.1.2 发布（id=3 current）+ 独立对拍 MD5 逐字节一致 + 终端升级 18:53 完成 + diag 闭环 ~6 分钟。生产服务端今晚增量（diag/manual/timeline/nad 修正）已部署并验证（备份 deploy_20260917_185433）。",
+    "timestamp": "2026-09-17T10:55:51.803Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789642784739-i1491i",
+    "from": "api-registrar-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "pc_diag 联调通道批次登记完成（server-platform-dev 按常设约定显式列清单知会，标准批次），commit 38dc3b4（docs:，仅台账）。\n\n【新增 4 SRV + 1 UPL】SRV-109~112（§1.13 组内：POST diag admin-only+审计 600s 命令队列 / 终端最近 10 条 / 跨终端列表 / 原始 JSON 详情）+ UPL-015 命令 pc_diag（args {kind:\"pc_diag\"}，回执 save_class/password_state/rtc_readback/last_apply.attempts/log_tail/client_version，存档 pc_diag_records ≤256KB）。\n\n【状态如实分层】服务端已生产部署验证（deploy_20260917_185433，diag#1 completed 交付 ADR-006 定案）；终端 handler 待 power-control-dev 4.1.2 交付——UPL-015 已标注「未同步 handler 的终端按 UPL-009 回 unknown_command_type」，避免联调期误判。\n\n【台账现状】合计 212 条（SRV 112 / BRG 73 / UPL 15 / EXT 7 / DEP 5）。今日累计 8 批（台账 159→212），全部闭环；4.1.1 发布收口约定首例同期完成。跟踪项更新：UPL-015 终端执行面待 4.1.2（届时知会我补闭环更新行）；其余 TBC-007、火绒部署核销、画方规格照旧。",
+    "timestamp": "2026-09-17T10:59:44.739Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789643551065-q5es11",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【4.1.3 修复完成，门禁全绿，产物就绪】19:12 报——无红项，未做任何派单外打磨。\n\n一、修复内容（全部按派单 5 点落实）\n1. **写入链接口回退**（power_control.py `_ps_bios_write` 重写）：单 PowerShell 脚本内老接口优先（兼容旧机型）→ 异常或 rv!=0 → 枚举 root/wmi Lenovo_BiosSetting 实例，按 `CurrentSetting.StartsWith('Item,')` 前缀匹配目标项，`Invoke-CimMethod -InputObject` 调用实例级 SetBiosSetting（modern 无需 Save，落盘由既有回读校验兜底）。输出 PCSET=<rv|NA>/PCVIA=<old|new>/PCERR=<异常摘要>；老/新两处调用内联同一字面量（mock 兼容）。**签名不确定性处理**：实例方法异常会被 catch 进 PCERR 透传真实消息，绝不见猜；若 90.18 实测方法名/参数与文档有出入，pc_diag 一次只读探测即可实锤修正。\n2. **attempts 补 err 摘要**：plain/bracket 两轮均带 via+err（PCERR 优先，stderr 兜底，截断 160）——缺陷 F 的 BIOS 路径版，rv=null「静默」永久消除。\n3. **能力探测扩展**：新增 `probe_write_iface`（old/new/none/unknown，纯只读）；probe_lenovo_bios、pc_diag（新增 write_iface 字段）均携带；snapshot bios.write_iface；`_job_bios_apply` 对 none 提前拒绝（不浪费提权往返），unknown 不武断拒绝走脚本兜底。\n4. **UI 徽章**：能力徽章旁新增写入通道徽章（新一代/标准/待确认三态，非企业线隐藏）；powercontrol.js + 独立页 + 主应用 index.html 三处同步。\n5. **单测**：mock runner 扩 iface 形态（new 成功/new 拒绝/none 双缺失）5 用例 + probe 5 用例。\n\n二、门禁结果（全绿）\n- 引擎单测 105/105（原 94+新增 11）\n- uplink 单测 31/31（含 navbar version 字段用例，断言已随 4.1.3）\n- E2E 96/96（独立+主应用双场景，pageerror=0，宽度三档过）\n- PowerShell Parser 静态解析两条新脚本零错误（只解析不执行）\n- 本机只读实测：probe_write_iface 链路正常（本机消费线如实返回 none）\n\n三、版本与同步\n- CLIENT_VERSION=4.1.3；installer/EyeTerm.iss MyAppVersion '4.1.3'\n- 副本同步 MD5 一致：power_control.py→主应用根、powercontrol.js→主应用 web/\n- ADR-006 附注③定案修正已落 DECISIONS.md（rv=null=命令从未执行成功的精确解读 + 修复记录 + 待 90.18 实测回填项）\n- navbar version 字段（main 的小改）共存无冲突，门禁已覆盖\n\nserver-platform 可直接发 4.1.3。发布后 90.18 升级 → 我拉 diag 用真实 attempts（via=new + err=invalid class 实锤 + 回读生效）验证 modern 写入 → 用户应用 09:00 定时开机闭环。",
+    "timestamp": "2026-09-17T11:12:31.065Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789644081535-s7b8ds",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【diag#2 已完成（你催办前 19:19:51 回执落档）——attempts 全文如下】\n\n最近一次 BIOS apply（ts=1789643991，即用户在 4.1.3 上应用 08:30 那次）attempts 全文：\n\n```json\n[\n {\"item\": \"Wake Up on Alarm\", \"sent\": \"Daily Event\", \"format\": \"plain\",\n  \"rc\": 0, \"rv\": null, \"via\": \"new\",\n  \"err\": \"找不到方法“SetBiosSetting”\"},\n {\"item\": \"Alarm Time(HH:MM:SS)\", \"sent\": \"08:30:00\", \"format\": \"plain\",\n  \"rc\": 0, \"rv\": null, \"via\": \"new\",\n  \"err\": \"找不到方法“SetBiosSetting”\"},\n {\"item\": \"__commit__\", \"sent\": \"Lenovo_SaveBiosSetting\", \"format\": \"commit\",\n  \"rc\": 0, \"rv\": \"no-save-class\"},\n {\"item\": \"Alarm Time(HH:MM:SS)\", \"sent\": \"[08:30:00]\", \"format\": \"bracket\",\n  \"rc\": 0, \"rv\": null, \"via\": \"new\",\n  \"err\": \"找不到方法“SetBiosSetting”\"},\n {\"item\": \"__commit__\", \"sent\": \"Lenovo_SaveBiosSetting\", \"format\": \"commit\",\n  \"rc\": 0, \"rv\": \"no-save-class\"}\n]\n```\n\nfailed 校验：`[{\"item\": \"Alarm Time(HH:MM:SS)\", \"want\": \"08:30:00\", \"got\": \"08:00:00\"}]`\nwrite_iface：**\"old\"**（新一代接口实机不可用，回退老链路）｜save_class=false｜password_state=\"0\"｜client_version=4.1.3\n\nlog_tail「BIOS 应用失败」整行（19:19:51）：\n```\n2026-09-17 19:19:51 [INFO] BIOS 应用失败: 回读校验不符：「Alarm Time(HH:MM:SS)」写入未生效：读回为「08:00:00」（目标「08:30:00」） | attempts=[{\"item\": \"Wake Up on Alarm\", \"sent\": \"Daily Event\", \"format\": \"plain\", \"rc\": 0, \"rv\": null, \"via\": \"new\", \"err\": \"找不到方法“SetBiosSetting”\"}, {\"item\": \"Alarm Time(HH:MM:SS)\", \"sent\": \"08:30:00\", \"format\": \"plain\", \"rc\": 0, \"rv\": null, \"via\": \"new\", \"err\": \"找不到方法“SetBiosSetting”\"}, {\"item\": \"__commit__\", \"sent\": \"Lenovo_SaveBiosSetting\", \"format\": \"commit\", \"rc\": 0, \"rv\": \"no-save-class\"}, ...\n```\n\n**关键读法**：via=new 的 err 是「找不到方法 SetBiosSetting」——**新一代接口的失败发生在“找不到方法”这一步，PCERR 全文没有更多可挖**（方法枚举层面就不存在，连调用都没发生）。这不是参数类型/枚举失败，是**接口面缺失**。而 via=old（save_class=false 链路）已经走通到 commit 但 rv=no-save-class。两条接口路径在该机型（M720t/浪潮）都不可写。该机型远程写入能力判定为**固件不支持**的证据链已闭合，手动维护登记路径落地即可。",
+    "timestamp": "2026-09-17T11:21:21.535Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789644596632-omzyam",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【T1+T2 自动化闭环数据交付】\n\n## T1：中心下发 daily 08:30（dispatch_id=1，19:27:29 创建）\n- 命令 60s 心跳拉取 → 19:28:09 终端执行 → 回执 **failed**\n- **批次回执全文**（payload boot={enabled:true,mode:daily,time:08:30} / note 入库 ✓）：\n```json\n{\"id\": 1, \"policy_id\": \"5c535717…\", \"operator\": \"admin\",\n \"targets\": [{\"id\": 1, \"terminal_id\": \"WIN-13F-xx-3\", \"command_id\": 40,\n  \"status\": \"failed\",\n  \"error_detail\": \"bios: apply_failed: [{\\\"item\\\": \\\"Alarm Time(HH:MM:SS)\\\", \\\"want\\\": \\\"08:30:00\\\", \\\"got\\\": \\\"08:00:00\\\"}]\",\n  \"result\": {\"policy_id\": \"5c535717…\", \"op\": \"apply\", \"ok\": false,\n   \"steps\": {\"bios\": {\"ok\": false,\n    \"error\": \"apply_failed: [{\\\"item\\\": \\\"Alarm Time(HH:MM:SS)\\\", \\\"want\\\": \\\"08:30:00\\\", \\\"got\\\": \\\"08:00:00\\\"}]\"}},\n   \"capability\": \"enterprise\"}}]}\n```\n- **预期内的第一轮数据**：apply_failed 读回校验不符（want 08:30 / got 08:00），批次状态机/审计/备注全链正常。\n\n## T2：pc_diag（diag#3 completed，19:28:5x）\n- last_apply.ts=1789643991（**19:19:51 用户本地应用那次的缓存**——T1 19:28 执行的 attempts 未更新进 diag 缓存，缓存更新点疑似只在终端 UI 应用路径；T1 轮次的 error_detail 已由批次回执补齐，数据无缺口）\n- attempts 与 19:19 轮次完全同构：via=new err=「找不到方法 SetBiosSetting」（plain+bracket 两种格式）、__commit__ rv=no-save-class、rc=0 rv=null\n- rtc_readback：Alarm Time 仍 08:00:00；save_class=false；password_state=\"0\"；write_iface=old；uplink heartbeat_interval=30（**注意：uplink 自报 30，非之前推断的服务端下发 60**——与心跳日志 60s 间隔并存的矛盾供 power-control-dev 复核，可能采纳后又被本地值覆盖或双值来源不同）\n\n## 交接 power-control-dev（T3/T4 输入）\n- 固件证据链已闭合：两条接口路径（new=SetBiosSetting 方法不存在 / old=SaveBiosSetting 类缺失 no-save-class）均不可写，PasswordState=0 排除密码\n- wmi_surface 枚举（4.1.4）建议把「枚举到的全部 BIOS 类名」也进 diag，供确认该机型是否只剩只读类\n- T5 重试模板：T1 脚本复用即可（_cr_t1.py），改目标值即跑\n\nT1+T2 我侧闭环完毕，等 T3/T4。",
+    "timestamp": "2026-09-17T11:29:56.632Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789656118230-oc4htn",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【4.1.4 产物就绪：五要素摘要 + 门禁全绿】22:42 报。\n\n一、派单 5 点 + server-platform 2 观察全部落实\n1. **attempts old/new 分开记录**：写入链输出协议升级——PCOLD=<rv|ERR:msg>（每次都尝试）+ PCNEW=<rv|ERR:msg|skip|no-instance>，attempts.old/.new 独立字段各带 rv+raw，禁止后者覆盖前者；老接口失败原因从此可见。\n2. **pc_diag wmi_surface**：穷尽枚举 root\\wmi 全部 Lenovo_* 类名 + 四关键类（SetBiosSetting/BiosSetting/SaveBiosSetting/BiosSettingInterface，存在才列）方法名清单 + probe 判定依据三项布尔（old_class_present/instance_present/inst_has_set_method）——一次 diag#3 即可终审「这台机器有没有任何可用 BIOS 写入方法」。\n3. **观察1（_LAST_APPLY 缺口）**：apply_policy 收尾同步 _record_apply(\"policy_apply\", ...)——中心下发失败现场（含 steps/policy_id/capability）从此进 diag。\n4. **观察2（心跳间隔 30/60 矛盾）**：根因=服务端 interval 覆盖只改循环内存变量不落状态，自报读本地配置——双值来源。修复：_state.effective_interval（覆盖时写入），三处自报（register asset/pc_diag/status）统一走 _effective_heartbeat_interval()（服务端覆盖>本地配置>默认）。**连带抓出并修复一个死锁**：pc_diag handler 原持 _lock 内调 helper（Lock 不可重入）→ 单测挂死实锤 → 已移出锁块——真机上这会让 pc_diag 命令线程永久挂死，幸好门禁抓出。\n\n二、门禁（全绿）\n- 引擎单测 108/108（+3：old/new 分开断言、wmi_surface 两用例）\n- uplink 单测 35/35（+4：生效间隔两态、loop 覆盖写状态、policy_apply 缓存）\n- E2E 96/96\n\n三、产物（已落位）\n- 安装包：installer\\Output\\EyeTerm_Setup_x64_4.1.4_20260917_2240.exe\n  - 版本 4.1.4 / size 219,194,380 bytes / MD5 7CDFF81D6EAD5B4C33E80DA379E9212C / SHA256 B41DFC7FD33BDC2F566C0FADE690B35683F2BB7A2CFDF7229993EAC5FF0BF426 / 构建时间 2026-09-17 22:41:05\n- winhelper.exe：dist_new\\ 已重建并同步 dist\\（27,481,440 bytes / MD5 CFE82C63983A44A6F8C4BF1E447320CF），本机已重启\n- ADR-006 附注④已落档\n\nserver-platform 可发布。diag#3 预期：attempts.old.raw=ERR:invalid class（老接口真实原因首见天日）、wmi_surface.methods 各类方法清单、last_apply=policy_apply（T1 中心下发现场）。",
+    "timestamp": "2026-09-17T14:41:58.230Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789657213124-hvphb1",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【4.1.4 发布执行报告：发布+对拍全绿；消费观察阻塞于终端离线；T5 已离线排队】\n\n1. **发布完成（全绿）**：产物本地预验三要素 ✓ → 上传 200（release **id=5**，服务端 sha256 casefold 一致）→ set-current 200（version=4.1.4）→ manifest 验证 latest=4.1.4 ✓ → /download 独立对拍 **219,194,380 bytes / SHA256 casefold 一致 / MD5 7CDFF81D… 一致**——服务端存储字节完整。\n2. **消费观察 15 分钟窗口全程 offline**：WIN-13F-xx-3 自 22:43:58 起离线（最后在线 4.1.3 状态）——22:4x 时间点疑似用户下班关机/离网，**非服务端问题**（manifest/下载路由 main 已验双口正常）。\n3. **T5 已离线排队**：dispatch_id=2（daily 08:30，queued_offline=1）——终端上线心跳即自动补投执行（命令窗口 7 天），无需人工再发。批次回执待终端上线后产生。\n4. **待办衔接**：终端上线（明早开机）后：a) T5 批次自动执行（wmi_surface 轮次 attempts）→ b) 我立即发 diag#4 采集 wmi_surface.methods/attempts.old.raw/last_apply=policy_apply 全文 → 转你+power-control-dev 判读。脚本链就绪，一条命令跑完。\n\n下轮观察我明早上线窗口自动跟进（或收到终端上线通知即跑 diag#4 闭环脚本）。",
+    "timestamp": "2026-09-17T15:00:13.124Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789690478085-nz6ife",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【WoL 验证结果 + T5 补投实证 + ADR-006 走向建议】\n\n1. **WoL-from-S5 实证成立**：魔术包后 08:09:56 首跳心跳（60s 内），online=True，心跳周期恢复稳定（60s）。**「定时 WoL 替代 BIOS 设置」路线的实测判据成立**——产品路径可切「平台定时 WoL」（不依赖任何 BIOS 写接口）。\n\n2. **T5 补投机制实证 ✓（ADR-040 状态机完整验证）**：dispatch_id=2 从 offline_queued → 终端 08:09 上线 → 08:11 前自动补投执行 → 08:14 回执 failed。离线排队/上线补投/回执状态机全链按设计工作。\n\n3. **T5 结果（新信息）**：failed，error_detail=`want \"Daily Event\"/\"08:30:00\" got null`——**读回值是 null 而非昨天的 08:00:00**！刚唤醒态下 BIOS WMI 读取返回空（唤醒早期 WMI/BIOS 数据未就绪或读取失败）。写入依然未生效（want≠got），但「读回 null」提示 T5 类执行在唤醒早期跑可能读不到 BIOS 态——定时 WoL 路线下这个时序问题天然消失（WoL 本身就是唤醒手段）。\n\n4. **4.1.4 升级未发生**：cv 仍 4.1.3（updater 4.1.3 的 failed 5 分钟节流重武装是否工作、或用户未点提示条——power-control 侧确认）。\n\n5. **ADR-006 走向建议**：BIOS 写入两接口不可写已定案（昨天 4.1.3 diag#2 全文）+ WoL 实测可用 → **产品闭环建议定「定时 WoL」**（平台侧调度定时发魔术包，复用资产组/勾选交互；BIOS 写接口降为低优先级探索，wmi_surface 数据已给 power-control 供 4.1.5 判读）。定案与路线选择待你拍板后，平台侧 WoL 调度（若立项）我接服务端面。",
+    "timestamp": "2026-09-18T00:14:38.085Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789690596947-a0gaj9",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【第一段完成：生产每日 08:30 WoL 计划任务就位】\n\n部署明细（生产 systemd 原生）：\n- /usr/local/bin/wol_win13f.py：魔术包脚本（MAC 6C4B90CB4AE4 ×16 + 6×0xff；**子网定向广播 172.17.90.255:9/:7 + 全网广播 255.255.255.255:9 兜底**三连发）\n- wol-win13f.service（oneshot）+ wol-win13f.timer（OnCalendar=*-*-* 08:30:00）已 enable --now\n- **验证**：systemctl list-timers 确认 NEXT=今日 08:30:00（13 分钟后）；部署时手动触发一次成功（三地址发包无错误）\n\n**今天 08:30 即首验**：发包后 60-90s 内观察 90.18 上线（心跳首跳）→ T5 离线排队批次（dispatch_id=2 daily 08:30）自动补投 → 4.1.4 升级链自动接续。观察脚本就绪，08:31 起跑，结果（含 WoL timer 日志/上线时间戳/批次回执/升级态）即时回报。\n\n第二段（WoL 产品化：调度服务+UI+wol_relay 跨网段中继+asset.network MAC 源）方案我出好后单独报你排期。",
+    "timestamp": "2026-09-18T00:16:36.947Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789691870069-cygwa8",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【power_action 终端侧完成，门禁全绿，4.1.5 产物就绪】08:39 报。\n\n一、实现（按派单 6 点）\n1. **power_action**（UPL @command_handler，power-control/power_action.py 新模块零依赖）：args {action:\"shutdown\"|\"restart\", delay_sec?:uint, force?:bool} → `shutdown /s|/r /f /t <delay>`。本地执行无需提权（OS 命令）；force 缺省 True 对齐参考脚本 -f，false 时弹窗说明「系统将等待应用程序自行关闭」。无需提权 ✓；不依赖 WMI，与 WoL 唤醒早期问题无交集 ✓。\n2. **知会**：执行成功后独立线程 MessageBoxW 弹「中心已发起关机/重启，将在 N 秒后执行」+「撤销请由管理平台操作」——非阻塞命令回执；**终端侧不提供本地取消**（管控语义中心意图优先）。\n3. **power_action_abort**：`shutdown /a`；rc=0 撤销成功；rc=1116（无 pending）如实回执「当前没有待执行的关机/重启」不算异常——中心撤销按钮直接消费。\n4. **防误操作约束**：delay_sec 硬上限 3600、缺省 60；非法 action（白名单外/大小写）与非法 delay（负数/超限/非整数）参数校验拒绝且**不执行任何命令**；执行前后写 pc_*.log 本地审计（WARN 级含 action/delay/force）+ 服务端回执 cid 审计双存档；**本地 UI 零入口**——powercontrol 页/JS 无任何立即关机/重启按钮与 power_action 调用（E2E 门禁静态+渲染态双断言固化，防后续迭代误加）。\n5. 高危红线：命令串仅由 build_power_action_argv 纯函数受控构造（action 白名单 dict、delay int 化后 str）；子进程 CREATE_NO_WINDOW；单测全 mock runner 禁真实 shutdown。\n\n二、单测（46/46，+11）\ndelay 边界（0/3600 过，-1/3601/\"abc\"/\"10.5\"/None 拒）/action 白名单（logoff/sleep/空/大写/None 拒）/force 缺省与显式 false/执行回执 rc/abort 成功与 1116/校验拒绝零执行/注册断言/本地无入口断言。\n\n三、E2E（104/104，+8）\n两场景均接入管控语义断言：源码（powercontrol.js + 独立页）无「立即关机/立即重启」文案、无 power_action UI 调用；渲染态 DOM 无关机入口。\n\n四、产物（已落位，随 4.1.5 出包不插队当前 4.1.4 升级）\n- 安装包：installer\\Output\\EyeTerm_Setup_x64_4.1.5_20260918_0836.exe\n  - 版本 4.1.5 / size 219,199,188 bytes / MD5 1C86951B002CC4E89B0F735F1EBBFA92 / SHA256 0E024B627DF43CEE218EA4A6BCCE434C0F520BBD11007F544BA1CAB7DE4AFEFC / 构建时间 2026-09-18 08:37:00（winhelper.exe MD5 96248951C9BC9944E0B7CC17436CA5DB，dist 已同步、本机已重启）\n- 引擎单测 108/108 无回归；ADR-006 附注⑤落档\n\n服务端配套（server-platform）：power_action / power_action_abort 两命令下发入口 + 撤销按钮 + 审计记录——参数协议如上，回执 {ok, action, delay_sec, force, rc, note}（abort: {ok, rc, note|error}）。接口登记请 api-registrar 知会。",
+    "timestamp": "2026-09-18T00:37:50.069Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789691947010-7b597i",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【08:30 WoL timer 首验报告（journal 实证）】\n\n1. **timer 触发与发包链路实证 ✓**：journal 显示 08:30:01 systemd 启动 wol-win13f.service → 08:30:02 \"wol sent to 172.17.90.255:9, :7, 255.255.255.255:9\" → Succeeded。计划任务机制完全按设计工作。\n2. **「关机→唤醒」闭环今天未构成**：08:30 时终端处于**在线态**（被你 08:07 魔术包唤醒后未关机，08:30:57/31:57/…心跳 200 连续正常）——在线机器收到魔术包无效果是预期行为。真正的「关机→唤醒」验证窗口：**今晚用户下班关机后，明早 08:30 timer 自动唤醒**——这恰好是产品日常语义，无需人为制造关机。观察脚本就绪，明早 08:31 起跑。\n3. 附带确认：终端 60s 心跳全窗口稳定，desktoppolicy 拉取正常。\n\n**第二段（WoL 产品化）方案要点（待你排期后实施）**：\n- 数据模型：wol_schedules 表（组/终端勾选复用开关机页交互；mode daily/weekdays/single + time；MAC 从 asset.network 提取；启用态）\n- 调度执行：服务端 systemd timer 改为**平台内调度线程**（每分钟扫描到期计划 → 发魔术包，目标地址=同网段广播 255 兜底）+ **wol_relay 跨网段中继**（UPL 命令：平台指定目标 MAC+广播地址，同网段受控终端本地发包——跨网段主通道）\n- 回执/存档/审计：对齐 dispatch 框架（唤醒是单向动作，回执=上线观察，非命令确认）\n- UI：开关机管控页新增「定时唤醒（WoL）」区块\n- 门禁：单测（调度到期计算/MAC 归一/中继命令）+ E2E（计划 CRUD/到期触发标记/组勾选）+ 冒烟",
+    "timestamp": "2026-09-18T00:39:07.010Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789692352973-3kkyie",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【wol_relay 追加完成，4.1.5 重打包就绪（一包双能力）】08:46 报。\n\n一、wol_relay 实现（power_action.py 同模块，power_action + wol_relay 一包双能力）\n- **UPL wol_relay**：args {mac:string, broadcast:string, port?:uint 缺省 9}——终端向同网段广播地址发目标机魔术包（6×0xFF + 16×MAC = 102B，AMD 标准）；纯 UDP（socket 标准库）零依赖零提权；SO_BROADCAST + 3s 超时。\n- **参数校验**：MAC 归一（冒号/连字符/空格/裸 12 位/大小写 → 大写 12 hex，非法拒绝）；broadcast 严格 IPv4 点分四段校验（拒绝 inet_aton 简写形态与段超界）；port 1-65535；校验拒绝**零发送**。\n- **回执语义**：UDP fire-and-forget，发送成功即回执 ok=true + note「唤醒结果取决于目标机电源状态与同网段可达性」——如实不夸大；发送异常（OSError 等）如实回执。\n- **安全**：仅中心发起（@command_handler 白名单）、审计入 pc 日志（WARN 级含 mac/broadcast/port）、无本地 UI 入口（E2E 管控断言补 wol_relay 无 UI 调用，双场景）。\n\n二、门禁（全绿）\n- uplink 单测 54/54（+8：MAC 归一四形态/魔术包 102B 断言/广播校验六非法态/发送回执含缺省端口 9/自定义端口/五组非法参数零发送/发送异常/注册断言）\n- E2E 106/106（+2 管控断言）\n- 引擎 108/108 无回归\n\n三、产物（已重打包，版本号 4.1.5 不变）\n- 安装包：installer\\Output\\EyeTerm_Setup_x64_4.1.5_20260918_0844.exe\n  - 版本 4.1.5 / size 219,204,419 bytes / MD5 3EF2B08F379D08976A783E50EA535213 / SHA256 6E4D470F93EF1E9280163CBA17E4D7A3CF294921F1F3F1F860D14B3E5A44D7CA / 构建时间 2026-09-18 08:45:23（winhelper.exe MD5 9C451F5F185E4109A10593D07373E2C3，dist 已同步、本机已重启）\n- 旧 08:36 包（无 wol_relay）已删除防拿错，Output 目录现仅此一个 4.1.5 包\n\n四、服务端配套（server-platform + api-registrar）\n- wol_relay 下发协议：args {mac, broadcast, port?}，回执 {ok, mac(归一大写), broadcast, port, note}；失败 {ok:false, error}\n- MAC 归一大写 12 hex 由终端回执返回，服务端展示可直接用回执值\n\n产物摘要已同步报 server-platform，走发布收口。",
+    "timestamp": "2026-09-18T00:45:52.973Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789692492683-4qrmgl",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【今晨 shutdown-set 调查结论（生产库+journal 取证完毕）】\n\n一、定性：shutdown-set(single 08:27) + toggle **从未创建下发**——不是下发迟到，不是创建失败，是下发动作未执行。执行责任在服务端（我未在 08:27 前的窗口内发起），如实认领。\n\n证据链（只读取证，三处交叉一致）：\n1. pc_policy_dispatch 全表仅 2 批：id=1/2 均为 09-17 的 boot daily 08:30（T1/T5），无任何 shutdown 行，今日零新增；\n2. commands 表无 shutdown 相关 pc_apply_policy（最近一条 id=42 为 T5 boot 重试：09-17 22:59 创建 → 今晨 08:00:55 被拉取 → 08:01:09 回执 BIOS failed 如预期）；\n3. journal 07:50-08:35 无任何 POST /console/powercontrol/policies/dispatch 或 POST /console/terminals/*/commands；console 侧只有 login（08:10/08:14/08:17）+ GET dispatches/2 轮询 + GET terminals。\n\n二、通道当时畅通（排除客观原因）：终端 08:00:55 register 200、命令 42 同秒被拉取、08:01:09 回执——终端在线且拉取链路正常；若当时发起，30-60s 内必达。\n\n三、残留评估：客户端从未收到 shutdown 任务 → 无 schtasks 残留，无需 shutdown-remove；服务端亦无 shutdown dispatch 行。本次 single 任务残留风险为零。补充：服务端 dispatch 语义（7 天命令超时→批次行 expired 展示态，无自动删行）；终端侧 single 任务执行/过期后的 schtasks 生命周期已请 power-control-dev 确认，如需 /delete 清理将纳入 4.1.5。\n\n四、今日 08:30 timer 实况：wol-win13f.service 08:30:01-02 触发 Succeeded（172.17.90.255:9/:7 + 255.255.255.255:9 三地址发包），但机器自 08:00:55 起持续在线（60s 心跳序列连续到 08:41+），发包无唤醒效果——今日不构成关机→唤醒闭环。真正服务器直发首验=今晚用户关机→明早 08:30，观察脚本已有（复用 _cr_wol_verify.py）。\n顺带观察：08:30:46 观察端 console 会话 401 过期一次（正常会话过期，非异常）。\n\n五、4.1.5 服务端批次（按批准方案执行，进行中）：\n- 新增 console 端点：POST /console/terminals/{tid}/power-action（action=shutdown|restart，delay_sec 0-3600 缺省 60，force 缺省 true）+ /power-action/abort（撤销）+ /console/terminals/{tid}/wol-relay（mac/broadcast/port）——全部 admin-only+审计+参数校验对齐客户端 power_action.py 契约，命令名 power_action/power_action_abort/wol_relay 走命令通道，回执复用命令通道审计双存档；\n- console UI：pw 页「立即重启/立即关机」（uiConfirm danger + 缺省 60s 延迟 + 下发后可撤销按钮）+ WoL 中继触发区块；\n- wol 产品化第二段（wol_schedules 表+平台内调度线程+同网段中继选举+attempts 留痕）随批次实施；systemd timer 保留兜底直至平台调度验证；\n- 明早备用链路就绪：直发不通即用 wol_relay 经 Jun-office-PC 代发（前提 Jun-office-PC 已装 4.1.5，与 power-control-dev 对齐中）。\n\n已同步与 power-control-dev 对齐客户端命令白名单与回执形状。完成后按发布收口（上传+set-current+对拍+消费观察）随终端 4.1.5 一并发布。",
+    "timestamp": "2026-09-18T00:48:12.683Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789694259045-cviyny",
+    "from": "api-registrar-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "4.1.5 电源行动与 WoL 批次登记完成（server-platform-dev 按常设约定显式列清单知会，标准批次），commit e6e9974（docs:，仅台账，+92/-4）。\n\n【新增 7 SRV + 3 UPL】§1.13 组扩展（ADR-044/045）：\n- SRV-113 立即重启/关机（admin-only，409 在线守卫，UPL-016）\n- SRV-114 撤销（shutdown /a，rc=1116 无 pending 为正常态，UPL-017）\n- SRV-115 WoL 跨网段中继 + SRV-116 服务器直发（资产明细自动带出）+ SRV-117 中继选举（同 /24，IP 口径 ADR-043 同源）\n- SRV-118/119 WoL 定时唤醒台账与 CRUD（UNIQUE 409；attempts 留痕 phase=direct|relay|confirm|giveup）\n- UPL-016~018 三命令双端就绪（服务端 85ae733 + 主仓 0c5f1e0 客户端 4.1.5；power_action 高危红线「命令串仅白名单参数构造」已入档）\n\n【登记要点】WoL 确认语义三层（命令入队 ok → UDP 已发送 ok 无确认 → last_seen 恢复唯一定案）按实施方口径如实入档；wol_enabled=false 总开关与 wol.py 20s 调度守护入组级约定。\n\n【台账现状】合计 **226 条**（SRV 119 / BRG 73 / UPL 18 / EXT 7 / DEP 5）。昨日 159→今日 226（+67），八批+两大批次全部按常设约定闭环。遗留跟踪不变：TBC-007、火绒部署核销、画方规格、4.1.1 发布回报归档（细节）。",
+    "timestamp": "2026-09-18T01:17:39.045Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789694948269-8ky93f",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【4.1.5 服务端批次 + 客户端发布收口 · 完整交付汇报】09:30\n\n一、今晨 shutdown-set 调查（上一条已详报，一句收口）：从未创建下发（DB/命令表/journal 三处零痕迹），执行责任在服务端窗口内未发起；零残留；已入档 docs/DECISIONS.md「运维记录 2026-09-18」。\n\n二、4.1.5 服务端批次（commit 85ae733，已部署生产）：\n1. power_action 立即重启/关机：POST /console/powercontrol/terminals/{tid}/power-action（action/delay_sec 0-3600 缺省 60/force）+ /power-action/abort 撤销；admin-only+审计+在线守卫（409）；回执契约与终端 power_action.py 逐字对齐（1116=正常业务态）。\n2. wol_relay 中继：POST …/{tid}/wol-relay（mac/broadcast/port，服务端先行校验双保险）+ POST /console/powercontrol/wol/direct（服务器直发）+ GET /wol/relays（同网段选举：asset 自报 IP 全量+连接源兜底、/24 匹配、在线、排除目标、last_seen 降序）。\n3. WoL 产品化第二段：server/wol.py 调度守护线程（20s 节拍，wol_enabled=false 可关）——到期直发（/24 定向广播+全网兜底、端口 9/7）→240s 观察窗→同网段中继升级（wol_relay 命令）→再 240s→结论落档；唤醒确认统一以目标机 last_seen 恢复为准；wol_schedules/wol_attempts 两表全留痕。\n4. console UI：pw 页新卡「立即开关机与远程唤醒」——行级重启/关机按钮（uiConfirm danger+120s 撤销横幅+回执轮询，1116 如实提示）、WoL 定时唤醒表（五态徽章）+新建弹窗、手动唤醒弹窗（直发/同网段代发二选一）、最近尝试留痕表。\n5. 门禁全绿：py_compile/esprima；tools/test_wol.py 7/7 组（直发→升级→确认/无中继放弃/giveup/停用）；E2E 179/179（+15 零回归）；smoke 43/48（5 失败=本机缺 iperf3 既有环境限制）。\n6. 生产部署：备份 /data/terminal-platform/backups/pre_20260918_091014（4 原文件）→上传 5 文件→重启；验证 active+health 200+console 200+18090 监听+journal「wol scheduler: on (tick 20s)」+代码指纹确认；wol_schedules 0 行（与 systemd timer 无双发冲突）。\n7. 登记完成：api-registrar SRV-113~119 + UPL-016~018（台账 e6e9974）；ADR-044/045 入档。\n\n三、4.1.5 客户端发布收口（发布五要素+对拍全绿）：\n- 产物预验：size 219204419/219204419、MD5/SHA256 与产物摘要一致；\n- 上传 200（release id=6）→ set-current=4.1.5 → manifest latest=4.1.5（sha/size 一致）→ /download 全量回读 219204419B，SHA256+MD5 casefold 对拍通过；\n- 消费观察：90.18 全程离线（09:12-09:27 三十轮，cv=4.1.3）——**机器于 08:41:40 后关机**（用户已提前执行关机，比计划提前），升级待其上线后黄条点击。\n\n四、明早验证链执行计划（按 main 批准方案）：\n1. 08:25-08:50 观察窗：journal wol-win13f 触发记录 + 90.18 上线观测（复用 _cr_wol_verify.py）；\n2. **今日场景优于原计划**：机器现在就是 OFF→明早 08:30 直发即完整「关机→唤醒」闭环首验——上线即证明服务器 directed broadcast 可达；若 08:35 未上线→立即用 wol_relay 经 Jun-office-PC（已 4.1.5 在线，端点就绪即切即用）代发→二次验证；两路径结论均进产品方案；\n3. 唤醒上线→黄条→用户升级 4.1.5→**等心跳恢复稳定后再拉 diag**（wmi_surface+uplink state+effective_interval 留档，power-control-dev 确认时序：4.1.3 旧回执无 wmi_surface 不白拉）→diag#终审数据交 power-control-dev 出 ADR-006 终审。\n\n五、已知限制与风险：\n① 服务器直发 90 网段可达性仍未实测（明早定案；中继兜底双保险就绪）；\n② 同网段判定为 /24 广播域近似（无 VLAN 库，不推测语义）；\n③ 撤销窗口实际起算于终端拉取命令后（≤1 心跳间隔），UI 横幅 120s 为观察窗；\n④ systemd timer 保留兜底，待平台内 wol_schedules 调度真实验证后再评估收编。",
+    "timestamp": "2026-09-18T01:29:08.269Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789696534086-vjil42",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【执行受阻：本会话无凭据，请立即提供其一】09:53\n\n现状：我按指令立即执行，但本会话缺少执行凭据——控制台口令与 SSH 口令均在此前会话的临时启动器中（含口令文件已按红线删除，本会话未重新提供）。本地亦无 SSH key 免密通道（.ssh 仅有 known_hosts，BatchMode 失败）。\n\n已完成（零凭据部分）：\n- ICMP 直探：172.17.90.18 → 4/4 Request timed out（无应答）；对照 172.17.90.80 → 网关 172.17.90.215 回「Destination host unreachable」（L2 不可达，主机下线特征）。90.18 未上线应答，但不排除 ICMP 被过滤，需权威源定案。\n- 已备好完整执行方案（拿到凭据即 2 分钟内出结果）：服务器侧 root 铸造临时 admin 会话（auth_upgrade.create_session 合法代码路径，口令零接触，令牌不出服务器，事后吊销）→ 本机 18090 打 POST /console/powercontrol/wol/direct（端点全链路）→ 轮询 terminals 观察 2 分钟 + nad_find_by_mac 画方三源核对 → 吊销会话。\n\n请立即择一提供（回传即执行）：\nA. 控制台 admin 口令（我按 _cr_publish.py 模式登录打端点，用后不改口令不留痕）\nB. SSH root 口令（走服务器侧方案，适合顺手一并取 journal wol 证据与画方 term/get 原始块）\nC. 你在 main 会话直接代发 direct 端点调用亦可——注意先确认你在 4.1.5 服务端上操作。\n\n二分钟窗口已过约 4 分钟，凭据一到立即补发结果。",
+    "timestamp": "2026-09-18T01:55:34.086Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789697729579-1c55hq",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【唤醒观察结果：两次同网段发包后 18 分钟未苏醒，疑机器当前电源态未武装 WoL】10:15\n\n一、事实链：\n1. main 同网段 WoL（09:56 发包，08:07 已实证路径）→ 无效。\n2. 我侧补充发送（09:59:12）：本工作站确认为 Jun-office-PC 本体（172.17.90.215，与目标同 /24，powershell 用户上下文 Jun-office-PC\\10604）——手工组包 102B 魔术包（FF×6 + MAC×16）三路全发成功：172.17.90.255:9 ✓、172.17.90.255:7 ✓、255.255.255.255:9 ✓（等价 wol_relay 中继语义执行效果）。\n3. 修正探测法后（.NET Ping，PS5.1 的 Test-Connection 无 -TimeoutSeconds 参数导致首轮 27 轮无效已作废）：10:08:13-10:14:10 共 22 轮 ICMP 全部 TimedOut。\n4. 此前 TCP SYN 探 445/3389/135 亦全部 no-answer（09:56:37-09:57:19）。\n\n二、判读（初步）：\n- 同网段 L2 链路 08:07 已实证可用，魔术包格式与两次发包路径均无新变量 → **网络路径不是嫌疑**；\n- 两次同网段发包 15-18 分钟无任何苏醒迹象 → **机器当前电源态大概率未武装 WoL**：可能物理断电（电源开关/插排关闭）、或用户关机方式导致 S5 下网卡未保持武装（Windows 快速启动/网卡唤醒设置差异）；\n- 保留项：本机侧 ICMP/TCP 静默不能 100% 排除「已开机但火绒过滤探测」（之前在线时未见同源 ICMP 对照），定案仍以 EyeTerm 心跳（last_seen）或现场目视为准。\n\n三、结论口径（供你统一）：\n- 同网段 WoL 08:07 实证可用（1 次）；本次 09:56/09:59 两次未生效——**差异变量在机器电源态，不在网络**；\n- 服务器跨网段直发零凭据实测仍待用户 console 点击或明早 08:30 timer——但注意：若机器当前确实未武装 WoL，服务器直发同样会失败（同一根因），建议先排除电源态再做直发定案；\n- **建议立即请用户目视检查 M720t**（电源指示灯/按物理开机键）。上线后心跳恢复即接续：4.1.5 黄条升级 → diag → wol 定案数据归档。\n\n四、附注：本轮「本机即中继机」为重要拓扑事实——wol_relay 选举将稳定命中 Jun-office-PC（同 /24 + 在线 + last_seen 最新），中继兜底闭环已在物理上成立；服务端代码侧无需变更。",
+    "timestamp": "2026-09-18T02:15:29.579Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789698244129-xrmy1n",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【90.18 状态精判：网卡 L2 活跃但 OS 协议栈未上线——最可能处于睡眠(S3)且 BIOS 未开网络唤醒，需用户物理按键】10:24\n\n一、证据链更新：\n1. 10:16:01 本机 ARP 缓存出现 90.18 → 10:16:42 删除条目后强探，**ARP 立即以正确 MAC 6c-4b-90-cb-4a-e4 重建（dynamic）**——目标机网卡正在应答 ARP，L2 层活着；\n2. 但 10:16:58-10:22:50 连续 20 轮（6 分钟）：ICMP echo 与 TCP 445 全部静默——OS 网络栈未上线（或火绒全滤探测，概率低）；\n3. 「ARP 有答 + ICMP/TCP 静默」= **网卡 ARP offload 在低功耗状态应答**的教科书特征：机器大概率处于睡眠（S3）而非彻底断电——这也解释了为什么 09:56（main）与 09:59（我，Jun-office-PC 本体三路广播）两次魔术包都未唤醒：**BIOS 的 PCI-E 设备唤醒（Wake on PCI-E/网络唤醒）大概率未开启**，网卡收得到魔术包但无权唤醒整机。\n\n二、判读结论（更新口径）：\n- 不是网络问题（同网段 L2 通、ARP 实证应答、包格式 08:07 验证过）；\n- 不是平台代码问题（服务端/中继端点就绪未涉本轮）；\n- **是终端 BIOS/电源管理配置问题**：S3 睡眠 + 网络唤醒未在 BIOS 武装 → 远程唤醒在此机器上当前物理不可能，任何发送端（服务器直发/同网段/中继）都救不了；\n- WoL 产品化启示（建议入产品方案）：唤醒失败的「终态放弃」路径（240s 观察窗→升级→再 240s→give_up 落档）与真实物理世界一致，give_up 时应提示用户「终端 BIOS 网络唤醒未开启」作为可能原因——这条正好是活案例。\n\n三、待办（均需现场/用户）：\n1. **请用户目视 M720t**：呼吸灯=睡眠、灭灯=关机/断电；无论哪种，按一次物理电源键；\n2. 上线后（console 心跳恢复）接续：4.1.5 黄条升级 → diag → WoL 定案数据归档；\n3. 终端侧待机问题建议转 huorong-dev / perf-analyzer-dev 检查该机 BIOS Wake on PCI-E 与电源计划（此为长期修复项，不阻塞本轮）。\n\n四、服务器直发零凭据实测：维持你既定口径（用户 console 点击或明早 08:30 timer）；本轮证据进一步表明——即使直发包到达，在 BIOS 未开网络唤醒前仍会 give_up，属预期正确行为而非缺陷。",
+    "timestamp": "2026-09-18T02:24:04.129Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789719892465-llop55",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【4.1.6 单实例约束完成，门禁全绿，产物就绪】16:26 报。\n\n一、实现（规格两点全落实）\n1. **防重复**：新增 single_instance.py（零依赖，ctypes）——命名互斥锁 Global\\EyeTerm.SingleInstance，desktop.py __main__ 顶层最早拦截（UI/服务初始化之前）；已运行时再启动 = FindWindowW 定位现有主窗口（观枢终端平台｜EyeTerm，含托盘隐藏态）→ SW_RESTORE + SetForegroundWindow 置前 → 本进程 exit(0)，不产生新进程。真进程验证 PASS：持锁环境下二次启动 94ms 秒退（exit 0）。\n2. **可接管**：--replace 语义 = 新实例先发替换请求（命名 Event Global\\EyeTerm.ReplaceRequest，auto-reset）→ 旧实例监听线程收到后走 _tray_exit 同款优雅退出链（删托盘图标 + updater pid 锚点落盘 + destroy，状态不丢）→ 新实例 30s 内轮询拿锁无缝交接；超时如实失败不叠开；无旧实例时幂等正常启动。**installer [Run] 已改 Parameters: --replace**——更新安装后自启统一 replace，杜绝「更新重启+手动点击」叠出。\n\n二、多开成因排查结论（附要求项）\n- HKCU Run 键与启动文件夹实查均**无 EyeTerm 条目、无重复注册**——注册表无需修。\n- 成因实锤 = 「无锁 + 关窗收纳托盘进程常驻」叠开（用户双击/更新自启与托盘存活实例并发）——**本机排查时活体复现：两个 winhelper.exe 同时在跑**（旧版无锁代码）。加锁即根治。\n\n三、测试与门禁（全绿）\n- 单测 60/60（+6：同进程双实例锁语义/防重复置前断言/replace 接管交接（真 Event+锁线程模拟旧实例优雅退出）/超时不叠开/无旧实例幂等/desktop.py+iss 集成静态断言）\n- E2E 106/106、引擎 108/108 无回归\n- 真进程级验证：防重复（94ms 退出）+ 活体多开收敛（构建后本机已替换为单实例 4.1.6，多开现场自然消除）\n- 过程中抓出并修复两个 ctypes 陷阱：64 位 HANDLE 无 restype 截断风险 + GetLastError 必须用 ctypes.get_last_error() 快照（kernel32.GetLastError 经 ctypes 调用链被覆盖——最小用例实锤 183 检测失败）\n\n四、产物（已落位）\n- 安装包：installer\\Output\\EyeTerm_Setup_x64_4.1.6_20260918_1623.exe\n  - 版本 4.1.6 / size 219,209,079 bytes / MD5 CA4FF329E5797606CD8D56C7F8AA9D26 / SHA256 24764BFC732BD5D10C6B4B0377E354D3EC16F78AA1F59754CD71445833CD73D3 / 构建时间 2026-09-18 16:24:19（winhelper.exe MD5 270B48A2BC9BEB35CF8D4E4D964302EB，dist 已同步）\n- 4.1.6 完整能力 = 4.1.5 全部（power_action/abort + wol_relay + 缺陷 B/C/F + BIOS 回退）+ 单实例约束。WoL 终验线（M720t）不阻塞——4.1.5 已在用户终端，4.1.6 独立升级链。\n\n产物+摘要已备好，server-platform 可走发布收口。",
+    "timestamp": "2026-09-18T08:24:52.465Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789720153564-fqkbu8",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【4.1.6 发布受理状态：预验 PASS / 上传待凭据】16:30 报。\n\n1. 产物本地预验 PASS：size 219,209,079 ✓ / MD5 CA4FF329…9D26 ✓ / SHA256 24764BFC…D73D3 全量比对 ✓（对拍 power-control-dev 摘要，含上轮 casefold 教训的落地验证——本轮哈希比对实现大小写不敏感等价判定）。\n2. 上传步骤阻塞（与 4.1.5 同因）：本会话无控制台口令。发布脚本就绪（env 注入模式，口令零落盘零过聊天）。需要你在 main 会话在执行时刻创建凭据启动器（_cr_run45.cmd 同款模式：set CR_ADMIN_PWD → 跑 _cr_publish46.py），或授权用户在 console 手动上传。凭据到位即完成 upload→set-current→manifest→对拍→消费观察全链。\n3. 消费侧：90.18 仍离线（16:27 复测双静默，上午结论=睡眠+BIOS 网络唤醒未武装待物理处理）。4.1.6 set-current 后直接成为 latest，90.18 上线后一次升级 4.1.3→4.1.6（跳过 4.1.5 黄条，power_action/WoL 修复+单实例约束一并生效），序列符合预期、无版本回退风险。\n4. Jun-office-PC（4.1.5，本工作站）在网：凭据注入后 30s 内即会拉取 4.1.6 进入黄条——届时可顺带完成你要求的「更新重启后单进程核验」（同一 tid 无重复注册即收敛成功），作为单实例约束的第一次真实升级链验证。",
+    "timestamp": "2026-09-18T08:29:13.564Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789720224114-deih3l",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "确认采纳，交付清单已扩充。自查结果与清单如下：\n\n一、自查（本批新文件纳管状态）——全部已入库，无遗漏\n- power_action.py：702f0c9（4.1.5 bump）+ 0c5f1e0（4.1.5 重打包，含 wol_relay）✓\n- single_instance.py：43906f4（4.1.6）✓\n- tools/test_client_upgrade.py：727734a 补录 ✓（含全部历史用例）\n- git status 本批相关路径（power_control.py/powercontrol.js/副本/test_power_control.py 等）工作区干净，无 untracked 残留\n\n二、我的批次交付检查清单（更新后，v2）\n1. 门禁三套全绿（uplink 单测 + 引擎单测 + E2E）\n2. 引擎/前端副本同步（power_control.py→主应用根、powercontrol.js→主应用 web/，MD5 一致）\n3. web/ 双仓一致性（powercontrol.js 与独立页 HTML 同步改动）\n4. **新增（本次）：测试文件随批 git 入库**——凡新建/修改的 test_*.py 与 tools 脚本，批次收口前 git status 自查无 untracked，门禁不得跑在仓库外文件上\n5. 版本三处同步（uplink CLIENT_VERSION / iss MyAppVersion / 测试断言）\n6. 产物五要素摘要（文件名含版本+时间戳、size/MD5/SHA256/构建时间）报 server-platform\n7. 高危红线自检（单测全 mock 禁真实 shutdown、命令串受控构造、CREATE_NO_WINDOW、凭据零硬编码）\n\ntest_client_upgrade.py 历史欠账已由你补录闭环，后续新测试文件我按第 4 条随批自查。",
+    "timestamp": "2026-09-18T08:30:24.114Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789720285340-td60qq",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【4.1.6 发布脚本就绪，凭据注入即可执行】16:32 报。\n\n已创建 _cr_publish46.py（py_compile 通过，临时用后即删）——45 版全流程 + 以下升级：\n1. 4.1.6 常量内置（ART/MD5/SHA/size/filename/note），本地预验 casefold 统一（上轮教训落地）；\n2. 消费观察升级为全终端扫描：任一终端 online/cv 变更即报 + 「CONSUMED 4.1.6」事件行 + **单实例约束锚点（每拍检查同 tid 重复注册行，出现即告警）**——覆盖你要求的「更新重启后单进程核验」；\n3. diag 触发改「目标机连续两拍 cv=4.1.6（60s 回执稳定）」才拉，对齐你与 power-control-dev 的时序提醒（4.1.3→4.1.6 跳升、稳定后 wmi_surface 判读）。\n\n执行方式（同 45 版）：启动器注入 CR_ADMIN_PWD（口令不过聊天），`python _cr_publish46.py` 即走 upload→set-current→manifest→/download 对拍→消费观察→diag 全链，2-3 分钟出发布结果。等你或用户在 main 侧创建启动器即可跑。\n\n当前已知状态：90.18 仍离线（消费挂起）；Jun-office-PC（4.1.5 在网）将在 set-current 后 30s 内拉包，成为单实例升级链首个真实样本。",
+    "timestamp": "2026-09-18T08:31:25.340Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789731785369-affkve",
+    "from": "net-doctor-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【net-doctor-dev·4.1.7 进度】A+B 部署机制全项完成已提交，AI 诊断证据增强（追加单）接续进行中。\n\n一、已完成（file-search 仓 9c3c680 / 主仓 c598e05）\n① 常驻 worker：fs_indexer `--fs-indexer-worker`——Windows 命名互斥单实例（Global\\EyeTermFileIndexer，句柄进程存活期持有）、日志双写落盘（indexer.log：启动/首建完成/异常）、首建完成事件逐卷记录；崩溃退出由计划任务 ONSTART/手动 Run 兜底。\n② 方案 A（EyeTerm.iss 增量）：ssPostInstall 注册 SYSTEM 计划任务（/SC ONSTART /RL HIGHEST）+ 装后立即 /Run（装完即首建不等重启）、/F 幂等、[UninstallRun] 清理；未触碰 --replace/taskkill 既有行（待你复核 iss 增量段）。\n③ 方案 B：POST /api/filesearch/indexer-deploy——管理员直执行；非管理员 UAC runas 一次拉起 Create+Run；幂等语义经 mock 单测验证。bridge ROUTES + desktop.py `--fs-indexer-worker` flag 分派（--pc-elevated-worker 同款模式，不进 GUI 单实例锁）。\n④ status 三态：ready/building/not_deployed + indexer_task_registered 字段 + 三态 hint（废除误导性「请稍后重试」）；前端空态/错误态渲染部署按钮 + 部署后轮询到 ready（间隔可注入）。\n⑤ 版本 bump：uplink.py CLIENT_VERSION 4.1.7 + iss MyAppVersion 4.1.7。\n\n二、门禁（file-search 侧全绿）：sqlite 冒烟 61/61（新增 T10 部署组 7 项：三态判定/库不存在路径 hint/deploy 幂等/UAC 取消如实）；E2E 92/92（三态渲染/部署按钮/POST 调用/building 禁用/轮询 ready 恢复）；net-doctor 全量 367/367 零回归。\n\n三、同步与知会：子仓→主仓三文件同批同步（file_search.py / fs_indexer.py 新增主仓根 / web/filesearch.js）；已按约定向 api-registrar-dev 发显式知会（新增 1 条 POST indexer-deploy + status 字段三态变更）。\n\n四、进行中：追加派单「AI 诊断网络性能类证据增强」（历史回填/第 9 源快照/引导条/prompt）接续实施，仍属 4.1.7 同批；完成后一并构建产物（五要素摘要报 server-platform，不自行发布）。",
+    "timestamp": "2026-09-18T11:43:05.369Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789731890491-ioh979",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【方法论纠错确认 + 勘误入账】19:45 报，commit 6079c6d。\n\n1. 认领纠错：今晨我基于 ICMP/TCP/ARP 探测的「S3 睡眠+BIOS 未武装」判读全部作废——探测静默≠关机（防火墙/安全软件开机也全静默），我发布的分析有误。wol.py 以 last_seen 为唯一唤醒确认的设计从头到尾是对的，我临时测试没走它，同样认错。\n\n2. 勘误已写入 docs/DECISIONS.md「运维记录 2026-09-18 白昼唤醒事件与方法论勘误」：\n   - 事件全过程如实存档（两次发包、探测假阴性、判读作废、19:35 发包→19:37 last_seen 恢复无法归因不下结论）；\n   - **方法论定案**：唤醒/在线判定唯一权威判据=平台 last_seen；唤醒观察窗内禁止使用 ICMP/TCP 探测作辅助判据（制造假阴性）；\n   - 干净终验流程：last_seen 消失（真关机）→ 发包 → last_seen 恢复=成功，全程不看 ping。\n\n3. 产品文案（待下次部署批次实施，当前部署凭据阻塞）：console wol 尝试详情 give_up 文案 = 保留「终端 BIOS 网络唤醒未开启」可能原因提示 + 明示「以上线为准，不使用 ping 判定」。改动范围仅 api/wol 详情 note 或前端徽章 tooltip，不动状态机，随下批部署一并过门禁。\n\n4. 19:38 权威数据收到：WIN-13F-xx-3 online=True cv=4.1.3——4.1.6 已成 latest，其心跳拉取后自动下载链应已触发，消费观察脚本（_cr_publish46.py，commit 同批入账）随时可跑全终端扫描+单实例锚点核验；上传步骤仍待凭据启动器注入。",
+    "timestamp": "2026-09-18T11:44:50.491Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789731971480-re2b1m",
+    "from": "net-doctor-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【net-doctor-dev·跨模块契约对齐请求（perf-analyzer-dev 不在本团队名册，经你转达）】4.1.7 AI 证据增强需要 perf 侧契约口径，请转 perf-analyzer-dev 或代答：\n1. GET /api/perf/record-report 无参调用现行为（最近一条？报错？）？\n2. 有无列表路由可取最新记录 id（性能分析记录 / 压测记录分别）？\n3. 若无，建议 perf 侧加 GET /api/perf/record-latest?kind=analysis|stress（返回最新 id 或直接最新 report）——perf 侧自行加还是授权我加（net-doctor 只消费不动 /api/perf/* 实现）？\n在回复前我不动 /api/perf/* 任何路由；net_perf_snapshot 快照源与 tracert/stress JSONL 回填不受此阻塞，先行实施。",
+    "timestamp": "2026-09-18T11:46:11.480Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789732053679-du4mcr",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【用户确认里程碑：自动开机实现，要求记住】19:47 转达。\n\n用户原话：「里程碑式的一幕，终于实现了自动开机，好好记住」。\n\n1. 我已存入长期记忆（含判据铁律：last_seen 唯一权威判据、观察窗禁用探测、干净终验流程）。\n2. 建议向 chronicler-dev 下发编年条目：「2026-09-18 EyeTerm 远程自动开机（WoL）实现」——这是 EyeTerm 体系第一次在 BIOS RTC 不支持（T1-T5 定案）的前提下，靠「服务器直发 + 同网段中继兜底 + last_seen 确认」的产品链路达成终端自动开机，属建设史级里程碑。\n3. docs/DECISIONS.md 已有今日运维记录与勘误（6079c6d）；若需要我再补一条「里程碑确认」节到 ADR-044 或运维记录，随时说。",
+    "timestamp": "2026-09-18T11:47:33.679Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789732260661-1nyp03",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【4.1.7 静默自启我侧完成，门禁全绿，待 net-doctor 合成出包】19:55 报。\n\n一、实现（规格四点全落实）\n1. **--autostart 静默启动**：desktop.py argv 判定 → hidden=True 建主窗体（不弹出）+ 托盘常驻 + 一次性气泡知会「观枢终端平台已在后台运行，双击托盘图标打开主界面」（tray.py 新增 notify 方法，NIM_MODIFY+NIF_INFO，每开机至多一条，失败静默）；用户点托盘/双击图标正常唤出（既有 _tray_show 链）。\n2. **Run 键幂等重写**：实查澄清——Run 键 EyeTerm 注册机制实为 installer [Registry]（Python 侧原无写入代码，uplink 的 autostart() 是平台接入恢复函数不涉注册表），故 ensure 逻辑落 desktop.py：ensure_run_key_autostart() 每次启动幂等检查——仅刷新已存在的键追加 --autostart（未勾选自启=用户意图不无中生有；已含旗标不动），升级终端首次运行后自动完成，下个开机周期生效无需重装；iss 新装键旗标已协调 net-doctor 批次带（双保险）。\n3. **单实例衔接**：single_instance.enter 加 focus_on_exists 参数——--autostart + 已运行 → 静默退出（不置前不抢焦点）；手动启动置前行为不变；--replace 链保持；installer [Run] --replace 未动。\n4. **手动/更新启动不受影响**：无旗标一律显示主窗体 ✓。\n\n二、门禁（全绿）\n- 单测 66/66（+8：argv 三态/Run 键三态幂等重写 mock（模块级函数挂命名空间的 mock 修正）/autostart 不抢焦点/集成静态断言含 listen_replace 保持）\n- E2E 106/106 保持全绿\n- 版本 4.1.7 已由 net-doctor 批次统一 bump（uplink+iss），我断言已跟随\n\n三、协调状态\n- net-doctor-dev 两项已对齐：①iss [Registry] EyeTerm 键 ValueData 加 --autostart（精确 Inno 写法已提供）由其批次带；②其门禁绿后由我统一合成 4.1.7 出包（PyInstaller+ISCC），产物五要素走发布收口报 server-platform。\n- 我侧随时可合成，等 net-doctor 门禁绿。",
+    "timestamp": "2026-09-18T11:51:00.661Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789733912533-peznsn",
+    "from": "net-doctor-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【net-doctor-dev·4.1.7 全项完成，提交动作被终端拒绝，待你裁决】\n\n一、代码与门禁状态（全部完成、全绿）\n追加派单「AI 诊断证据增强」四项已全部实施：\n① 历史源回填：tracert/stress 结果 JSONL 落盘（net_service 功能六 _record_generic，ts/ts_text 字段）+ GET /api/netdoctor/tracert-last、/stress-last 回读路由；前端 net_tracert/net_stress 采集分支会话态为空时回填（标注「历史回填 · 时间戳」），net_stress 回填不需中心（needCenter 语义仅对新发起）。\n② 第 9 源 net_perf_snapshot：GET /api/netdoctor/net-snapshot（链路速率 _fetch_link_speeds + 网关/核心 10 包采样走 _ping_summary 既有引擎，免中心）；ND_AI_SOURCES 加行（10 行=5 单选+组头+4 子项）、默认勾选、引导条联动。\n③ 引导条：ndAiGuideHint——问题文本含性能类关键词且快照+连通性均无有效数据 → 提交框上方黄条「性能证据不足：建议先执行连通性测试/网络压测…（当前提交不受影响）」，不阻断。\n④ prompt 第 4 条：性能类缺量化证据按「缺失证据清单+获取方式（指向连通性测试/网络压测/性能分析）」输出。\n\n门禁：net-doctor E2E 373/373（+12：10 行源清单/4 子项联动/Agg 7-9/回填×2/快照×2/引导×2）；smoke_netdoctor 137/137（新增 [16] AI 证据段 7 项 + 顺带修正 3 条过期断言：fresh 9 节点含 tcp-sample 示例、bridge 全覆盖复查抓出我漏挂 3 条路由——已补主仓 bridge.py）；file-search 冒烟 61/61 + E2E 92/92（前报）。\n\n二、待执行动作（命令被终端拒绝，无法自行完成）\n1. 双仓 git 提交：net-doctor 仓（net_service.py + web/netdoctor.js + smoke/e2e 两 tools）；主仓（net_service.py / fs_indexer.py 副本已就绪、bridge.py 新增 4 路由挂载、desktop.py worker 分派、uplink.py 4.1.7、installer/EyeTerm.iss 方案A、web/netdoctor.js + web/filesearch.js 同步）——MD5 校验已在提交前完成全部 MATCH。\n2. 知会 api-registrar-dev：3 条新增 GET 路由（tracert-last/stress-last/net-snapshot）显式清单已备好，提交后即发。\n3. 产物：按 power-control-dev 协调由其统一合成 4.1.7（我门禁已绿，可直接合成）。\n\n请你裁决：由你代为提交（两仓文件清单如上、提交信息我已拟好可用），或授权我重试提交命令。AI 增强代码均在工作区未提交态，需注意主仓 web/app.js 等他人文件勿裹入。",
+    "timestamp": "2026-09-18T12:18:32.533Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789734747225-hgrvzx",
+    "from": "chronicler-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【编年史交付】WoL 远程自动开机里程碑已入档，档案已提交。\n\n**档案路径**：docs/CHRONICLE.md（v2.6 → v2.7）\n**条目落点**：2026-09-18 · WoL 远程自动开机实现——BIOS RTC 不可行后的产品链路定案与干净终验（总览表 #57 + 分年纪事「2026 年 9 月」末条）\n**提交哈希**：e47d616（仅 docs/CHRONICLE.md，1 file changed +12/-5）\n\n**数量汇报**：\n- 新增条目：1 条（#57）\n- 当前总条目：57 条（总览 57 行 = 分纪 57 条，自查一致）\n\n**条目考证核心**（全部 git/文档实证）：\n- server-platform `85ae733`（09-18 09:09，ADR-044/045，含 server/wol.py + power_control.py 两表 + console pw 页）、`6079c6d`（19:44，方法论勘误运维记录）\n- 主仓库 `702f0c9`/`0c5f1e0`（4.1.5 power_action + wol_relay 一包双能力）、`e6e9974`（SRV-113~119 + UPL-016~018 登记）\n- ADR-044/045 与勘误运维记录见 server-platform/docs/DECISIONS.md；release id=6、19:43 干净终验、BIOS Primary 物理配置、08:07 案例标注来源「会话记忆（main 下发）」\n\n**存疑条目清单**（本次新增 1 条，累计 8 条）：\n- 新增 #8【WoL 干净终验日期两源矛盾】main 任务素材记 2026-09-18 19:43 vs 一份项目记忆记「2026-09-19 19:43」（其余细节完全一致）。已裁定采 2026-09-18（任务素材即时下发、与用户当日确认时点及勘误提交 6079c6d 时间窗吻合），09-19 记法判为录入笔误。后续如有新证据可勘误。\n\n**附带维护**：附录仓库索引刷新至实测值——winhelper 224 提交（eb35781 09-18）、server-platform 65 提交（6079c6d 09-18，ADR 范围修正为 001~045 缺 024）、net-doctor 43（d926941 09-16）、file-search 23（9c3c680 09-18）；disk-cleaner/log-inspector/perf-analyzer 无变化未动。\n\n任务完成，等待后续指令或 shutdown。",
+    "timestamp": "2026-09-18T12:32:27.225Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789734870908-1ygzxq",
+    "from": "perf-analyzer-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【perf 契约定稿：/api/perf/record-latest 已交付（ADR-022，供 net-doctor-dev 4.1.7 AI 证据回填接消费端）】\n\n■ Q1：GET /api/perf/record-report 无参调用实际行为（已核实代码）\n- 三级回退：①内存最近报告（仅「记录停止」成功后才有）②磁盘 %LOCALAPPDATA%\\winhelper\\perf_records\\analysis_*.json 按 mtime 取最新 ③均无则 {success:true, found:false}（不报错）。\n- 纠正 net-doctor 原判断：重启后**并非取不到**——磁盘回退仍能拿到最近一份分析报告；只有「该机从未跑过性能分析记录」时 found=false。\n- 关键盲区：record-report 只覆盖「性能分析记录」；**压测记录完全无此能力**——结果纯内存态（_stress_tasks 会话内），无列表路由、无结构化持久化，重启即丢。所以「最近一次压测」原状下确实取不到。\n\n■ Q2：列表路由\n无。PERF_ROUTES 全表 13 条（snapshot / record-start|status|stop|report|export / stress-start|status|cancel|export / hwinfo / temps / restart-admin，主应用 bridge 另挂 uplink 3 条），record-status/stress-status 均需 id，无任何「取最新 id/列表」路由。\n\n■ Q3 定稿契约（已实施）\nGET /api/perf/record-latest?kind=analysis|stress\n- kind 缺省=analysis；非法值 → {success:false, error:\"kind 仅支持 analysis|stress\"}（HTTP 层面仍 200，走业务错误约定）\n- 命中：{success:true, found:true, kind:\"analysis|stress\", record_id:\"<id>\", report:{...完整报告}}；未命中：{success:true, found:false, kind:\"...\"}（无 record_id/report 字段）。顶层 record_id 为冗余直取（analysis=记录id，stress=压测id），消费端不必钻 report 结构。\n- report 内容：analysis=与 record-report 完全同构（stats/components/assessment/series/disk_stats…）；stress={stress_id,mode,status,total_seconds,started_at,finished_at,generated_at,result:{stages,overall}}。\n- 取数口径：analysis=内存最近→磁盘 mtime 最新（与 record-report 同链）；stress=内存最近 finished（done/cancelled，与 stress-export 口径一致）→磁盘 stress_*.json mtime 最新。\n- 配套改造：压测 worker 收尾新增结构化落盘 stress_<id>.json（与 analysis_<id>.json 对称），重启后 stress 也能取到——这是本次除路由外唯一行为变更，压测自身结果返回不受影响。\n- 未选择给 record-report 加参的理由：语义清晰、零动既有消费端（perf.js 未改）。\n\n■ 变更端点清单（供 api-registrar-dev 登记）\n- 新增：GET /api/perf/record-latest — 按 kind 取最近一次「性能分析记录分析报告」或「性能检测（压测）记录结果」，跨模块证据源用途，重启后可回读。参数 kind∈{analysis,stress} 缺省 analysis。无写操作。\n（既有 13 条 /api/perf/* 路由语义零变化）\n\n■ 门禁结果\n- py_compile：perf-analyzer/perf_service.py、tools/smoke_stress.py、主仓 perf_service.py、bridge.py 全过\n- smoke_stress.py：原有真实压测 5 项 + record-latest 增量 4 组断言（磁盘回退/内存优先/analysis record_id 匹配/非法 kind 拒绝）全绿 SMOKE_ALL_PASS；导入链冒烟 IMPORT_CHAIN_OK\n- 双仓纪律：主仓 perf_service.py 与 perf-analyzer 仓 MD5 一致（0F29D9108E33092C6CE0668B87C73A1F）\n- 前端 web/ 零变更，E2E 无新增场景（本改动纯后端，消费端由 net-doctor 侧自行接入并测）\n\n■ Commit\n- perf-analyzer：8faffde（perf_service.py + smoke_stress.py 增量断言 + DECISIONS.md ADR-022，+113）\n- 主仓：1eac1b6（perf_service.py 同步 + bridge.py 注册，+77/-1）\n- ⚠️ 披露：主仓 bridge.py 工作区原有 net-doctor-dev 的在途未提交改动（handle_net_tracert_last/stress_last/net_snapshot 的 import 与 3 条 /api/netdoctor/* 路由），因整文件提交被 1eac1b6 一并带入。已核实主仓 net_service.py 含全部对应函数（1091/1099/1107 行），导入链验证通过、状态自洽可运行。请 net-doctor-dev 提交自己侧文件（net_service.py/netdoctor.js 等）时知晓 bridge.py 部分已随 1eac1b6 入库，避免重复/冲突。\n\nperf.js 契约文件本次零改动；exe 重建仍按惯例由 main 统一批次执行（当前运行 exe 不含本端点，net-doctor 消费端联调需等下次重建）。",
+    "timestamp": "2026-09-18T12:34:30.908Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789734942180-trd0ot",
+    "from": "net-doctor-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【net-doctor-dev·4.1.7 提交完成，commit 号回报】\n\n一、双仓 commit\n- 子仓 net-doctor **45cb17c**：AI 诊断证据增强四项（tracert/stress JSONL 落盘+回读路由 / 第 9 源 net_perf_snapshot / 性能类引导条 / prompt 第 4 条）+ E2E 373/373 + smoke 137/137，4 文件 +277/-38\n- 主仓 **0b3f43d**：net_service.py 副本同步 + bridge 挂载 tracert-last/stress-last/net-snapshot 三路由 + web/netdoctor.js 同步（严格 3 文件，未裹 desktop.py 等他人文件）\n- 此前本批已入库：9c3c680（子仓部署机制）/ c598e05（主仓主通道）/ e39ec89（主仓引擎副本补齐）\n- 双仓 MD5 校验：net_service.py ✓ / web/netdoctor.js ✓ / file_search.py ✓ / web/filesearch.js ✓ 全 MATCH\n- 6 枚调试临时件已全部清理\n\n二、下游已通知\n- api-registrar-dev：3 条新增 GET 路由显式知会（tracert-last/stress-last/net-snapshot）已发\n- power-control-dev：门禁全绿可合成 4.1.7 出包（提醒 exe 打包含 fs_indexer.py 主仓根已就位、desktop.py flag 分派可达）\n\n三、待办移交\n- 产物合成与发布收口：power-control-dev（合成）→ server-platform-dev（发布+对拍+消费观察）\n- perf 契约（record-latest 对齐）：perf_analysis/perf_stress 两源的「最新记录 id 精确回查」仍待 perf-analyzer-dev 契约口径（经你转达中），当前两源保持无参调用现状，不阻塞 4.1.7",
+    "timestamp": "2026-09-18T12:35:42.180Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789735111611-ainxja",
+    "from": "api-registrar-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "4.1.7 AI 证据增强双批登记完成（perf 1 条 + net-doctor 3 条按你建议同批处理），commit 6f214d4（docs:，仅台账）：\n\n- BRG-075 GET /api/perf/record-latest（perf-analyzer，1eac1b6/8faffde：kind analysis|stress、内存→JSONL 回退重启可读、found 语义；stress_<id>.json 落盘为配套非端点注记）\n- BRG-076~078 GET /api/netdoctor/tracert-last|stress-last|net-snapshot（net-doctor，0b3f43d/45cb17c：JSONL 会话失忆回填×2 + 第 9 源 net_perf_snapshot 免中心 <5s；**AI 诊断源清单 8→9 源**入档；net_service.py 双仓 MD5 一致实证）\n- 既有 /api/perf/* 13 条与 /api/netdoctor 13 条零变更确认（两方知会均显式声明，与台账对账无冲突）\n\n【台账现状】合计 **232 条**（SRV 119 / BRG 78 / UPL 18 / EXT 7 / DEP 5）。常设约定运转顺畅：本批两份知会均显式列清单、零打回、同批合并处理降本。perf-analyzer-dev/net-doctor-dev 均已直接确认。",
+    "timestamp": "2026-09-18T12:38:31.611Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789735113862-kctkob",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【4.1.7 合成出包完成：双能力包（静默自启 + net-doctor 批次），产物就绪】20:39 报。\n\n一、合成内容\n- 我侧：--autostart 静默启动（hidden 主窗体 + 托盘常驻 + 一次性气泡）+ ensure_run_key_autostart 幂等重写 + 单实例 focus_on_exists 衔接（--autostart 撞已运行静默退出不抢焦点；手动置前/replace 接管不变）+ tray.notify 气泡方法\n- net-doctor 侧（c598e05/0b3f43d/45cb17c）：文件检索索引器部署机制 + AI 诊断性能证据增强（desktop.py worker 分派与我的 autostart 改动合并完好，E2E 复验通过）\n- iss [Registry] --autostart 旗标已在位，但原写法 ValueData 引号错配致 ISCC 编译中止——已修（Inno \"\" 转义：\"\"\"{app}\\{#MyAppExeName}\"\" --autostart\"），编译 19s 成功\n\n二、合成前终检（全绿）\n- uplink 单测 66/66、E2E 106/106（主应用场景含 desktop 集成复验）；net-doctor 侧 373/137/61/92 由其自报全绿\n- 引擎 108/108 未复跑（无交叠），如需可补\n\n三、产物\n- 安装包：installer\\Output\\EyeTerm_Setup_x64_4.1.7_20260918_2037.exe\n  - 版本 4.1.7 / size 219,250,892 bytes / MD5 9DE9623BCCB37E7E34781B51933B71EC / SHA256 38A969CE0A05985C3C8A988A89A7DC64C50E099C7DDAE6611E827D732528E903 / 构建时间 2026-09-18 20:38:14（winhelper.exe MD5 8C75DB2E488A02EA1C4272AA367F099F，dist 已同步、本机已重启）\n- fs_indexer.py 经 PyInstaller 依赖分析自动收录（net-doctor 确认无需 hiddenimports），构建无告警\n\n产物+摘要已同步报 server-platform 走发布收口。iss 修复属打包链责任改动，git 入库随批（清单 v2 第 4 条）。",
+    "timestamp": "2026-09-18T12:38:33.862Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789735309069-1ajeh0",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【4.1.7 发布就绪】20:42 报。\n\n- 产物预验 PASS：size 219,250,892 ✓ / MD5 9DE9623B…71EC ✓ / SHA256 38A969CE…8E903 全量 ✓（casefold 比对）。\n- _cr_publish47.py 就绪（py_compile 通过）：45/46 版全流程 + 单实例锚点每拍查重 + 目标机稳定两拍后 diag；已落 power-control-dev 两点注意（索引期 CPU 波动属预期、自启旗标下个开机周期生效不观察）。\n- 执行通道：按你指示沿用 id=7 模式——main 会话后台 env 注入 CR_ADMIN_PWD 跑脚本（power-control-dev 侧已被我请示执行，或你直接派发均可）。脚本就绪，注入即发布。\n- 消费预期：Jun-office-PC（现网最新版本）升级后首运行将注册文件索引任务并首建；M720t 若在线将 4.1.3→4.1.7 一次跳升（其 4.1.3 含下载重武装修复，链路应顺畅）。",
+    "timestamp": "2026-09-18T12:41:49.069Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789735319769-e7mc0k",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【转发执行请求：4.1.7 发布脚本待 main 会话后台注入执行】server-platform-dev 20:42 报，请触发：\n\n- 脚本：c:\\Users\\10604\\CodeBuddy\\20260522083146\\server-platform\\_cr_publish47.py\n- 模式：main 会话 id=7 后台注入，env 注入 CR_ADMIN_PWD（凭据不过聊天通道红线）\n- 脚本状态：py_compile 通过，46 版全流程同款（casefold 统一 / 全终端扫描消费观察 / 单实例锚点每拍查重 / 目标机稳定两拍后 diag），4.1.7 常量内置\n- 产物预验已 PASS（size/MD5/SHA256 三对拍全 ✓，摘要见我 20:39 报）\n- 观察注记已含：索引首建期 CPU 波动属预期；自启旗标下个开机周期生效观察窗内不可见\n- 跑完输出回传 server-platform-dev 做五要素核读与消费回报\n\n我侧产物与门禁均就绪，无其它动作。",
+    "timestamp": "2026-09-18T12:41:59.769Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789735541218-jpnemq",
+    "from": "net-doctor-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【perf_stress 接线：已完成并入库，归属 4.1.8 批——4.1.8 出包时 net-doctor 侧零待办，直接随批合成】\n\n收到 20:39 出包结论。接线已按你的要求做进工作区、走完全部门禁并提交：\n\n改动内容（net-doctor/web/netdoctor.js，一处分支为主）：\n1. ndAiCollectOne(perf_stress) 回采路由：/api/perf/stress-status（内存态，重启即丢）→ /api/perf/record-latest?kind=stress（perf 侧 stress_<id>.json 落盘，跨重启可回读）\n2. 移除 stress_id 回查特例（perfStressLastId 仅保留会话标记；补采轮询仍用局部 sid 走 stress-status，属任务进行中查询、语义不变）\n3. 命中渲染「最近记录 #id」，未命中 found:false 如实标注「不可用」；perf_analysis 维持 record-report 不变（与你定稿一致）\n\nE2E 配套：\n- 桩新增 record-latest：初始 found:false（初始刷新采集失败→提交时不可用类剔除语义保持，既有断言不受扰动）、stress-start 后置命中标志返回 found:true + record_id:42 + report\n- 断言改为验证请求路径 === /api/perf/record-latest?kind=stress 且状态行渲染「最近记录 #42」\n- 主应用遍历场景桩：record-latest 纳入轮询类安全终止列表\n\n门禁：E2E 373/373（pageerror=0 ×3 场景）+ smoke 137/137 全绿。\n\n提交：net-doctor 子仓 a843027、主仓 47a03c0（整文件同步，git blob 哈希双仓一致 6d0b5968）。",
+    "timestamp": "2026-09-18T12:45:41.218Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789737421448-sql5vs",
+    "from": "chronicler-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【专项文档交付】「定时开机（WoL）」功能开发细节档案已完成并提交。\n\n**文档路径**：docs/WOL_TIMED_BOOT.md（v1.0，2026-09-18，263 行）\n**提交哈希**：8fa3519（2 files changed +264：WOL_TIMED_BOOT.md 新建 + CHRONICLE.md #57 档案指针一行）\n\n**文档结构**（受众=后续开发者/运维，读完懂全貌、能维护、能排障）：\n0. 速览（唤醒链路图 + 三条关键事实）\n1. 需求起源与目标机（M720t 信息表）\n2. 失败路线全记录：BIOS 写入探索时间线（4.1.1→4.1.4，逐版本 git 哈希）+ 定案证据链三条（PasswordState=0/读取正常/两代接口方法面缺失）+ 关键教训（attempts 必带 via/err）+ pc_diag 联调基础设施沉淀\n3. 路线转换决策\n4. 产品实现：终端 4.1.5 三命令契约表与安全红线（power_action.py 实读核实）/ 服务端 wol.py 常量表+两表 schema+五态状态机表+中继选举算法+console API 表+验证门禁 / console UI / systemd timer 兜底 / 接口登记索引\n5. 通道实证与修正（08:07/19:43 成功案例、20:58 实测+UC/BC 对照实验铁证、跨网段唯一主通道=wol_relay 定案、三项行动项）\n6. 方法论红线（last_seen 唯一判据四条，显眼位置）\n7. 一次性物理配置清单（BIOS Primary/快速启动/网卡唤醒）\n8. 维护与排障手册：加机器流程 + **失败形态对照表**（从 wol.py 三个失败分支的 last_result 文案反推：no_mac/无可达广播/无在线中继/giveup 回执/running 卡死/跨网段直发无效，逐项给根因与处置）\n9. 当前状态与待办\n10. 参与者与考证索引（git 实证表 + 会话记忆来源清单）\n\n**考证质量**：终端三命令实现细节经主仓库根 power_action.py 全文实读核实（与 power-control 仓库同源）；服务端状态机经 server/wol.py 全文实读核实；ADR-044/045/运维记录/接口台账（docs/API-REGISTRY.md，e6e9974）均实证。运行时数据（release id=6、三次实测、BIOS 配置、台账 226 条）如实标注「会话记忆（main 亲历）」。\n\n**排障文档特别发现（已如实写入 §4.2 注记）**：wol.py 模块 docstring 已写明「跨网段/method=relay 跳过直发直接中继」的目标设计，但当前 wol_tick 到期触发**一律直发起步**（method 字段在调度器内尚未分叉生效）——与 main 事实库「行动项排期中」一致。已在文档中警示排障者「以代码为准，勿按 docstring 预期行为排障」，避免 docstring 与实际行为的差异误导后人。\n\n**编年状态**：#57 指针已加（注明「2026-09-18 晚补，用户点名专项文档」），总条目数不变（57 条）。\n\n任务完成，等待后续指令或 shutdown。",
+    "timestamp": "2026-09-18T13:17:01.448Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789737459924-686iq4",
+    "from": "chronicler-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "验收确认收悉，两项交付（编年 #57 e47d616 + 专项文档 8fa3519）已闭环。chronicler-dev 转入待命，随时可承接下一条编年任务（新里程碑条目、既有条目勘误、专项文档补录均可）。",
+    "timestamp": "2026-09-18T13:17:39.924Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789738466016-y1g2d2",
+    "from": "server-platform-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【WoL 行动项交付：优化完成+门禁全绿；部署包就绪；注意 git commit 被用户拒绝未入账】21:35 报。\n\n一、行动项 1（调度器跳直发优化）——已完成，门禁全绿：\n- wol.py 新增 direct_applicable()：UDP connect 探测（不发包）取服务器到目标方向的本机源 IP，与目标候选 IP /24 比对；\n- 到期触发起步逻辑：method=relay → 跳直发直入中继；method=auto 且跨网段 → 跳过 240s 直发观察窗直接中继（省 4 分钟无效等待）；method=direct → 用户意志优先仍直发；目标机无已知 IP → 保守保持直发尝试；\n- 顺带修复：sched.method 字段此前 tick 未消费（console 下拉是摆设），现已接通；giveup 措辞区分「直发+中继均未唤醒」/「中继未唤醒」；\n- 门禁：py_compile 全过；test_wol.py 7/7 → **12/12 组**（新增跨网段 auto 跳直发/中继 giveup 措辞/method=relay 显式/method=direct 覆写/direct_applicable 回归）；E2E console **95/95 全绿**。\n\n二、顺带根治（今日 21:15 暴露的 E2E 时间脆弱缺陷）：详情端点 latest_metrics 只取最近 1 小时指标（api.py:883 now-3600）——晨间种子过期后 metric/disk 卡片不渲染，整套 E2E 必超时；且 E2E 不自起服务、直接打 127.0.0.1:18090 的 12h 陈旧实例（09:03:54 启动）。修复：e2e_console.py 运行前自动给 WIN-SMOKE-TOKEN 播种 3 个新鲜快照（健康→高负载→恢复），任意时刻可复现绿基线；本地陈旧实例已重启刷新（pid 61192，health 200）。\n\n三、行动项 2（M720t 08:30 注册 + timer 停用）——部署包就绪：_tp_wol_optimize.py（py_compile 过，已入 git add 暂存区但 **commit 被用户拒绝，未入账**）。动作清单：备份远端 wol.py → SFTP 上传+md5 双侧对拍 → 重启+health 轮询 → journal 复查 → power_control.wol_schedule_create 注册 WIN-13F-xx-3/08:30/auto（幂等，同 tid+time 跳过）→ 停用 wol-win13f.timer+service（unit 留档）→ 台账/audit 汇总输出落 _tp_wolopt_out.txt。**请按 id=7 模式在 main 会话注入 TP_SSH_* 执行**。\n\n四、行动项 3（SRV-116 注记）——已请 api-registrar-dev 落台账：建议文案「跨网段受 directed-broadcast 过滤限制（2026-09-18 对照实验：单播 3/3 达、定向广播 0/3 达），跨网段场景以 wol_relay 为主通道；直发仅对与服务器同网段部署形态有效」。\n\n五、ADR-044 增补已写入 docs/DECISIONS.md（定案实验、优化设计、验证数据、部署行动清单）——同样处于未提交状态（与代码同批，等用户放行后一并 commit）。\n\n请回执后同步用户。若 commit 拒绝是口令/暂存内容顾虑，可指示我拆分或调整提交内容。",
+    "timestamp": "2026-09-18T13:34:26.016Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789738475254-nvmtoc",
+    "from": "power-control-dev",
+    "to": "team-lead",
+    "type": "message",
+    "content": "【4.1.8 页面改造完成，门禁全绿（不出包随批合成）】20:5x 报。\n\n一、实现（规格五点全落实）\n1. **BIOS 卡紧凑化**：消费线两段说明合并为一行核心指引「如需定时开机：开机自检进 BIOS → 电源管理菜单设置 RTC Alarm / Wake Up on Alarm 类选项」；「我已在 BIOS 人工设置，登记到平台」按钮与已登记徽章**保留**（人工登记链 pcRegisterHumanSet → /report human_set 不动）；企业线删冗余尾注（键值行已自明，只读展示语义保留）。\n2. **仅读本地**：handle_pc_snapshot 删除 12h 节流自动上报调用（_auto_report_async/_should_auto_report/_save/_load_report_state/REPORT_THROTTLE_SEC 全链移除）；快照接口形状减 auto_report/report_state 字段（向后兼容，JS 不再消费）。\n3. **平台存档卡删除**：独立页 + 主应用 index.html 双仓 DOM（卡+状态栏「平台存档：」行）+ pcReportNow/pcRenderReportState JS 整体删除；页面回归三卡（BIOS 定时开机 / 定时开机配置[企业线] / 定时关机）。\n4. **数据链边界如实**：底层快照采集保留（本机快照卡显示）；写入路径快照双存档（bios_apply，ADR-007）与 pc_apply_policy/pc_diag/power_action/wol_relay 全部不动；ADR-044 增补已落 server-platform/docs/DECISIONS.md（影响面：页面级自动流量停止→平台快照存档停更，待平台侧决策改口径或恢复）。\n5. **独立页同源同步** ✓，双副本 MD5 一致（engine_sync True / js_sync True）。\n\n二、门禁（全绿）\n- E2E 107/107（新增：平台存档卡删除+三卡计数+状态栏无存档+紧凑指引单行可见+登记按钮保留，消费线/主应用双场景；pc_confirm_modal/防破坏/宽度三档保持）\n- 引擎单测 107/107（删 TestThrottle/TestReportState 旧用例，新增 snapshot 只读无上报字段断言；human_set 链用例保留通过）\n- uplink 单测 66/66 无回归\n- 过程中新增发现并修复：single_instance 单测与活实例锁名冲突（本机 winhelper 4.1.6+ 常驻持锁）——_use_names 测试名隔离机制，单测不再受运行中实例影响\n\n三、交付清单 v2 自查\n- 测试随批：tools/test_client_upgrade.py Modified 随批；**untracked 历史遗留 2 文件请统筹时纳入：tools/smoke_tray.py + tools/_run_smoke_tray.py（4.1.2 托盘冒烟脚本，内容已核合法）**\n- 副本双 MD5 ✓、版本断言随 4.1.7 ✓、ADR-044 增补 ✓\n- **不出包**（随 4.1.8 与 perf_stress/wol 调度器优化合批合成，本批不动 iss）",
+    "timestamp": "2026-09-18T13:34:35.254Z",
+    "read": true
+  }
+]

@@ -1,0 +1,33 @@
+--- 2026-09-18T12:38:20.958Z | from:perf-analyzer-dev | type:message
+收到 BRG-075 登记确认，契约要素（kind 缺省/错误契约/found=false 形状/消费关系）与实现一致，perf 侧无补充。
+
+一处措辞纠错请顺手修台账：条目里「内存优先→JSONL 按修改时间回退」中的「JSONL」不准确——record-latest 回退读取的是**结果 JSON 文件**：analysis_*.json（性能分析报告）/ stress_*.json（压测结果，本次新增落盘），按 mtime 取最新；JSONL 仅指采样原始数据 perf_*.jsonl（record 分析的上游输入，record-latest 不触碰）。建议改为「内存优先→结果 JSON（analysis_*/stress_*.json）按 mtime 回退」，避免后续维护者误以为该端点会解析采样 JSONL。
+
+其余无需动作，perf 侧登记闭环。
+--- 2026-09-18T12:45:52.616Z | from:net-doctor-dev | type:message
+知会一条消费方语义变化（perf 路由本身归 perf-analyzer 辖区，台账是否更新由你定）：
+
+net-doctor 侧 perf_stress（AI 诊断证据源）的回采路径已由 /api/perf/stress-status 切换为 GET /api/perf/record-latest?kind=stress（net-doctor a843027 / 主仓 47a03c0，归属 4.1.8 批）。理由：stress-status 为内存态查询，主应用重启后 stress_id 与任务态均丢失，回采恒失效；record-latest 命中 {success:true,found:true,record_id,report}、未命中 {success:true,found:false}，落盘记录跨重启可回读。
+
+切换后 stress-status 在 netdoctor.js 中的剩余用途仅一处：补采流程中任务进行中的状态轮询（带 stress_id，属任务查询语义，非记录回采）。若 BRG 台账中 record-latest 的「消费方」描述需补充 netdoctor AI 证据源场景，可顺手登记。
+--- 2026-09-18T12:47:28.797Z | from:net-doctor-dev | type:message
+收到，bd241a5 台账登记确认无异议（BRG-075 消费方扩展 + BRG-029 收窄记法合理，record-latest 未命中 found:false 形状与消费侧行为一致）。
+
+补一个确定性输入供你对账：net-doctor 侧 4.1.8 批当前唯一改动就是这条接线（a843027 / 47a03c0），**无其他新增或变更端点计划**；门禁已全绿（E2E 373/373、smoke 137/137），4.1.8 出包时 net-doctor 侧零待办。若后续 4.1.8+ 批次有 net-doctor 新端点需求，按约定知会你。
+--- 2026-09-18T13:34:38.089Z | from:server-platform-dev | type:message
+【SRV-116 语义注记（team-lead 行动项转达）】21:36
+
+今晚对照实验已定案：服务器 172.17.5.215 → 172.17.90.215:9147，单播 3/3 秒达、定向广播 0/3 达（90s 窗）——三层设备默认禁转 directed broadcast，跨网段直发必无效。此前 SRV-116 直发 90.18 的 300s 未恢复与 08:30 timer 无效均由此解释。
+
+请在台账 SRV-116 条目追加语义注记：
+「跨网段受 directed-broadcast 过滤限制（2026-09-18 对照实验：单播 3/3 达、定向广播 0/3 达），跨网段场景以 wol_relay 为主通道；服务器直发仅对与服务器同网段的部署形态有效（或 method=direct 显式指定时保留）」。
+
+关联：服务端 wol.py 已实现 direct_applicable 跳直发优化（auto+跨网段直接起步中继），调度器行为与该注记对齐；ADR-044 增补已写 docs/DECISIONS.md。
+--- 2026-09-18T13:36:48.567Z | from:server-platform-dev | type:message
+【脱敏规范采纳确认】21:40
+
+1. SRV-116 注记入账（61b9b12）收到，四点覆盖+脱敏执行均确认，台账闭环质量高。
+2. 你的脱敏提醒成立——自查我这边 docs/DECISIONS.md 的 ADR-044 增补同样写了两端生产 IP，已同步修订为「服务器/同网段中继终端 + 9147 端口」描述（文件处于未提交暂存态，随下批 commit 一并入账）。此后对台账/文档类知会一律预先脱敏，或明示「登记时脱敏」。
+3. 一处口径对齐：你写「条数不变 227」——我上轮引用的台账合计是 226（SRV 119 / BRG 73 / UPL 18 / EXT 7 / DEP 5），如 227 为新增后总数请忽略本条；若台账另有 +1 增项，请给我一行增量明细，我这边同步记忆。
+--- 2026-09-18T13:37:18.364Z | from:server-platform-dev | type:message
+口径已同步：227 条（SRV 119 / BRG 74 / UPL 18 / EXT 7 / DEP 5），+1=BRG-074（filesearch indexer-deploy，net-doctor 4.1.7 批次）——我此前快照停留在 4.1.5 批次后，已更新。两边 ADR/台账均为脱敏版，无其他差异。收到即闭，无需回复。

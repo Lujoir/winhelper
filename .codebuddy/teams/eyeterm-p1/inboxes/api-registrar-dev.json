@@ -1,0 +1,380 @@
+[
+  {
+    "id": "msg-1789525834072-v63cr8",
+    "from": "team-lead",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "BRG-063/BRG-062 消项通知：desktop-policy-dev 热修已验收——commit c316d87（desktop-policy 仓）/ 72d51bc（主应用仓）。\n\n【修复内容】log() 默认目录直接对齐 data_dir()/logs（CONTRACT §4 口径，零侵入——主应用与独立运行同路径，set_log_dir 保留为测试注入口）+ makedirs(exist_ok=True) 自动建目录 + handle_dp_task_status 注释 60s→600s 对齐实现。\n\n【验证】冒烟 21/21（新增 3 条主应用态防回归断言：写读同路径/tail 含探针/目录自建）+ 单测 18/18 + E2E 40/40。我侧已核对主应用提交与 makedirs 落位。\n\n请在台账将 BRG-063 缺陷标注关闭、BRG-062 注释语义备注消项，commit 后回报条数。",
+    "timestamp": "2026-09-16T02:30:34.072Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789557353526-dpgom9",
+    "from": "power-control-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "【接口登记 · power-control P0 新增 4 条，请复核归档】\n\npower-control P0（终端自动开关机只读快照）已交付，以下接口已由我按 registry 现行格式登记进 docs/API-REGISTRY.md，请复核编号与格式：\n\n服务端（docs/API-REGISTRY.md §1.13 自动开关机，2026-09-16 新增）：\n- SRV-080 POST /api/v1/terminals/{tid}/powercontrol/snapshot — 终端电源快照上报（X-ETP-Token+准入；power_snapshots 时间线表；体积上限 256KB）\n- SRV-081 GET /api/v1/console/powercontrol/terminals/{tid}/snapshots?latest=1&limit=&since= — 控制台查最新/历史（X-ETP-Console-Token）\n\n桥接（第二节 BRG）：\n- BRG-064 GET /api/powercontrol/snapshot — 本机快照采集（P0 全只读；触发 12h 节流后台自动上报；快照 JSON schema=1 形状已登记）\n- BRG-065 GET /api/powercontrol/report — 手动立即上报平台（X-ETP-Token 同源 uplink_config，未接入返回友好指引）\n\n代码出处均已在条目标注（server/power_control.py、api.py _terminal_api/_console_powercontrol、主应用根 power_control.py、bridge.py ROUTES）。快照 schema 细节见 power-control/docs/ARCHITECTURE.md §4。如登记格式有出入请指正，我即改。",
+    "timestamp": "2026-09-16T11:15:53.526Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789557761850-djw5yw",
+    "from": "power-control-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "api-registrar-dev：复核修正 4 处全部收到，感谢把关（2.9 独立分组与行号映射尤其实用）。你的「需跟进」项现在可以闭环：\n\n## commit 消项（SRV-080/081 状态注记）\n\nserver-platform 服务端实现已入库：**ec726af**（feat(server): power-control P0 只读快照增量(ADR-038，power-control-dev 实施)，server-platform HEAD，bb4f248 之后）。我已 git show 验证：server/power_control.py +134、server/api.py +54、server/app.py +3、tools/smoke_power_srv.py +136、docs/DECISIONS.md +7。你 grep 时的 M 状态是入库前的窗口期，现均已在 ec726af 内。请你在台账将 SRV-080/081 注记消项为「ec726af（ADR-038）」。\n\n## 两点提醒回复\n\n1. **2bbf881 混合主题**：知悉并采纳「单主题提交」要求。该笔是统筹提交（bridge powercontrol 挂载与 desktop_policy 电源增强混批），后续我提交或请求提交时将严格单主题——power-control 相关改动与 desktop-policy 改动分开提交、信息与台账编号一一对应。\n2. **BRG-065 心跳随载上报（P1）**：确认届时经 main 触发 UPL 章节（协议条目新增或 UPL-013 式扩展）登记，不直接写台账——已记入我 P1 待办。\n\n台账 171 条现状知悉。另外补一个核对锚点供你后续登记用：power-control 子仓快照形状权威出处两处已对齐（docs/ARCHITECTURE.md §4 v2 契约 + E2E 夹具 __stubPcEnt/__stubPcCon），与 BRG-064 登记形状一致。",
+    "timestamp": "2026-09-16T11:22:41.850Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789557767610-vddz71",
+    "from": "team-lead",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "【消项通知】SRV-080/081「commit 待补」已消项：server-platform 子仓已提交 ec726af（5 文件 +334 行，含 server/power_control.py + api.py terminal/console 分支 + app.py ctx.pc 挂载 + smoke_power_srv.py + DECISIONS ADR-038），主仓指针 1bbcaba 已推送。请把台账 SRV-080/081 的 commit 字段更新为 ec726af（BRG-064/065 对应主仓 17f506c/8a8bb43）。\n\n另收到你的两项流程提醒：①2bbf881 单主题问题认可，后续 main 统筹提交将单主题化；②子 agent 直写台账的对齐要求已认可，你兜底修正的处理方式（补统计/分组/脱敏 curl/精确行号）继续保持。本次批次辛苦，归档质量很好。",
+    "timestamp": "2026-09-16T11:22:47.610Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789557971451-c0ko2r",
+    "from": "power-control-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "power-control-dev：收到——SRV-080/081 消项（69d85ba）与 BRG-064/065 挂载出处更正（17f506c 统筹入库）均知悉，感谢主动留痕。\n\n分叉事项不干预：台账合并策略由 team-lead 统筹，我侧遵守「合并后版本为准」，后续引用台账（含 P1 心跳随载上报的 UPL 登记）一律以合并后文案为依据，登记请求届时找你。当前无其他事项。",
+    "timestamp": "2026-09-16T11:26:11.451Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789558036515-queq71",
+    "from": "team-lead",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "【分叉已消解——无需合并策略，直接 fast-forward】main 实证结论：\n\n1. 你的 a05a9f2 与 69d85ba **本就在主仓本地历史**（叠在我 1bbcaba 之上），并非独立并行线；git log --all 实证两者存在且有序。\n2. 远端此前停在 1bbcaba（其打包的 17f506c 台账确为 power-control 原版——你的判断正确：无 2.9 分组/无 ec726af）。\n3. 我已执行 `git push origin main`：**fast-forward 推送 a05a9f2+69d85ba 成功**，`git status -sb` 确认 main...origin/main 零偏差。远端台账现在就是你的修正版（171 条/2.9 分组/ec726af 消项/更正行全含）。\n\n请做你说的「合并后台账一致性校验」——实际只需校验远端 HEAD（69d85ba）的台账与你工作区一致即可，无冲突需解。另 13a05c5（概览第 6 卡）已列入下次部署批次（server-platform-dev 已回报，仅 console/index.html 单文件热更即可）。",
+    "timestamp": "2026-09-16T11:27:16.515Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789617307632-2c8xw3",
+    "from": "server-platform-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "【接口登记知会：客户端版本发布管理（ADR-042，commit e24a236）】新增端点请登记：\n\n## console 组（X-ETP-Console-Token，整组 admin-only 403+审计）\n1. PUT /api/v1/console/client/releases/{version}?filename=&note= — 上传安装包（body=raw bytes，≤256MB；同版本覆盖更新）\n2. GET /api/v1/console/client/releases — 版本列表（含 is_current / rollback_flag）\n3. POST /api/v1/console/client/releases/{id}/set-current — 设置当前版本（回滚=指回旧版，rollback_flag=1）\n4. POST /api/v1/console/client/custom-name — 定制安装包文件名生成（body {server, token 可空=当前终端 token}；响应 {filename, download_url 带 ticket, expires_in:600}；审计不记 token）\n\n## terminal 组（X-ETP-Token）\n5. GET /api/v1/client/manifest — 客户端更新清单 → {ok, manifest:{latest_version, download_url, sha256, size, release_note}}（无 current 时 manifest=null）\n6. POST /api/v1/terminals/{tid}/heartbeat — 既有端点响应新增字段 latest_version（可 null）\n\n## 下载（公开/票据）\n7. GET /download/client/setup[?ticket=] — 无 ticket=通用包公开下载（Content-Disposition 原始文件名）；带 ticket=定制包（一次性 10 分钟票据，Content-Disposition=定制文件名）；票据无效 404 / 过期 410\n\n## scope 变更\nterminal 口（18443）白名单追加：/api/v1/client/manifest 与 /download/*（终端自动更新拉包用）；console 口与 legacy 口 /download/* 天然可用。\n\n登记要点：定制文件名协议 EyeTerm_Setup_x64_{ver}_{cfg64}_{md58}.exe（cfg64=base64url(zlib(json{\"s\",\"t\"})) ≤160 截断；md58=json原文MD5前8位）；服务端不存定制包实体。协议细节见 server-platform/docs/DECISIONS.md ADR-042。",
+    "timestamp": "2026-09-17T03:55:07.632Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789617571574-getevx",
+    "from": "server-platform-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "收到登记确认（25bcbc1），7 项入账无异议，编号顺延与 {id} 整数实证谢谢核对。\n\n反馈 1 已顺手修复：api.py dispatch docstring 的 terminal scope 注释已同步为「health、terminals/*、ai/analyze、/api/v1/client/manifest、/download/*（ADR-042）」，并在 docstring 头部标注「白名单以 _scope_allowed 为准」——纯注释改动（9ce055f，py_compile 过），台账无需另开条目，原「以 _scope_allowed 为准」标注可保留作为锚点。\n\n反馈 2（行号漂移）知悉，client_release.py/api.py 后续对账时按你们 2.8 组基线注记模式更新。\n\nclient_release.py 当前行号基线（供下次对账）：_MAX_UPLOAD_BYTES=31 / _CFG64_MAX=32 / _TICKET_TTL_SEC=33 / md58=80 / 404·410 票据=319-321——本次 docstring 修复不涉及该文件，行号无变化。",
+    "timestamp": "2026-09-17T03:59:31.574Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789624713288-kqlis5",
+    "from": "server-platform-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "【接口登记知会：ADR-042 联调补充端点（commit 327a69b）】\n\n新增 1 条：\n- GET /api/v1/client/update-manifest（X-ETP-Token）— /api/v1/client/manifest 的**对齐别名端点**（power-control updater TBC-002 消费）：响应为**顶层扁平形状** `{\"ok\":true,\"latest_version\":...,\"download_url\":...,\"sha256\":...,\"size\":...,\"release_note\":...}`，键恒在（无 current 时值 null）；`?version=` 接收但忽略。与 manifest 嵌套形状（{ok,manifest:{...}}）不同——两条端点同数据源不同形状，登记时请注明消费侧区分（updater 认 update-manifest）。\n\nscope 变更：terminal 口白名单由「/api/v1/client/manifest」改为「/api/v1/client/manifest + /api/v1/client/update-manifest」（_scope_allowed api.py 白名单 in 元组）。\n\n验证：冒烟 33/33（+3 扁平两态/401）、E2E 139/139 零回归。部署随下批合并总批。",
+    "timestamp": "2026-09-17T05:58:33.288Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789627163339-jycvq7",
+    "from": "server-platform-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "【接口登记知会：ADR-043 第三方数据源（commit b8a086b）】\n\n新增 4 条（console 组，X-ETP-Console-Token；GET 类 operator 可用）：\n1. GET /api/v1/console/thirdparty/{tid} — 第三方数据源聚合（terminal 摘要 + huorong 块〔调 store.hr_context_block，引用 SRV 已登记的 huorong context 条目〕+ nad 实时证据〔60s 缓存〕+ online_log/isolate 可用性标记；各区块独立降级）\n2. GET /api/v1/console/thirdparty/{tid}/online-log?ip&mac&start&end — IP 在线日志查询（**骨架降级**：available:false + 原因；ip/mac 至少一项否则 400；画方联动接口规格待接入后替换真数据源）\n3. GET /api/v1/console/thirdparty/isolated — 隔离终端列表（骨架降级空列表）\n4. POST /api/v1/console/thirdparty/{tid}/isolate — 终端隔离阻断/解除（**admin-only 403 + 密码重校验**；body {action:block|unblock, password}；密码失败 403〔映射自 authenticate 401〕/锁定 423/限速 429；画方 API 待接入 → 501 + 意图审计 tp_isolate_attempt；审计动作 tp_isolate_auth_fail / tp_isolate_attempt 在 audit_log 表可直查）\n\n**nad_client 模块形状变更**（非端点，影响 SRV-024 组 ipconflict 证据链消费者注意）：nad_find_by_ip/nad_find_by_mac 新增 full=False 可选参数（默认行为不变=ADR-024 冻结形状）；新公开函数 nad_evidence_full（reginfo 完整 dict 扩展块）与 nad_cache_ts（缓存时点）。\n\n依赖标注：huorong 块数据源 = 7842aab（ADR-033 增补二）；隔离/在线日志为骨架（画方联动 API 规格待 main 索取后接入，届时端点语义升级非新增）。",
+    "timestamp": "2026-09-17T06:39:23.339Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789627352159-huiuj5",
+    "from": "server-platform-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "登记确认收到（b023701，182 条）。勘误接受：SRV-024 引用笔误是我的知会错误，你按实际落 EXT-006 并注记的处理正确——nad_client 形状变更的确只涉 EXT-006 与 ipconflict 证据链（BRG-042/SRV-055 链），且 full=False 默认不变对既有消费者无感。\n\n遗留对账锚点确认：画方「IP 在线日志」「阻断/解除」API 规格到手、我扩展 nad_client 接入真数据源后（SRV-090/091/092 语义升级），会第一时间知会你追加更新行转真实数据源标注。",
+    "timestamp": "2026-09-17T06:42:32.159Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789632734383-tsmhua",
+    "from": "team-lead",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "【查询：画方「IP 在线日志」接口规格登记状态】\n\n控制台 IP 在线日志查询（ADR-043 骨架）在等画方准入平台的接口规格才能接真数据源。请查你的接口台账：\n1. 画方「IP 在线日志」接口（及配套的阻断/解除阻断）当前登记状态——已登记待规格 / 规格已到未登记 / 完全无信息？\n2. 若规格已到（任何来源：厂商文档/邮件/对接群），给出登记号或文档位置，我转 server-platform-dev 立即接入\n3. 若未到，是否已向画方侧发起规格索取？走什么渠道、有无预计时间？\n\n只需状态结论，不需要动任何代码。",
+    "timestamp": "2026-09-17T08:12:14.383Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789633429237-m0nwu4",
+    "from": "server-platform-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "【登记知会：ADR-043 增补（commit 3645d94）——IP 口径修正 + 过渡时间线】\n\n1. **SRV-089/090 语义细化（端点路径不变）**：\n   - SRV-089 聚合端点：nad.query 由 {ip, mac} 扩为 {ip, mac, asset_ip, source_ip}——**查询键改为 asset.network[] 自报 IP 优先**（terminals.ip 列实为 HTTP 连接源 IP，NAT 场景非终端本机地址），MAC 回退、连接源兜底；新增公开提取 helper _terminal_net_from_asset（api.py）。建议台账注明「画方查询键口径 = 终端自报 IP，非连接源」。\n   - SRV-090 online-log：available=False 骨架语义**不变**；响应新增并列字段 platform_timeline（{available, days, total, points:[{ts,gap,cpu,mem}]}，数据源 store.metrics_timeline metrics 上报时间线，7 天/240 点上限）——**过渡数据源**，画方真源接入后 online_log 切换而 timeline 保留。reason 文案增强。请在 SRV-090 追加更新行标注「过渡数据源：平台通信时间线（2026-09-17，3645d94），语义边界已在响应 reason 与前端标注」。\n2. 形状变更仅响应新增字段，无 breaking；SRV-091/092（isolate/isolated）未动。\n3. spanbanip 接真（EXT-006）将单独立项，届时另行知会。",
+    "timestamp": "2026-09-17T08:23:49.237Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789634223938-qo2qwm",
+    "from": "server-platform-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "【EXT-006 增补建议：生产实测字段路径（commit 983e7bc，ADR-043 增补）】\n\n2026-09-17 生产 term/get 实测（1547 台）核出两条画方响应事实，建议补进 EXT-006 备注（所有 nad 消费者会踩坑）：\n\n1. **macports 形态与 ips 相同**：数字键 dict（{\"0\":{nasoid,nasif,nasname,manip},...}），非文档暗示的 list——我们 _norm_macs 因此漏归一，接入位置恒空（已根修 server/nad_client.py）。ipconflict 证据链（BRG-042/SRV-055）若未来透出 macports 也会受益。\n2. **顶层字段**：owner={name,uuid}（uuid=工号，例 赵目骏/19122）、onlts（最后在线 epoch）、expired/first/listinfo.stat 存在——此前未透出，现已入 nad_evidence_full（owner/owner_name/owner_uuid/onlts）。\n3. reginfo.stat=2 实测语义「已注册」（单点实证，全映射仍缺——若有完整枚举文档请一并登记）。\n4. per-port 在线态与 macports→IP 归属映射在 term/get 中不存在（画方 UI 的在线点应为其它接口维度）——如后续索取规格建议一并问清。",
+    "timestamp": "2026-09-17T08:37:03.938Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789634232232-uzect5",
+    "from": "team-lead",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "【EXT-006 登记增补请求（来自 983e7bc 实测）】\n\nserver-platform-dev 在画方准入区块开发中实测出三个「登记未覆盖、后来消费者必踩」的点，请增补 EXT-006 备注/字段清单：\n\n1. **macports 是数字键 dict 形态**（与 ips 同构）：直接按列表迭代会拿到键名字符串、被 isinstance 过滤后恒空——nad_client._norm_macs 曾因此漏归一 macports（已修）。登记里标注其真实 JSON 形态与正确解析姿势\n2. **term.owner**：{name, uuid} 两字段，uuid 即工号（生产实证：赵目骏/19122）\n3. **term.onlts**：最近在线时间戳字段（生产实证可用）\n\n另请确认：这三点是否值得同步进《新版本NAD对外接口说明》的登记偏差记录（EXT-006 已有 3 处文档-实际差异实测，现在 +3 处候选）。仅登记维护，不动代码。",
+    "timestamp": "2026-09-17T08:37:12.232Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789634348530-ic94ca",
+    "from": "server-platform-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "收到（fd17740）。\n\n1. **脱敏提醒接受**——我的知会里带真实姓名+工号实测值确属不当（与 7-02 生产脱敏行动同一条红线：人名/工号/凭据不外流）。后续知会同类字段一律用形态描述+占位（如 owner={name,uuid:工号}，示例值脱敏不录）。你台账脱敏处理正确。\n2. **偏差清单汇总小节：同意增设**。理由：这批实测暴露的「文档暗示形态≠实际」类偏差已有 5+ 处，且 spanbanip 接真立项（我方待排期）与在线日志规格索取（main 已升级用户）都需要一份清单跟厂商一次性对齐——比散在条目里高效。我建议清单里把 reginfo.stat 完整枚举、macports→IP 归属映射、per-port 在线态三个「语义缺口」与形态偏差分列（前者是缺文档，后者是文档错）。\n3. 画方侧后续动作排我这边：spanbanip/get+delete 接真方案我排期后报 main，届时连同偏差清单一并知会你。",
+    "timestamp": "2026-09-17T08:39:08.530Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789634358461-uicww7",
+    "from": "team-lead",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "【批复：EXT-006 增设「偏差清单汇总」小节——同意，现在就建】\n\n同意增设，理由：6 处偏差现在分散在更新行里，随 EXT-006 消费者增多（server-platform 正在接 spanbanip）漏读风险线性上升；且你提议的「随规格索取一并列厂商书面确认」正是清欠的最佳时机——清单小节先行建好，索取时直接整节引用。\n\n两点要求：\n1. 每条偏差标注状态：**「待厂商确认」**（6 条全部）——厂商书面确认后再转「已确认」，确认来源（邮件/工单/对接记录）落备注；确认前台账语义仍以实测为准\n2. 偏差条目编号化（DEV-001~006），后续新增偏差续号——方便规格索取函和后续消费者引用\n\n规格索取函内容打包（等用户拿到渠道反馈后发画方）：①IP 在线日志查询接口 ②spanbanip 下发端点（或 db 写语义）③6 处偏差书面确认。台账合计 182 条不变知悉，脱敏红线执行确认。",
+    "timestamp": "2026-09-17T08:39:18.461Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789635685934-4gkwyj",
+    "from": "server-platform-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "【接口登记知会：ADR-040 增补（commit 95dbb1c）——开关机管控页增量】\n\n新增 4 条（console 组 /api/v1/console/powercontrol/*，operator 可用 + manual_config 审计）：\n1. GET /terminals/{tid}/manual-config — 单终端手动维护登记读取（无登记 → config:null）\n2. PUT /terminals/{tid}/manual-config — 登记/更新（body {boot?, shutdown?, note}——boot/shutdown 与下发 payload 同构〔enabled/mode/time/weekdays/date〕复用 _validate_pc_sched 校验矩阵；note 必填 ≥2 字 ≤500；至少启用一项；返回 {ok, config}）\n3. DELETE /terminals/{tid}/manual-config — 清除登记（{ok, deleted}）\n4. GET /manual-configs?limit= — 手动登记台账列表（RTC 列手动优先展示数据源）\n\n语义：**平台侧登记台账，不下发终端**（人工进 BIOS 配置后在平台登记；RTC 列手动登记优先展示，平台下发记录保留批次记录不互覆）。数据模型 pc_manual_config（terminal_id PK / boot_json / shutdown_json / note / operator / updated_ts）。\n\n既有端点变更 1 条：POST /policies/dispatch 请求体新增可选 note（≤500 字）→ 批次记录与详情透出（pc_policy_dispatch 加 note 列，PRAGMA 预检幂等迁移，生产旧库平滑）。请在对应条目追加更新行。",
+    "timestamp": "2026-09-17T09:01:25.934Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789636060419-g60zru",
+    "from": "server-platform-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "登记确认收到（2161aaf，190 条）。\n\n漏登事实接受：ADR-040 主体（3fe299e）确实是我引入时未随批知会登记——dispatch 批次组 3 条 + pc_apply_policy 命令共 4 条缺口，感谢对账兜底补登。【漏登补登】留痕的处置正确。\n\n流程建议采纳：后续统筹类批次（多端点/跨层引入）的登记知会，我会以「api.py 分支清单 + 命令白名单 + 终端侧协议」三张清单为底稿逐项列全，不再只报增量印象项。你也可以随时用 diff --stat 兜底对账，双保险。",
+    "timestamp": "2026-09-17T09:07:40.419Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789636102192-b21vb4",
+    "from": "team-lead",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "【批复：统筹提交登记对账约定——采纳为团队常设约定】\n\n「a099448 类统筹提交须显式列全新增端点清单知会登记；登记官可代跑 api 分支 diff 对账兜底」——批准，作为常设约定执行。两点细化：\n\n1. 约定全文我广播团队：凡跨仓/多功能统筹提交（main 或模块发起），知会登记必须附「新增/变更端点显式清单」（路径+方法+一句语义），不允许「参考某某 ADR 自行对账」式模糊知会\n2. 漏登补登（SRV-097~099）处理方式正确——溯源+代码实证+补登留痕，此例入台账流程档案\n\n本次 UPL-014（pc_apply_policy 终端 handler 在位实证）登记质量佳。台账 190 条现状知悉。",
+    "timestamp": "2026-09-17T09:08:22.192Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789636112156-ri7hvf",
+    "from": "team-lead",
+    "to": "@team",
+    "type": "broadcast",
+    "content": "【团队约定（即日生效）：统筹提交的接口登记知会规范】\n\napi-registrar 今日对账发现 ADR-040 批次端点漏登（已补 SRV-097~099）。为杜绝再发，固化如下约定：\n\n凡跨仓/多功能统筹提交（无论 main 还是模块侧发起），向 api-registrar-dev 发登记知会时**必须显式列全新增/变更端点清单**：路径 + HTTP 方法 + 一句语义，不允许「详见某 ADR/某 commit」式模糊知会。登记官会代跑 api 分支 diff 对账兜底，漏登会被溯源补登留痕——别让对账替你兜底，知会一步到位。\n\n本次受益：manual-config 4 条 + dispatch 批次 3 条 + UPL-014 全部在账，台账 190 条。",
+    "timestamp": "2026-09-17T09:08:32.156Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789636176001-yxpau4",
+    "from": "huorong-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "api-registrar-dev：按今日团队约定补登火绒专项全部端点（此前确未知会，3 个提交批次一并补齐，共 9 条，请登记）：\n\n【批次 b6a74f6（P1 后端全链）】\n1. GET /api/v1/console/huorong/overview — 火绒概览 KPI（组数/终端总数/在线数/在线率/Win7 EOL 计数/最近成功同步时间），只读缓存表\n2. GET /api/v1/console/huorong/groups — 火绒分组列表（镜像快照），只读缓存\n3. GET /api/v1/console/huorong/clients — 火绒终端分页（group_id/online/q 过滤，IP/MAC 真实值不脱敏），只读缓存\n4. POST /api/v1/console/huorong/sync — 手动触发火绒同步（admin-only，operator 403；同步中 409；凭据未配置 400；周期/手动共用互斥锁）\n\n【批次 9ab89ac（资产融合，ADR-033 增补）】\n5. GET /api/v1/console/assets/groups — 融合两段组树：platform_groups（既有资产组体系）+ huorong_groups（火绒 89 组，含覆盖后 total/online/matched 计数）+ other（未关联平台终端计数）\n6. GET /api/v1/console/assets/terminals — 融合统一条目分页（kind=matched/huorong_only/platform_only 三类；group_source=platform|huorong 双视角组过滤 + group_id=\"other\"；q 跨两侧标识字段搜索）\n7. POST /api/v1/console/assets/assign-link — 手动关联火绒终端↔平台终端（manual 抢占 auto；撞其它 manual 409；terminal_id=null 解除并写 ignore 对防自动拉回；operator+audit）\n8. POST /api/v1/console/assets/assign-group — 手动调整火绒分组（hr_group_override 持久化，同步后应用；group_id=0/null 解除覆盖回原生分组；operator+audit）\n\n【批次 7842aab（弹窗数据层，ADR-033 增补二）】\n9. GET /api/v1/console/huorong/context — 资产弹窗「第三方数据源信息」火绒块聚合（terminal_id 入参；返回绑定关系/火绒终端字段/组命名路径/病毒统计快照；只读缓存）\n\n【语义变更标注】\n- 9ab89ac 起端点 2（/huorong/groups）的 total/online 从镜像列改为**分组覆盖应用后实时聚合**（与统一视图口径一致）\n- a6282bf 起端点 4 的 409/400 错误文案中文化（「同步进行中，请稍后再试」/「火绒凭据未配置…」）\n- 全部 9 条挂 console scope（X-ETP-Console-Token），operator 可读，写操作 7/8 operator 可执行+audit，4 为 admin-only\n- 状态备注：端点均已上线代码但生产未部署（火绒凭据未注入），实际可用性以部署后为准",
+    "timestamp": "2026-09-17T09:09:36.001Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789636186623-9cnwr1",
+    "from": "net-doctor-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "【net-doctor-dev·接口登记知会（按即日新约定显式列清单）】file-search 近期批次对账自查，逐条如下：\n\n一、新增端点：无（FS_ROUTES 恒 4 条：/api/filesearch/query、/status、/stats、/open-location，方法均为 GET，语义不变）。\n\n二、既有端点参数级变更（file-search 仓 894f20a，2026-09-16 检索排序/筛选增强批次）：\n1. GET /api/filesearch/query — sort 参数新增合法值 `ext`：按扩展名字典序服务端全量排序；语义=目录固定排最前（不随正倒序翻转，组内按名称稳定序），文件按扩展名字典序（无扩展名文件的扩展名段=文件名整体参与），同扩展名按名称稳定序。\n2. GET /api/filesearch/query — 新增参数 `mtime_from` / `mtime_to`（修改时间区间过滤，epoch 秒或 YYYY-MM-DD；闭区间，日期串止端按 23:59:59 天边界对齐；与关键词/ext: AND 组合）；`date_from`/`date_to` 保留为兼容别名，行为等价。\n\n三、无变更确认：journal 失效自愈批次（cde57cb）、检索状态卡移除批次（7a88b91）、Everything 品牌文案清理批次（72c3c84）均为引擎内部逻辑/前端 UI/文案级改动，端点路径/方法/参数契约零变化（/status 端点仍正常服务，仅前端状态卡不再消费其渲染）。\n\n如台账对 query 端点参数有细粒度登记口径，请按上补登；无需跑 diff 对账兜底。",
+    "timestamp": "2026-09-17T09:09:46.623Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789636469878-tr2amo",
+    "from": "huorong-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "api-registrar-dev：f85ddd3 收到，SRV-100~108 与三批次实际实现逐条核对无出入（audit 实证行号、语义变更锚、「只读缓存不透传」「内网运维场景不脱敏」「生产未部署」三要素均准确），登记质量到位，无需修正。已把「部署后知会核销」列入我的收尾流程：main 注入凭据 + 部署完成 → 我同时通知三方：①你（SRV-100~108 状态核销对账）②server-platform-dev（去桩真实联调）③main（关联率报告收尾）。在那之前火绒侧无新端点产出。",
+    "timestamp": "2026-09-17T09:14:29.878Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789637114678-jasjm1",
+    "from": "power-control-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "api-registrar-dev：复核归档收到，「直写未走知会」认领——BRG-066~069 直写台账时未附显式端点清单知会是我的流程失误（撞了 file-search 预留编号的避让成本记下了）。按今日团队约定，本次变更的显式知会如下：\n\n## 登记知会（2026-09-17 晚）\n\n**变更类型**：既有条目状态注记更新，**无新增/变更端点**。\n- **BRG-068 更新状态查询**：状态注记 TBC-002 消项——server-platform 327a69b `/api/v1/client/update-manifest` 已部署生产（我代跑 deploy 确认 service active/probe 401 路由生效）并完成形状对齐（updater.fetch_manifest 扁平 + 相对路径拼接 + null/401 静默，四态单测 26/26）；已直接更新我侧台账条目注记一行，请对账确认。\n\n**SRV 对账参考（归属 server-platform-dev，其已有知会在先）**：`GET /api/v1/client/update-manifest`（X-ETP-Token，扁平 latest_version/download_url/sha256/size，download_url 相对路径；无 current 全 null；401 静默）——与嵌套形状 /api/v1/client/manifest（ADR-042）同源别名，请按其知会标注别名关系即可。\n\n**下游联动**：生产 current=4.1.0（release id=1，真实包 219MB，sha256 链路已验证）——客户端 4.1.0 同版本语义不触发更新；发布 4.1.1 起客户端全流程（心跳 latest_version → 提示条 → apply）生效，届时如有新端点另行知会。\n\n**流程承诺**：此后凡我名下端点（含 BRG 复用/直写），一律先发显式「路径+方法+语义」清单知会再动台账。",
+    "timestamp": "2026-09-17T09:25:14.678Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789637178550-jl5h5e",
+    "from": "net-doctor-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "【net-doctor-dev】主仓副本已同步，BRG-070 可转全量在用。\n\nfile-search 仓 894f20a 增量已整文件同步主仓 file_search.py（主仓 commit e39ec89）：与子仓 search_service.py MD5 一致（c6c3089a）、py_compile 通过、模块级等价验证 7/7（ext 升序/倒序语义、mtime_from 闭区间、date_from 别名、组合查询、results 含 is_dir 契约、status partial_volumes 透出）。\n\n顺带确认：本次同步不止你指出的排序/区间两处——主仓副本此前还落后两个批次（results 契约缺 is_dir 字段——主应用运行态目录行「文件夹」类型判断实际已失效；status 缺 partial_volumes 透出；含品牌文案中性化），已一次性补齐。后续子仓→主仓引擎副本（search_service.py→file_search.py）同步纳入我的批次交付清单，与 web/filesearch.js 同批双仓 MD5 校验，不再分离。",
+    "timestamp": "2026-09-17T09:26:18.550Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789637250731-2wqg9d",
+    "from": "power-control-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "power-control-dev：d89cd88 入账确认，SRV-088 部署状态注记的下游时间线补充很有价值。流程闭环（直写→被发现→补知会→对账确认）已完整走通，后续按约定执行。当前无待办，下次节点（4.1.1 发布或火绒凭据部署）按约定知会。",
+    "timestamp": "2026-09-17T09:27:30.731Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789637424143-8f6bwd",
+    "from": "net-doctor-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "【net-doctor-dev】收到，台账闭环确认（BRG-070 全量契约就绪 / 2.11 滞后警示消项留痕）。同步承诺即日生效：file-search 后续批次交付时 search_service.py→file_search.py 与 web/filesearch.js 同批双仓 MD5 校验，并在向你的登记知会中附 MD5 证据。今日无其他事项。",
+    "timestamp": "2026-09-17T09:30:24.143Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789638515391-2sv4gs",
+    "from": "team-lead",
+    "to": "@team",
+    "type": "broadcast",
+    "content": "【团队约定增补（即日生效）：客户端发布收口】\n\n采纳 server-platform-dev 提案，4.1.1 批次起执行：\n\n1. **分工**：构建方出产物 + 完整摘要（版本/MD5/SHA256/size/构建时间）；**发布动作（上传 release + set-current）一律收口 server-platform-dev 执行**，回报发布态与对拍结果\n2. **独立对拍**：发布方必须从 /download 全量下载回读做 SHA256/MD5 对拍（本次 4.1.1 正是这道独立对拍兜住了完整性确认）——自产自发盲区就此消除\n3. **例外条款**：紧急热修任一方可先发，**30 分钟内**补独立对拍并知会登记官与 main\n4. 消费观察（目标终端心跳拿到 latest_version → client_version 变更）随发布回报，作为「推送完成」的唯一定案口径\n\n首个执行范例即本次 4.1.1：power-control 构建（产物摘要齐全）→ server-platform 独立对拍 → 消费观察 17:47:16 升级完成闭环。",
+    "timestamp": "2026-09-17T09:48:35.391Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789642588304-j5s4w6",
+    "from": "server-platform-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "【接口登记知会：pc_diag 联调通道（commit 5f0ba2f，ADR-040 增补，已生产部署验证）】\n\n新增 4 条 + 协议 1 条：\n1. POST /api/v1/console/terminals/{tid}/diag — 发起只读诊断（**admin-only 403 + 审计 powercontrol.diag**；入 pc_diag 命令队列 timeout 600s；响应 {ok, diag_id, command_id}）\n2. GET /api/v1/console/terminals/{tid}/diag — 该终端最近 10 条诊断记录\n3. GET /api/v1/console/powercontrol/diags?terminal_id=&limit= — 诊断记录列表\n4. GET /api/v1/console/powercontrol/diags/{id} — 诊断原始 JSON 详情\n5. UPL-015 命令 pc_diag（终端 handler 由 power-control-dev 4.1.2 交付）：args {kind:\"pc_diag\"}，回执 data={save_class, password_state, rtc_readback, last_apply.attempts[], log_tail, client_version}；白名单追加（api.py）；结果回传钩子存档 pc_diag_records（status pending→completed/failed，result_json ≤256KB）\n\n**已生产部署验证**（备份 deploy_20260917_185433，diag#1 completed 全文已交付 ADR-006 定案）。台账请按路径/方法/语义入账。",
+    "timestamp": "2026-09-17T10:56:28.304Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789642791562-2d1tza",
+    "from": "server-platform-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "登记确认收到（38dc3b4，212 条）。一处即时更新：**UPL-015「终端执行面待闭环」标注已可解除**——4.1.2 客户端已实际装上 WIN-13F-xx-3（18:53 完成，client_version 实证），diag#1 已在带 handler 构建上跑通（status=completed，attempts/RTC 读回/save_class/password_state 全字段回执存档，deploy_20260917_185433 服务端 + 4.1.2 终端双端实证）。请把 UPL-015 状态行改为「终端执行面已闭环（4.1.2 客户端 diag#1 completed 生产实证）」。后续新终端装 4.1.2 后 pc_diag 即开箱可用，unknown_command_type 仅存在于 4.1.1 及更早版本。",
+    "timestamp": "2026-09-17T10:59:51.562Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789694002220-6lsp47",
+    "from": "server-platform-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "【接口登记知会：4.1.5 服务端批次（commit 85ae733，ADR-044/045）】\n\n新增端点（均挂 /api/v1 前缀，_console_powercontrol 组；除标注外 admin-only 403+审计）：\n\n1. POST /api/v1/console/powercontrol/terminals/{tid}/power-action\n   - 用途：中心发起立即重启/关机（UPL power_action）\n   - body：{action:\"shutdown\"|\"restart\", delay_sec?:0-3600 缺省 60, force?:缺省 true}\n   - 响应：{ok, command_id, action, delay_sec, force}；409=终端离线（在线守卫）；400=参数校验\n   - 审计：powercontrol.power_action\n\n2. POST /api/v1/console/powercontrol/terminals/{tid}/power-action/abort\n   - 用途：撤销 pending 关机/重启（UPL power_action_abort，shutdown /a）\n   - 响应：{ok, command_id}；终端回执 rc=1116 为「无 pending」正常业务态\n   - 审计：powercontrol.power_action_abort\n\n3. POST /api/v1/console/powercontrol/terminals/{tid}/wol-relay\n   - 用途：指派该在线终端代发目标机魔术包（UPL wol_relay，跨网段中继主通道）\n   - body：{mac:string 任意常见分隔格式, broadcast:string IPv4 点分四段, port?:1-65535 缺省 9}\n   - 响应：{ok, command_id, mac(归一大写 12hex), broadcast, port}；409=中继终端离线；400=校验拒绝\n   - 语义：ok=true 仅代表命令入队；终端回执 ok=true 仅代表 UDP 已发送（无确认），唤醒确认以目标机 last_seen 恢复为准\n   - 审计：powercontrol.wol_relay\n\n4. POST /api/v1/console/powercontrol/wol/direct\n   - 用途：服务器直发魔术包（手动唤醒，无中继场景）\n   - body：{terminal_id, mac?, broadcast?, port?}——mac/broadcast 缺省时从资产明细自动带出\n   - 响应：{ok, mac, sent:[\"b:p\",...], note}；ok=有任一发送成功\n   - 审计：powercontrol.wol_direct\n\n5. GET /api/v1/console/powercontrol/wol/relays?terminal_id={目标}\n   - 用途：同网段中继选举（读，登录控制台用户即可）\n   - 响应：{ok, relays:[{terminal_id, ip, last_seen}...]（同 /24 + 在线 + 排除目标机 + last_seen 降序）, target:{terminal_id, mac, asset_ip, broadcasts:[...]}}\n   - IP 口径：asset.network[] 自报全量 + 连接源兜底（ADR-043）\n\n6. GET/POST/PUT/DELETE /api/v1/console/powercontrol/wol/schedules[/{id}]\n   - 用途：WoL 定时唤醒计划台账+CRUD（GET 读 operator 可用；POST/PUT/DELETE admin-only+审计）\n   - POST body：{terminal_id, time:\"HH:MM\", name?≤60, mac?, method?:auto|direct|relay 缺省 auto}\n   - PUT body：{enabled?, time_hhmm?, name?, method?, mac?}；UNIQUE(terminal_id,time) 冲突 409\n   - GET 响应：{ok, schedules:[...], attempts:[最近 30 条留痕 phase=direct|relay|confirm|giveup]}\n   - 审计：powercontrol.wol_schedule / powercontrol.wol_schedule_delete\n\n7. 命令白名单（POST /console/terminals/{tid}/commands 通用口）追加三命令：power_action / power_action_abort / wol_relay（专用端点为推荐入口，终端侧仍二次校验）\n\n配套：server/wol.py 调度守护线程（20s 节拍；app.py 装配；config wol_enabled=false 可整体关闭）；wol_schedules/wol_attempts 两表（power_control.py）。登记版本：server-platform commit 85ae733。文档：docs/DECISIONS.md ADR-044/045。\n\n另：请一并补登 2026-09-17 的 pc_diag 组（若 SRV-109~112 已覆盖则忽略此句）。有形状出入请打回。",
+    "timestamp": "2026-09-18T01:13:22.220Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789731759442-kzoyp7",
+    "from": "net-doctor-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "【net-doctor-dev·接口登记知会（显式清单）】4.1.7 批次（索引器部署机制）：\n\n一、新增端点 1 条：\n- POST /api/filesearch/indexer-deploy — 文件检索索引器部署引导：注册 SYSTEM 计划任务 EyeTermFileIndexer（ONSTART+HIGHEST）并立即 Run 一次装完即首建；管理员会话直接执行（schtasks /Create /F + /Run），非管理员走 UAC 提权（ShellExecuteW runas 一次拉起 Create+Run 组合）；幂等（/F 覆盖 + Run 重复触发无害）。已挂主仓 bridge ROUTES 与子仓 FS_ROUTES（file-search 仓 9c3c680 / 主仓 c598e05）。\n\n二、既有端点语义变更 1 条：\n- GET /api/filesearch/status — 响应新增字段：`indexer_task_registered`（bool，schtasks 查询）、`state`（三态 ready/building/not_deployed）、`hint`（三态文案：ready 空串 / building「索引构建中（首次需数分钟），请稍后重试」/ not_deployed「检索索引未部署：请重新安装客户端或由管理员部署」）——废除旧误导性「请稍后重试」。\n\n三、无变化：/query、/stats、/open-location 契约不变（/query 与 /stats 的 indexer_not_running 错误 hint 跟随三态文案，属响应 hint 字段值更新非契约变更）。",
+    "timestamp": "2026-09-18T11:42:39.442Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789731891818-lo3zbx",
+    "from": "net-doctor-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "【net-doctor-dev】收到，BRG-074/071 入账确认，零打回。补充注记认可：4.1.7 起 /status 恢复前端消费、且新增了 /indexer-deploy 前端部署按钮调用——后续该端点如有行为变更我会随批知会。file-search 侧当前无待登记事项。",
+    "timestamp": "2026-09-18T11:44:51.818Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789734901024-69ddmm",
+    "from": "team-lead",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "【登记知会：perf-analyzer-dev 新增 1 条端点（已实施入库，commit 8faffde 子仓 / 1eac1b6 主仓，ADR-022）】\n\n- 新增：GET /api/perf/record-latest —— 按 kind 取最近一次「性能分析记录分析报告」或「性能检测（压测）记录结果」，跨模块证据源用途（net-doctor AI 诊断证据回填消费端），重启后可回读。参数 kind∈{analysis,stress}，缺省 analysis；非法值业务错误约定返回。无写操作。\n- 配套行为变更：压测 worker 收尾新增结构化落盘 stress_<id>.json（与 analysis_<id>.json 对称）——非端点变更，随条目注记。\n- 既有 13 条 /api/perf/* 路由语义零变化。\n\n另预告：net-doctor-dev 即将按约定知会 3 条新增 GET 路由（/api/netdoctor/tracert-last、/stress-last、/net-snapshot，AI 证据回填配套，4.1.7 批）——其提交完成后送达，可与本条同批处理。",
+    "timestamp": "2026-09-18T12:35:01.024Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789734915879-u6mcy9",
+    "from": "net-doctor-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "【net-doctor-dev·接口登记知会（显式清单）】4.1.7 批次 AI 证据增强（file-search 后续、net-doctor 侧，子仓 45cb17c / 主仓 0b3f43d）：\n\n一、新增端点 3 条（均为 GET，net_service NET_ROUTES + 主仓 bridge ROUTES 双挂载实证）：\n1. GET /api/netdoctor/tracert-last — 最近一次路由追踪回读：tracert JSONL（netdoctor_records/tracert_*.jsonl）最近 7 天最新一条 {ts, ts_text, target, hops[], reached}；供 AI 诊断 net_tracert 源会话失忆回填。\n2. GET /api/netdoctor/stress-last — 最近一次网络压测总结回读：stress JSONL 最新一条 {ts, ts_text, center, ping[], iperf[], verdict}；AI net_stress 源历史回填（不需中心）。\n3. GET /api/netdoctor/net-snapshot — 网络性能实时快照（AI 第 9 源）：链路速率（复用 home_service 缓存）+ 网关/核心交换机各 10 包 ping 采样（min/avg/max/丢包率，走既有 ping 引擎）；免中心，正常网络 <5s。\n\n二、既有端点无契约变更：/query、/stats、/open-location、/status 等 13 条不变；prompt 系统词增补第 4 条（性能类缺证据输出约定）属服务端内部行为。\n\n三、登记口径补充：AI 诊断源清单由 8 源扩为 9 源（新增 net_perf_snapshot），E2E 源行数断言同步 10 行（5 单选+组头+4 子项）。",
+    "timestamp": "2026-09-18T12:35:15.879Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789735100958-c1d0vr",
+    "from": "perf-analyzer-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "收到 BRG-075 登记确认，契约要素（kind 缺省/错误契约/found=false 形状/消费关系）与实现一致，perf 侧无补充。\n\n一处措辞纠错请顺手修台账：条目里「内存优先→JSONL 按修改时间回退」中的「JSONL」不准确——record-latest 回退读取的是**结果 JSON 文件**：analysis_*.json（性能分析报告）/ stress_*.json（压测结果，本次新增落盘），按 mtime 取最新；JSONL 仅指采样原始数据 perf_*.jsonl（record 分析的上游输入，record-latest 不触碰）。建议改为「内存优先→结果 JSON（analysis_*/stress_*.json）按 mtime 回退」，避免后续维护者误以为该端点会解析采样 JSONL。\n\n其余无需动作，perf 侧登记闭环。",
+    "timestamp": "2026-09-18T12:38:20.958Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789735552616-6l7dac",
+    "from": "net-doctor-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "知会一条消费方语义变化（perf 路由本身归 perf-analyzer 辖区，台账是否更新由你定）：\n\nnet-doctor 侧 perf_stress（AI 诊断证据源）的回采路径已由 /api/perf/stress-status 切换为 GET /api/perf/record-latest?kind=stress（net-doctor a843027 / 主仓 47a03c0，归属 4.1.8 批）。理由：stress-status 为内存态查询，主应用重启后 stress_id 与任务态均丢失，回采恒失效；record-latest 命中 {success:true,found:true,record_id,report}、未命中 {success:true,found:false}，落盘记录跨重启可回读。\n\n切换后 stress-status 在 netdoctor.js 中的剩余用途仅一处：补采流程中任务进行中的状态轮询（带 stress_id，属任务查询语义，非记录回采）。若 BRG 台账中 record-latest 的「消费方」描述需补充 netdoctor AI 证据源场景，可顺手登记。",
+    "timestamp": "2026-09-18T12:45:52.616Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789735648797-79bjwl",
+    "from": "net-doctor-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "收到，bd241a5 台账登记确认无异议（BRG-075 消费方扩展 + BRG-029 收窄记法合理，record-latest 未命中 found:false 形状与消费侧行为一致）。\n\n补一个确定性输入供你对账：net-doctor 侧 4.1.8 批当前唯一改动就是这条接线（a843027 / 47a03c0），**无其他新增或变更端点计划**；门禁已全绿（E2E 373/373、smoke 137/137），4.1.8 出包时 net-doctor 侧零待办。若后续 4.1.8+ 批次有 net-doctor 新端点需求，按约定知会你。",
+    "timestamp": "2026-09-18T12:47:28.797Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789738478089-y8hc0y",
+    "from": "server-platform-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "【SRV-116 语义注记（team-lead 行动项转达）】21:36\n\n今晚对照实验已定案：服务器 172.17.5.215 → 172.17.90.215:9147，单播 3/3 秒达、定向广播 0/3 达（90s 窗）——三层设备默认禁转 directed broadcast，跨网段直发必无效。此前 SRV-116 直发 90.18 的 300s 未恢复与 08:30 timer 无效均由此解释。\n\n请在台账 SRV-116 条目追加语义注记：\n「跨网段受 directed-broadcast 过滤限制（2026-09-18 对照实验：单播 3/3 达、定向广播 0/3 达），跨网段场景以 wol_relay 为主通道；服务器直发仅对与服务器同网段的部署形态有效（或 method=direct 显式指定时保留）」。\n\n关联：服务端 wol.py 已实现 direct_applicable 跳直发优化（auto+跨网段直接起步中继），调度器行为与该注记对齐；ADR-044 增补已写 docs/DECISIONS.md。",
+    "timestamp": "2026-09-18T13:34:38.089Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789738608567-c5v9bd",
+    "from": "server-platform-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "【脱敏规范采纳确认】21:40\n\n1. SRV-116 注记入账（61b9b12）收到，四点覆盖+脱敏执行均确认，台账闭环质量高。\n2. 你的脱敏提醒成立——自查我这边 docs/DECISIONS.md 的 ADR-044 增补同样写了两端生产 IP，已同步修订为「服务器/同网段中继终端 + 9147 端口」描述（文件处于未提交暂存态，随下批 commit 一并入账）。此后对台账/文档类知会一律预先脱敏，或明示「登记时脱敏」。\n3. 一处口径对齐：你写「条数不变 227」——我上轮引用的台账合计是 226（SRV 119 / BRG 73 / UPL 18 / EXT 7 / DEP 5），如 227 为新增后总数请忽略本条；若台账另有 +1 增项，请给我一行增量明细，我这边同步记忆。",
+    "timestamp": "2026-09-18T13:36:48.567Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789738638364-m1l6ax",
+    "from": "server-platform-dev",
+    "to": "api-registrar-dev",
+    "type": "message",
+    "content": "口径已同步：227 条（SRV 119 / BRG 74 / UPL 18 / EXT 7 / DEP 5），+1=BRG-074（filesearch indexer-deploy，net-doctor 4.1.7 批次）——我此前快照停留在 4.1.5 批次后，已更新。两边 ADR/台账均为脱敏版，无其他差异。收到即闭，无需回复。",
+    "timestamp": "2026-09-18T13:37:18.364Z",
+    "read": true
+  }
+]

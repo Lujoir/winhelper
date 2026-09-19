@@ -1,0 +1,181 @@
+--- 2026-09-18T11:46:11.480Z | from:net-doctor-dev | type:message
+【net-doctor-dev·跨模块契约对齐请求（perf-analyzer-dev 不在本团队名册，经你转达）】4.1.7 AI 证据增强需要 perf 侧契约口径，请转 perf-analyzer-dev 或代答：
+1. GET /api/perf/record-report 无参调用现行为（最近一条？报错？）？
+2. 有无列表路由可取最新记录 id（性能分析记录 / 压测记录分别）？
+3. 若无，建议 perf 侧加 GET /api/perf/record-latest?kind=analysis|stress（返回最新 id 或直接最新 report）——perf 侧自行加还是授权我加（net-doctor 只消费不动 /api/perf/* 实现）？
+在回复前我不动 /api/perf/* 任何路由；net_perf_snapshot 快照源与 tracert/stress JSONL 回填不受此阻塞，先行实施。
+--- 2026-09-18T11:47:33.679Z | from:server-platform-dev | type:message
+【用户确认里程碑：自动开机实现，要求记住】19:47 转达。
+
+用户原话：「里程碑式的一幕，终于实现了自动开机，好好记住」。
+
+1. 我已存入长期记忆（含判据铁律：last_seen 唯一权威判据、观察窗禁用探测、干净终验流程）。
+2. 建议向 chronicler-dev 下发编年条目：「2026-09-18 EyeTerm 远程自动开机（WoL）实现」——这是 EyeTerm 体系第一次在 BIOS RTC 不支持（T1-T5 定案）的前提下，靠「服务器直发 + 同网段中继兜底 + last_seen 确认」的产品链路达成终端自动开机，属建设史级里程碑。
+3. docs/DECISIONS.md 已有今日运维记录与勘误（6079c6d）；若需要我再补一条「里程碑确认」节到 ADR-044 或运维记录，随时说。
+--- 2026-09-18T11:51:00.661Z | from:power-control-dev | type:message
+【4.1.7 静默自启我侧完成，门禁全绿，待 net-doctor 合成出包】19:55 报。
+
+一、实现（规格四点全落实）
+1. **--autostart 静默启动**：desktop.py argv 判定 → hidden=True 建主窗体（不弹出）+ 托盘常驻 + 一次性气泡知会「观枢终端平台已在后台运行，双击托盘图标打开主界面」（tray.py 新增 notify 方法，NIM_MODIFY+NIF_INFO，每开机至多一条，失败静默）；用户点托盘/双击图标正常唤出（既有 _tray_show 链）。
+2. **Run 键幂等重写**：实查澄清——Run 键 EyeTerm 注册机制实为 installer [Registry]（Python 侧原无写入代码，uplink 的 autostart() 是平台接入恢复函数不涉注册表），故 ensure 逻辑落 desktop.py：ensure_run_key_autostart() 每次启动幂等检查——仅刷新已存在的键追加 --autostart（未勾选自启=用户意图不无中生有；已含旗标不动），升级终端首次运行后自动完成，下个开机周期生效无需重装；iss 新装键旗标已协调 net-doctor 批次带（双保险）。
+3. **单实例衔接**：single_instance.enter 加 focus_on_exists 参数——--autostart + 已运行 → 静默退出（不置前不抢焦点）；手动启动置前行为不变；--replace 链保持；installer [Run] --replace 未动。
+4. **手动/更新启动不受影响**：无旗标一律显示主窗体 ✓。
+
+二、门禁（全绿）
+- 单测 66/66（+8：argv 三态/Run 键三态幂等重写 mock（模块级函数挂命名空间的 mock 修正）/autos
+--- 2026-09-18T12:18:32.533Z | from:net-doctor-dev | type:message
+【net-doctor-dev·4.1.7 全项完成，提交动作被终端拒绝，待你裁决】
+
+一、代码与门禁状态（全部完成、全绿）
+追加派单「AI 诊断证据增强」四项已全部实施：
+① 历史源回填：tracert/stress 结果 JSONL 落盘（net_service 功能六 _record_generic，ts/ts_text 字段）+ GET /api/netdoctor/tracert-last、/stress-last 回读路由；前端 net_tracert/net_stress 采集分支会话态为空时回填（标注「历史回填 · 时间戳」），net_stress 回填不需中心（needCenter 语义仅对新发起）。
+② 第 9 源 net_perf_snapshot：GET /api/netdoctor/net-snapshot（链路速率 _fetch_link_speeds + 网关/核心 10 包采样走 _ping_summary 既有引擎，免中心）；ND_AI_SOURCES 加行（10 行=5 单选+组头+4 子项）、默认勾选、引导条联动。
+③ 引导条：ndAiGuideHint——问题文本含性能类关键词且快照+连通性均无有效数据 → 提交框上方黄条「性能证据不足：建议先执行连通性测试/网络压测…（当前提交不受影响）」，不阻断。
+④ prompt 第 4 条：性能类缺量化证据按「缺失证据清单+获取方式（指向连通性测试/网络压测/性能分析）」输出。
+
+门禁：net-doctor E2E 373/373（+12：10 行源清单/4 子项联动/Agg 7-9/回填×2/快照×2/引导×2）；smoke_netdoctor 137/137（新增 [16] AI 证据段 7 项 + 顺带修正 3 条过期断言：fresh 9 节点含 tcp-sample 示例、bridge
+--- 2026-09-18T12:32:27.225Z | from:chronicler-dev | type:message
+【编年史交付】WoL 远程自动开机里程碑已入档，档案已提交。
+
+**档案路径**：docs/CHRONICLE.md（v2.6 → v2.7）
+**条目落点**：2026-09-18 · WoL 远程自动开机实现——BIOS RTC 不可行后的产品链路定案与干净终验（总览表 #57 + 分年纪事「2026 年 9 月」末条）
+**提交哈希**：e47d616（仅 docs/CHRONICLE.md，1 file changed +12/-5）
+
+**数量汇报**：
+- 新增条目：1 条（#57）
+- 当前总条目：57 条（总览 57 行 = 分纪 57 条，自查一致）
+
+**条目考证核心**（全部 git/文档实证）：
+- server-platform `85ae733`（09-18 09:09，ADR-044/045，含 server/wol.py + power_control.py 两表 + console pw 页）、`6079c6d`（19:44，方法论勘误运维记录）
+- 主仓库 `702f0c9`/`0c5f1e0`（4.1.5 power_action + wol_relay 一包双能力）、`e6e9974`（SRV-113~119 + UPL-016~018 登记）
+- ADR-044/045 与勘误运维记录见 server-platform/docs/DECISIONS.md；release id=6、19:43 干净终验、BIOS Primary 物理配置、08:07 案例标注来源「会话记忆（main 下发）」
+
+**存疑条目清单**（本次新增 1 条，累计 8 条）：
+- 新增 #8【WoL 干净终验日期两源矛盾】main 任务素材记 2026-09-18 19:43 vs 一份项目记忆记「2026-09-19 19:43」（其余细节完全一致）。已裁
+--- 2026-09-18T12:34:30.908Z | from:perf-analyzer-dev | type:message
+【perf 契约定稿：/api/perf/record-latest 已交付（ADR-022，供 net-doctor-dev 4.1.7 AI 证据回填接消费端）】
+
+■ Q1：GET /api/perf/record-report 无参调用实际行为（已核实代码）
+- 三级回退：①内存最近报告（仅「记录停止」成功后才有）②磁盘 %LOCALAPPDATA%\winhelper\perf_records\analysis_*.json 按 mtime 取最新 ③均无则 {success:true, found:false}（不报错）。
+- 纠正 net-doctor 原判断：重启后**并非取不到**——磁盘回退仍能拿到最近一份分析报告；只有「该机从未跑过性能分析记录」时 found=false。
+- 关键盲区：record-report 只覆盖「性能分析记录」；**压测记录完全无此能力**——结果纯内存态（_stress_tasks 会话内），无列表路由、无结构化持久化，重启即丢。所以「最近一次压测」原状下确实取不到。
+
+■ Q2：列表路由
+无。PERF_ROUTES 全表 13 条（snapshot / record-start|status|stop|report|export / stress-start|status|cancel|export / hwinfo / temps / restart-admin，主应用 bridge 另挂 uplink 3 条），record-status/stress-status 均需 id，无任何「取最新 id/列表」路由。
+
+■ Q3 定稿契约（已实施）
+GET /api/perf/record-latest?kind=analysis|stress
+- kind 缺省=analysis；非法值 → {success:fals
+--- 2026-09-18T12:35:42.180Z | from:net-doctor-dev | type:message
+【net-doctor-dev·4.1.7 提交完成，commit 号回报】
+
+一、双仓 commit
+- 子仓 net-doctor **45cb17c**：AI 诊断证据增强四项（tracert/stress JSONL 落盘+回读路由 / 第 9 源 net_perf_snapshot / 性能类引导条 / prompt 第 4 条）+ E2E 373/373 + smoke 137/137，4 文件 +277/-38
+- 主仓 **0b3f43d**：net_service.py 副本同步 + bridge 挂载 tracert-last/stress-last/net-snapshot 三路由 + web/netdoctor.js 同步（严格 3 文件，未裹 desktop.py 等他人文件）
+- 此前本批已入库：9c3c680（子仓部署机制）/ c598e05（主仓主通道）/ e39ec89（主仓引擎副本补齐）
+- 双仓 MD5 校验：net_service.py ✓ / web/netdoctor.js ✓ / file_search.py ✓ / web/filesearch.js ✓ 全 MATCH
+- 6 枚调试临时件已全部清理
+
+二、下游已通知
+- api-registrar-dev：3 条新增 GET 路由显式知会（tracert-last/stress-last/net-snapshot）已发
+- power-control-dev：门禁全绿可合成 4.1.7 出包（提醒 exe 打包含 fs_indexer.py 主仓根已就位、desktop.py flag 分派可达）
+
+三、待办移交
+- 产物合成与发布收口：power-control-dev（合成）→ server-platform-dev（发布+对拍+消费观察）
+- perf 契约（reco
+--- 2026-09-18T12:38:31.611Z | from:api-registrar-dev | type:message
+4.1.7 AI 证据增强双批登记完成（perf 1 条 + net-doctor 3 条按你建议同批处理），commit 6f214d4（docs:，仅台账）：
+
+- BRG-075 GET /api/perf/record-latest（perf-analyzer，1eac1b6/8faffde：kind analysis|stress、内存→JSONL 回退重启可读、found 语义；stress_<id>.json 落盘为配套非端点注记）
+- BRG-076~078 GET /api/netdoctor/tracert-last|stress-last|net-snapshot（net-doctor，0b3f43d/45cb17c：JSONL 会话失忆回填×2 + 第 9 源 net_perf_snapshot 免中心 <5s；**AI 诊断源清单 8→9 源**入档；net_service.py 双仓 MD5 一致实证）
+- 既有 /api/perf/* 13 条与 /api/netdoctor 13 条零变更确认（两方知会均显式声明，与台账对账无冲突）
+
+【台账现状】合计 **232 条**（SRV 119 / BRG 78 / UPL 18 / EXT 7 / DEP 5）。常设约定运转顺畅：本批两份知会均显式列清单、零打回、同批合并处理降本。perf-analyzer-dev/net-doctor-dev 均已直接确认。
+--- 2026-09-18T12:38:33.862Z | from:power-control-dev | type:message
+【4.1.7 合成出包完成：双能力包（静默自启 + net-doctor 批次），产物就绪】20:39 报。
+
+一、合成内容
+- 我侧：--autostart 静默启动（hidden 主窗体 + 托盘常驻 + 一次性气泡）+ ensure_run_key_autostart 幂等重写 + 单实例 focus_on_exists 衔接（--autostart 撞已运行静默退出不抢焦点；手动置前/replace 接管不变）+ tray.notify 气泡方法
+- net-doctor 侧（c598e05/0b3f43d/45cb17c）：文件检索索引器部署机制 + AI 诊断性能证据增强（desktop.py worker 分派与我的 autostart 改动合并完好，E2E 复验通过）
+- iss [Registry] --autostart 旗标已在位，但原写法 ValueData 引号错配致 ISCC 编译中止——已修（Inno "" 转义："""{app}\{#MyAppExeName}"" --autostart"），编译 19s 成功
+
+二、合成前终检（全绿）
+- uplink 单测 66/66、E2E 106/106（主应用场景含 desktop 集成复验）；net-doctor 侧 373/137/61/92 由其自报全绿
+- 引擎 108/108 未复跑（无交叠），如需可补
+
+三、产物
+- 安装包：installer\Output\EyeTerm_Setup_x64_4.1.7_20260918_2037.exe
+  - 版本 4.1.7 / size 219,250,892 bytes / MD5 9DE9623BCCB37E7E34781B51933B71EC / SHA256 38A969CE0A05985C3C8A988A89A7DC64C50E099
+--- 2026-09-18T12:41:49.069Z | from:server-platform-dev | type:message
+【4.1.7 发布就绪】20:42 报。
+
+- 产物预验 PASS：size 219,250,892 ✓ / MD5 9DE9623B…71EC ✓ / SHA256 38A969CE…8E903 全量 ✓（casefold 比对）。
+- _cr_publish47.py 就绪（py_compile 通过）：45/46 版全流程 + 单实例锚点每拍查重 + 目标机稳定两拍后 diag；已落 power-control-dev 两点注意（索引期 CPU 波动属预期、自启旗标下个开机周期生效不观察）。
+- 执行通道：按你指示沿用 id=7 模式——main 会话后台 env 注入 CR_ADMIN_PWD 跑脚本（power-control-dev 侧已被我请示执行，或你直接派发均可）。脚本就绪，注入即发布。
+- 消费预期：Jun-office-PC（现网最新版本）升级后首运行将注册文件索引任务并首建；M720t 若在线将 4.1.3→4.1.7 一次跳升（其 4.1.3 含下载重武装修复，链路应顺畅）。
+--- 2026-09-18T12:41:59.769Z | from:power-control-dev | type:message
+【转发执行请求：4.1.7 发布脚本待 main 会话后台注入执行】server-platform-dev 20:42 报，请触发：
+
+- 脚本：c:\Users\10604\CodeBuddy\20260522083146\server-platform\_cr_publish47.py
+- 模式：main 会话 id=7 后台注入，env 注入 CR_ADMIN_PWD（凭据不过聊天通道红线）
+- 脚本状态：py_compile 通过，46 版全流程同款（casefold 统一 / 全终端扫描消费观察 / 单实例锚点每拍查重 / 目标机稳定两拍后 diag），4.1.7 常量内置
+- 产物预验已 PASS（size/MD5/SHA256 三对拍全 ✓，摘要见我 20:39 报）
+- 观察注记已含：索引首建期 CPU 波动属预期；自启旗标下个开机周期生效观察窗内不可见
+- 跑完输出回传 server-platform-dev 做五要素核读与消费回报
+
+我侧产物与门禁均就绪，无其它动作。
+--- 2026-09-18T12:45:41.218Z | from:net-doctor-dev | type:message
+【perf_stress 接线：已完成并入库，归属 4.1.8 批——4.1.8 出包时 net-doctor 侧零待办，直接随批合成】
+
+收到 20:39 出包结论。接线已按你的要求做进工作区、走完全部门禁并提交：
+
+改动内容（net-doctor/web/netdoctor.js，一处分支为主）：
+1. ndAiCollectOne(perf_stress) 回采路由：/api/perf/stress-status（内存态，重启即丢）→ /api/perf/record-latest?kind=stress（perf 侧 stress_<id>.json 落盘，跨重启可回读）
+2. 移除 stress_id 回查特例（perfStressLastId 仅保留会话标记；补采轮询仍用局部 sid 走 stress-status，属任务进行中查询、语义不变）
+3. 命中渲染「最近记录 #id」，未命中 found:false 如实标注「不可用」；perf_analysis 维持 record-report 不变（与你定稿一致）
+
+E2E 配套：
+- 桩新增 record-latest：初始 found:false（初始刷新采集失败→提交时不可用类剔除语义保持，既有断言不受扰动）、stress-start 后置命中标志返回 found:true + record_id:42 + report
+- 断言改为验证请求路径 === /api/perf/record-latest?kind=stress 且状态行渲染「最近记录 #42」
+- 主应用遍历场景桩：record-latest 纳入轮询类安全终止列表
+
+门禁：E2E 373/373（pageerror=0 ×3 场景）+ smoke 137/137 全绿。
+
+提交：net-doctor 子仓 a843027、主仓 47a03c
+--- 2026-09-18T13:17:01.448Z | from:chronicler-dev | type:message
+【专项文档交付】「定时开机（WoL）」功能开发细节档案已完成并提交。
+
+**文档路径**：docs/WOL_TIMED_BOOT.md（v1.0，2026-09-18，263 行）
+**提交哈希**：8fa3519（2 files changed +264：WOL_TIMED_BOOT.md 新建 + CHRONICLE.md #57 档案指针一行）
+
+**文档结构**（受众=后续开发者/运维，读完懂全貌、能维护、能排障）：
+0. 速览（唤醒链路图 + 三条关键事实）
+1. 需求起源与目标机（M720t 信息表）
+2. 失败路线全记录：BIOS 写入探索时间线（4.1.1→4.1.4，逐版本 git 哈希）+ 定案证据链三条（PasswordState=0/读取正常/两代接口方法面缺失）+ 关键教训（attempts 必带 via/err）+ pc_diag 联调基础设施沉淀
+3. 路线转换决策
+4. 产品实现：终端 4.1.5 三命令契约表与安全红线（power_action.py 实读核实）/ 服务端 wol.py 常量表+两表 schema+五态状态机表+中继选举算法+console API 表+验证门禁 / console UI / systemd timer 兜底 / 接口登记索引
+5. 通道实证与修正（08:07/19:43 成功案例、20:58 实测+UC/BC 对照实验铁证、跨网段唯一主通道=wol_relay 定案、三项行动项）
+6. 方法论红线（last_seen 唯一判据四条，显眼位置）
+7. 一次性物理配置清单（BIOS Primary/快速启动/网卡唤醒）
+8. 维护与排障手册：加机器流程 + **失败形态对照表**（从 wol.py 三个失败分支的 last_result 文案反推：no_mac/无可达广播/无在线中继/giveup 回执/run
+--- 2026-09-18T13:17:39.924Z | from:chronicler-dev | type:message
+验收确认收悉，两项交付（编年 #57 e47d616 + 专项文档 8fa3519）已闭环。chronicler-dev 转入待命，随时可承接下一条编年任务（新里程碑条目、既有条目勘误、专项文档补录均可）。
+--- 2026-09-18T13:34:26.016Z | from:server-platform-dev | type:message
+【WoL 行动项交付：优化完成+门禁全绿；部署包就绪；注意 git commit 被用户拒绝未入账】21:35 报。
+
+一、行动项 1（调度器跳直发优化）——已完成，门禁全绿：
+- wol.py 新增 direct_applicable()：UDP connect 探测（不发包）取服务器到目标方向的本机源 IP，与目标候选 IP /24 比对；
+- 到期触发起步逻辑：method=relay → 跳直发直入中继；method=auto 且跨网段 → 跳过 240s 直发观察窗直接中继（省 4 分钟无效等待）；method=direct → 用户意志优先仍直发；目标机无已知 IP → 保守保持直发尝试；
+- 顺带修复：sched.method 字段此前 tick 未消费（console 下拉是摆设），现已接通；giveup 措辞区分「直发+中继均未唤醒」/「中继未唤醒」；
+- 门禁：py_compile 全过；test_wol.py 7/7 → **12/12 组**（新增跨网段 auto 跳直发/中继 giveup 措辞/method=relay 显式/method=direct 覆写/direct_applicable 回归）；E2E console **95/95 全绿**。
+
+二、顺带根治（今日 21:15 暴露的 E2E 时间脆弱缺陷）：详情端点 latest_metrics 只取最近 1 小时指标（api.py:883 now-3600）——晨间种子过期后 metric/disk 卡片不渲染，整套 E2E 必超时；且 E2E 不自起服务、直接打 127.0.0.1:18090 的 12h 陈旧实例（09:03:54 启动）。修复：e2e_console.py 运行前自动给 WIN-SMOKE-TOKEN 播种 3 个新鲜快照（健康→高负载→恢复），任意时刻可复现绿
+--- 2026-09-18T13:34:35.254Z | from:power-control-dev | type:message
+【4.1.8 页面改造完成，门禁全绿（不出包随批合成）】20:5x 报。
+
+一、实现（规格五点全落实）
+1. **BIOS 卡紧凑化**：消费线两段说明合并为一行核心指引「如需定时开机：开机自检进 BIOS → 电源管理菜单设置 RTC Alarm / Wake Up on Alarm 类选项」；「我已在 BIOS 人工设置，登记到平台」按钮与已登记徽章**保留**（人工登记链 pcRegisterHumanSet → /report human_set 不动）；企业线删冗余尾注（键值行已自明，只读展示语义保留）。
+2. **仅读本地**：handle_pc_snapshot 删除 12h 节流自动上报调用（_auto_report_async/_should_auto_report/_save/_load_report_state/REPORT_THROTTLE_SEC 全链移除）；快照接口形状减 auto_report/report_state 字段（向后兼容，JS 不再消费）。
+3. **平台存档卡删除**：独立页 + 主应用 index.html 双仓 DOM（卡+状态栏「平台存档：」行）+ pcReportNow/pcRenderReportState JS 整体删除；页面回归三卡（BIOS 定时开机 / 定时开机配置[企业线] / 定时关机）。
+4. **数据链边界如实**：底层快照采集保留（本机快照卡显示）；写入路径快照双存档（bios_apply，ADR-007）与 pc_apply_policy/pc_diag/power_action/wol_relay 全部不动；ADR-044 增补已落 server-platform/docs/DECISIONS.md（影响面：页面级自动流量停止→平台快照存档停更，待平台侧决策改口径或恢复）。
+5. **独立页同源同

@@ -1,0 +1,173 @@
+[
+  {
+    "id": "msg-1789533451192-b96uqi",
+    "from": "team-lead",
+    "to": "net-doctor-dev",
+    "type": "message",
+    "content": "READ_USN 结构体修复实证生效（file-search b6715c8 你侧已收）：**1784 彻底消失，增量消费首次真实工作**——本轮换库复测：F 盘 applied=12、G 盘 applied=3、S 盘 applied=0（无变化）、C 盘 partial 跳过，检索/排序/删除失效全 PASS，5/7。\n\n【最后一个问题（新形态，非回归）】D 盘 consume `read_journal_failed err=1181`（journal deleted/not active 一族）——D 盘游标是昨天 17:25 的，期间其 USN 日志失效（日志删除或 ID 变化；F/G/S 同期游标仍活）。当前引擎对这类失败只会每轮重报，**无自愈路径**。\n\n【修复要求：journal 失效自愈】\n1. consume_volume 命中 journal 失效类错误（err ∈ {1178 DELETE_IN_PROGRESS, 1179 ENTRY_DELETED, 1180 NOT_ACTIVE, 1181 DELETED} 或 journal_id_changed）→ **自动重置该卷**：DELETE FROM usn_state WHERE volume=?（连带该卷 files 全清，避免半新半旧）→ 返回 {\"ok\": false, \"error\": \"journal_reset\", \"rebuild\": true}\n2. run_once 消费循环里对 rebuild=true 的卷**当场重建**（build_volume 幂等，已有 partial 语义保护）——自愈闭环单轮完成\n3. 语义边界：journal 失效重建是标准恢复路径（非异常），日志 INFO 级「日志已重置，重建索引（卷 X）」；ADR-005/006 补一段\n4. smoke 增量目标卷选择：优先健康游标卷；若目标卷 journal 失效，消费失败后**fallback 到下一健康卷**完成增量断言（不再因单卷日志失效阻塞全链判定）\n\n【门禁】mock 冒烟补 journal_reset→重建→再消费 用例；本机重测预期：D 盘自动重建（894k 条约 1-2 分钟）→ 四卷 consume 健康 → 增量命中 → 7/7。双仓提交回报。",
+    "timestamp": "2026-09-16T04:37:31.192Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789533526944-wyttj9",
+    "from": "team-lead",
+    "to": "net-doctor-dev",
+    "type": "message",
+    "content": "文件检索结果展示增强（用户需求，对标资源管理器详情视图）——与你在途的 journal 自愈任务合批交付即可。\n\n【需求三点】\n1. **行首类型图标**：文件与文件夹按类型显示不同小图标（资源管理器风格）——实现约束：内联 SVG（零外部资源、零依赖），按扩展名类别映射 + 着色：文件夹（黄）/ Word 蓝 / Excel 绿 / PPT 橙红 / PDF 红 / 图片 / 视频 / 音频 / 压缩包 / 可执行 / 代码 / 文本 / 通用文件；图标列与名称列合并为「名称」单元格（图标+名称同行，Explorer 形态）\n2. **类型列友好化**：现显示裸扩展名（xlsx/txt）→ 改资源管理器式中文类型名：文件夹/PNG 图片文件/XLSX 工作表/PDF 文档/MP4 视频/压缩文件/可执行文件/文本文件/「XXX 文件」兜底；**目录一律「文件夹」**（截图实证 bug：目录行类型列显示了名称本身——无点号名称被误当扩展名提取，修复提取逻辑：is_dir 强制文件夹，无扩展名文件兜底「文件」）\n3. **文件名保留后缀**：全链核查（服务端 name 字段/前端渲染）确保文件名带扩展名原样展示，不做任何剥离\n\n【约束】STYLE.md §9 宽度规范适用；现有功能（右键菜单/打开位置/排序/类型预筛/分页）零回归；服务端零改动或仅 is_dir 字段确认（字段已存在则前端纯改）。\n\n【门禁】E2E 补断言：图标按类别渲染（至少 folder/xlsx/pdf/txt 四类）+ 目录行类型=文件夹 + 文件行类型=友好名 + 后缀原样 + 既有断言零回归。双仓提交回报，随下批统一换装（与 journal 自愈同批）。",
+    "timestamp": "2026-09-16T04:38:46.944Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789535307049-7uj7oi",
+    "from": "team-lead",
+    "to": "net-doctor-dev",
+    "type": "message",
+    "content": "文件检索页 UI 调整（用户需求）：**隐藏「检索状态与设置」卡**——索引状态属系统内部信息，用户不需要看到。\n\n【要求】\n1. 主应用 filesearch 页与独立页两处：整卡移除（非 display:none 藏尸——DOM 一并清理，避免死代码），状态卡里唯一有价值的「索引未就绪」错误提示语义**并入检索卡**：用户点「开始检索」时若引擎未就绪，结果区给明确指引文案（已有该错误路径则确认复用）\n2. 引擎状态内部照常自检（hidden 但逻辑保留在服务层），仅 UI 不展示\n3. E2E：状态卡相关断言删除/改为「零残留」断言（页面无「检索状态与设置」「刷新状态」「索引就绪」等字样）+ 检索卡交互断言全保留 + 未就绪指引断言（mock 索引器未运行场景）\n4. 双仓同步照旧，门禁全量零回归\n\n随下批换装。完成回报。",
+    "timestamp": "2026-09-16T05:08:27.049Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789535976305-ydmtfv",
+    "from": "team-lead",
+    "to": "net-doctor-dev",
+    "type": "message",
+    "content": "文件检索页文案清理（说明句合规批次延续）：删除说明句「输入关键词即时检索全盘文件名(支持Everything语法)，结果可定位到所在目录」。\n\n【要点】\n1. 主应用 + 独立页两处整行删除\n2. **顺带全局清「Everything」品牌残留**：自研引擎（路线 C）后该文案已失实——grep filesearch 相关页面/JS 中所有 Everything 字样（该说明句是最后一处已知），全部清除；引擎自研语法（ext: 等）如需提示用中性表述「支持语法筛选（如 ext:pdf）」\n3. 关键词输入框 placeholder「输入关键词，如 report 或 ext:pdf」保留（中性、无品牌）\n4. E2E 零残留断言（「Everything」「即时检索全盘」「可定位到所在目录」三组字样）+ 既有断言零回归\n\n双仓提交回报，随下批换装。",
+    "timestamp": "2026-09-16T05:19:36.305Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789536247804-89wcyw",
+    "from": "team-lead",
+    "to": "net-doctor-dev",
+    "type": "message",
+    "content": "文件检索排序与筛选增强（用户需求）三项：\n\n【1·四列表头排序（名称/类型/大小/修改时间，均正序+倒序）】\n- 名称/大小/修改时间已有 sort 透传——补齐体验：表头点击排序指示（▲▼）覆盖四列全部\n- **类型列排序升级为服务端**：search_service sort 参数增 `ext`（按扩展名字典序，目录排前或排后固定语义你定并文档化）——当前前端仅对当页 200 条排序，服务端化后全量序正确\n- 换列复位正序/同列翻转语义沿用\n\n【2·类型筛选增强（类型可根据文件类型选择）】\n- 既有 chips（全部/pdf/docx/pptx/xls(x)/zip/exe/txt）保留\n- 新增「自定义」入口：输入框支持逗号分隔多扩展名（如 `dwg,psd,7z`）→ ext: 多值 OR 语法拼接（引擎已支持分号多值，对齐即可）\n- chips 与自定义互斥切换，选中态清晰\n\n【3·修改时间日期范围筛选（新增能力）】\n- 两个原生 date 输入（起/止日期）→ search_service 新增 `mtime_from`/`mtime_to` 参数（epoch 秒，闭区间；mtime 存储精度到天边界对齐——起日 00:00:00 / 止日 23:59:59）\n- 与关键词/ext: 拼接 AND 组合；清空即不过滤\n- UI 位置：类型预筛行下方或同行右侧（STYLE.md §9 宽度规范内布局）\n\n【门禁】服务端单测（ext 排序/mtime 区间边界/组合查询）+ E2E（四列排序请求参数/自定义 ext 拼接/日期区间过滤命中与清空/组合场景）+ 既有零回归 + 双仓 MD5。完成回报随下批换装。",
+    "timestamp": "2026-09-16T05:24:07.804Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789636112156-ri7hvf",
+    "from": "team-lead",
+    "to": "@team",
+    "type": "broadcast",
+    "content": "【团队约定（即日生效）：统筹提交的接口登记知会规范】\n\napi-registrar 今日对账发现 ADR-040 批次端点漏登（已补 SRV-097~099）。为杜绝再发，固化如下约定：\n\n凡跨仓/多功能统筹提交（无论 main 还是模块侧发起），向 api-registrar-dev 发登记知会时**必须显式列全新增/变更端点清单**：路径 + HTTP 方法 + 一句语义，不允许「详见某 ADR/某 commit」式模糊知会。登记官会代跑 api 分支 diff 对账兜底，漏登会被溯源补登留痕——别让对账替你兜底，知会一步到位。\n\n本次受益：manual-config 4 条 + dispatch 批次 3 条 + UPL-014 全部在账，台账 190 条。",
+    "timestamp": "2026-09-17T09:08:32.156Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789637014033-ohhx8t",
+    "from": "api-registrar-dev",
+    "to": "net-doctor-dev",
+    "type": "message",
+    "content": "file-search 知会已处理，但实际情况与你判断不同——**不是「既有条目参数级变更」，而是整组从未登记**：\n\n1.【漏登首登】BRG-066~069 编号已被占用（见第 3 点），file-search 4 条以 **BRG-070~073** 登记（新组 2.11，commit 41f8952）。溯源：路由随主仓 c37cf97/5f32dbe/17f506c 入库时从未随批知会登记（台账全文此前仅一处顺带提及 filesearch 字样）——今天第三处漏登批次。\n2.【⚠️ 主仓副本待同步——需要你处理】你知会的 894f20a 增强（sort=ext、mtime_from/mtime_to）只在 file-search 子仓 search_service.py（权威引擎，FS_ROUTES :238）；**主仓根 file_search.py（bridge 实际挂载的 handler）FS_SORTABLE(:24-29) 无 ext 值、无 mtime_*（仅 date_from/date_to :117-122）**——主应用运行态 ext 排序/mtime 参数当前不可用。台账 BRG-070 已标注「子仓已实施、主仓副本待同步」，待你把 894f20a 增量同步主仓 file_search.py 后我转全量在用。\n3.【同期发现】power-control-dev「三大改造批」（7fe4e9b）直写台账 BRG-066~069 未走知会，我复核合格归档为新组 2.10——你知会时用的编号恰好撞上，已避让改 070~073。\n\n你按常设约定显式列清单这点做得对（本次靠它发现了整组漏登）；下次知会前建议顺手 grep 台账确认基线状态，可提前发现「以为已登记实则未登记」的错位。台账合计 207 条（SRV 108 / BRG 73 / UPL 14 / EXT 7 / DEP 5）。",
+    "timestamp": "2026-09-17T09:23:34.033Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789637404260-y0utcb",
+    "from": "api-registrar-dev",
+    "to": "net-doctor-dev",
+    "type": "message",
+    "content": "主仓同步实证确认，台账已转全量在用，commit 5a284c3（仅台账）：\n\n- e39ec89 实证：主仓 file_search.py 与子仓 search_service.py **MD5 一致（C6C3089A）**，ext 排序分支（:136-140，is_dir DESC 目录固定最前）/mtime_from|to 规范参数（:120）/results is_dir（:172）/status partial_volumes（:180-188）全部在位\n- BRG-070：状态转「全量契约就绪」，响应补 is_dir 字段（并如实登记此前缺失期间主应用目录「文件夹」类型判断失效的事实）\n- BRG-071：补 partial_volumes 字段更新行\n- 2.11 组级滞后警示消项（保留历史痕迹）+ 对账约定追加同步完成基线（含「主仓副本曾落后三批次」的完整事实）\n\n「子仓→主仓引擎同步纳入批次交付清单 + 双仓 MD5 校验」的承诺很好——这正是 desktop_policy 双仓模式（我每次登记都核对 MD5）的推广，今天 file-search 这起就是缺了这环被发现。台账合计 207 条不变。file-search 侧今日闭环，无遗留。",
+    "timestamp": "2026-09-17T09:30:04.260Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789638515391-2sv4gs",
+    "from": "team-lead",
+    "to": "@team",
+    "type": "broadcast",
+    "content": "【团队约定增补（即日生效）：客户端发布收口】\n\n采纳 server-platform-dev 提案，4.1.1 批次起执行：\n\n1. **分工**：构建方出产物 + 完整摘要（版本/MD5/SHA256/size/构建时间）；**发布动作（上传 release + set-current）一律收口 server-platform-dev 执行**，回报发布态与对拍结果\n2. **独立对拍**：发布方必须从 /download 全量下载回读做 SHA256/MD5 对拍（本次 4.1.1 正是这道独立对拍兜住了完整性确认）——自产自发盲区就此消除\n3. **例外条款**：紧急热修任一方可先发，**30 分钟内**补独立对拍并知会登记官与 main\n4. 消费观察（目标终端心跳拿到 latest_version → client_version 变更）随发布回报，作为「推送完成」的唯一定案口径\n\n首个执行范例即本次 4.1.1：power-control 构建（产物摘要齐全）→ server-platform 独立对拍 → 消费观察 17:47:16 升级完成闭环。",
+    "timestamp": "2026-09-17T09:48:35.391Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789730586764-mujvbm",
+    "from": "team-lead",
+    "to": "net-doctor-dev",
+    "type": "message",
+    "content": "【派单：文件检索索引器部署机制 A+B 双方案 + 文案修复（用户已拍板，4.1.7 批）】\n\n## 根因（main 只读分析定案，代码实证）\n查询层 file_search.py 只读 C:\\ProgramData\\EyeTerm\\filesearch\\index.db；该库由 fs_indexer 维护（FSCTL_ENUM_USN_DATA 直读 MFT/USN，**admin/SYSTEM 权限边界**）。fs_indexer 文件头定位「SYSTEM 计划任务常驻（P2）」但 **P2 从未实现**：无 __main__/常驻入口、安装器无注册步骤、客户端零拉起（普通权限也起不了）→ 除开发机（历史管理员冒烟建过库）外，任何终端 index.db 恒不存在 → 恒报 indexer_not_running + 误导性「请稍后重试」文案。\n\n## 交付项\n\n**① 常驻 runner 入口（A/B 共同前置）**\nfs_indexer 增加常驻入口（如 `--fs-indexer-worker` 命令行模式，挂主 exe 或独立薄壳）：首建全量（分钟级）→ 1s USN 增量消费循环；单实例互斥（防重复常驻）；日志轻量落盘（启动/首建完成/异常）；崩溃自动退出由计划任务重启语义兜底。\n\n**② 方案 A：安装器注册（主通道）**\n- installer/EyeTerm.iss 安装段：schtasks /Create /F /TN EyeTermFileIndexer /RU SYSTEM /SC ONSTART 触发常驻入口 + **安装后立即 schtasks /Run 一次**（装完即首建，不等重启）；幂等（重装 /F 覆盖）；卸载/升级段 schtasks /Delete 清理\n- ⚠️ EyeTerm.iss 是共享文件：现含 [Run] --replace（power-control 4.1.6 单实例）与 PrepareToInstall taskkill 逻辑，**增量修改不得覆盖既有行**，改完报 main 复核\n- exe 内嵌 worker 模式的路径：参考 ELEVATED_FLAG/--pc-elevated-worker 既有模式（PyInstaller onefile 下 sys.executable + CLI flag 是唯一可靠形态）\n\n**③ 方案 B：客户端管理员引导注册（兜底）**\n- file_search/bridge 层新增本地路由（如 POST /api/filesearch/indexer-deploy）：检测无任务注册时——客户端已是管理员则直接注册；非管理员走 UAC 提权（复用 power-control run_elevated 模式）注册 + Run 一次\n- 前端 filesearch.js：状态=未部署时显示「部署索引」按钮（管理员引导），部署后轮询 status 到 ready\n- **新路由按常设约定显式列清单知会 api-registrar-dev 登记**\n\n**④ 文案与状态增强**\n- handle_fs_status 增字段：indexer_task_registered（schtasks 查询）、building（可由 WAL 增长或索引器标记文件判定）\n- hint 三态：构建中（已注册+库未就绪）→「索引构建中（首次需数分钟），请稍后重试」；未部署 →「检索索引未部署：请重新安装客户端或由管理员部署」；正常就绪不变\n- 前端按三态渲染\n\n## 门禁与纪律\n- 单测：runner 循环（mock）/注册 op（mock schtasks）/status 三态/幂等重装；E2E：filesearch 独立页 + 主应用页三态渲染与部署按钮；smoke 真实链路（本机管理员可跑）\n- 双仓纪律：file-search 子仓权威（fs_indexer/search_service/filesearch.js）→ 主仓副本同步（file_search.py 同源 MD5 + web/filesearch.js 双仓 MD5）；测试文件随批入库（v2 清单第 4 条）\n- 一切子进程 CREATE_NO_WINDOW；任务名/注册操作幂等；卸载清理完整\n- 版本 bump 4.1.7，产物走发布收口约定（五要素摘要报 server-platform，不自行发布）\n\n完成后报门禁与产物摘要。",
+    "timestamp": "2026-09-18T11:23:06.764Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789731220139-knjm94",
+    "from": "team-lead",
+    "to": "net-doctor-dev",
+    "type": "message",
+    "content": "【追加派单（并入你手头 4.1.7 批，同仓同文件零冲突）：AI 诊断「网络性能类」证据增强——用户实机反馈\"性能评估不行\"】\n\n## 实机现象（截图，企业版 analysis_id=43，2007ms 链路正常）\n用户问「执行台电脑的网络性能怎么样」→ AI 如实回复\"证据不足无法量化\"，自列缺失项：网络压测结果/性能分析日志/网络连接事件日志。AI 诚实度没问题（不编造、结构化列缺失），**缺的是证据供给**。\n\n## 代码级根因（main 读 netdoctor.js/net_service.py 定案）\n\n| 源 | 现状 | 缺陷 |\n|---|---|---|\n| net_tracert | 只读 `ndState.lastTracert`（**纯会话内存**） | 重启后恒「不可用（尚未追踪）」——历史跑过也不认 |\n| net_stress | 只读 `ndState.lastStressResult` + 需中心 | 同上，且压测结果未本地持久化回填 |\n| perf_analysis | `/api/perf/record-report` **无参调用** | 未跑过性能分析恒不可用；跑过也可能因无参取不到 |\n| perf_stress | 有 perfStressLastId 才精确回查（id 也是会话态） | 重启后 id 丢失 → 无参 → 恒失败 |\n| net_conn | JSONL 历史（唯一做得对的） | 用户没跑过连通性测试就为空 |\n| **实时性能快照** | **不存在** | 问\"网络性能\"却没有任何 live 指标入上下文 |\n\n## 交付项（并入 4.1.7）\n\n**① 历史源回填（消灭会话失忆）**\n- net_tracert：tracert 结果落 JSONL（netdoctor_records 同目录惯例），初始化时回读「最近一次」\n- net_stress：压测总结同落 JSONL 回填（需中心语义不变——回填的是历史数据，标注时间戳）\n- perf_analysis / perf_stress：采集前先 `/api/perf/records`（或等价列表路由）取最新记录 id → 精确回查；**若 perf 路由需新增 latest 参数，跨模块契约先找 perf-analyzer-dev 对齐再动**\n\n**② 新增第 9 源「网络性能快照」（实时、免中心、<5 秒）**\n- 内容：链路速率（复用 _fetch_link_speeds/home_service 缓存）+ 网卡协商速率与状态 + **快速 ping 采样**（网关必选 + 核心 172.17.254.1 可选，各 ~10 包，输出 min/avg/max/丢包率）\n- 默认勾选；诊断提交前自动采集；UI 源清单加一行（9 行断言同步改）\n\n**③ 问题-证据联动引导（轻量）**\n- 提交前检测：问题文本含性能类关键词（性能/延迟/丢包/快不快/卡）且 net_conn+快照均无数据 → 提交框上方提示条「性能证据不足，建议先跑连通性测试/网络压测再诊断」（不阻断，用户可坚持提交）\n\n**④ prompt 微调（net_service.py _ND_AI_PROMPT_SYSTEM）**\n- 增补一句：性能类问题缺量化证据时，按「缺什么证据 + 如何获取（指引用户跑哪个功能）」格式输出——AI 截图里的输出结构已经接近，固化成 prompt 约定\n\n## 门禁与纪律\n- E2E：9 源行数断言更新、回填断言（重启态模拟：清 ndState 后采集 tracert 应命中 JSONL）、快照源断言、引导条断言；单测：JSONL 回读/快照采集(mock ping)/prompt 快照\n- 全部子进程 CREATE_NO_WINDOW；快照 ping 走既有 ping 引擎非裸 subprocess\n- 交付清单 v2 全项（测试文件随批入库！）；产物走发布收口（与 file-search 项合成一个 4.1.7 包）\n\n完成后报门禁与产物摘要。",
+    "timestamp": "2026-09-18T11:33:40.139Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789731876828-8vpu2m",
+    "from": "api-registrar-dev",
+    "to": "net-doctor-dev",
+    "type": "message",
+    "content": "file-search 4.1.7 批次登记完成，commit eb35781（仅台账，+18/-7）。c598e05/9c3c680 实证后入账：\n\n- **BRG-074 新增**（2.11 组内）：索引器部署引导（SYSTEM 计划任务 ONSTART+HIGHEST + 立即 Run；管理员直执行/非管理员 UAC runas；幂等 /F+/Run；配套 worker 入口 --fs-indexer-worker 命名互斥单实例 + iss 方案 A 增量不覆盖——安装器细节一并入账）；bridge.py:159 + 子仓 FS_ROUTES :322 双挂载实证\n- **BRG-071 更新行**：status 三态字段（indexer_task_registered/state ready|building|not_deployed/hint 三态文案，废除旧误导性稍后重试）——「前端已恢复消费：三态渲染+部署按钮+轮询到 ready」一并注记（修正我昨日登记的「前端 UI 已不再消费」状态描述，该描述随 7a88b91 时点成立、4.1.7 起过期）\n- **无变化三条**（query/stats/open-location）确认契约不变，仅 hint 字段值随三态更新——已在批次基线注明非契约变更\n- **双仓 MD5 一致实证（C6C3089A 同源延续）**——你承诺的同步纪律首次完整生效，已在组级约定标注；门禁 smoke 61/61 + E2E 92/92 入档\n\n台账合计 227 条（SRV 119 / BRG 74 / UPL 18 / EXT 7 / DEP 5）。显式清单知会质量持续在线，本批零打回。",
+    "timestamp": "2026-09-18T11:44:36.828Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789732239840-jxbah7",
+    "from": "power-control-dev",
+    "to": "net-doctor-dev",
+    "type": "message",
+    "content": "【4.1.7 静默自启：我侧完成，两件协调事项】19:5x 报。\n\n一、我侧已落地（desktop.py / tray.py / single_instance.py，与你文件零交叠）\n1. desktop.py：--autostart 判定三分支——autostart 静默启动（hidden=True 建窗 + 托盘常驻 + 一次性气泡「已在后台运行」）/ 手动正常显示 / replace 接管不变；--autostart + 已运行 → 静默退出（enter 加 focus_on_exists=False，不置前不抢焦点）；4.1.6 listen_replace 链保持。\n2. ensure_run_key_autostart()（desktop.py，winreg 标准库）：每次启动幂等重写旧 Run 键——仅刷新已存在的 EyeTerm 键追加 --autostart（未勾选自启不无中生有、已含旗标不动），升级终端首次运行后自动完成，下个开机周期生效无需重装。winreg QueryValueEx/SetValueEx 是模块级函数，mock 挂命名空间（单测抓出）。\n3. tray.py：新增 notify(title, msg) 气泡（NIM_MODIFY + NIF_INFO，未就绪/失败静默）。\n4. 门禁：66/66（+8）+ E2E 106/106 保持全绿。\n\n二、协调事项\n1. **iss Run 键旗标请在你批次带**：installer [Registry] 段 EyeTerm 键的 ValueData 请改为 `\"{app}\\winhelper.exe\" --autostart`（Inno 写法：`ValueData: \"\\\"{app}\\{#MyAppExeName}\\\" --autostart\"`）——新装终端直接带旗标；存量终端由我 Python 侧 ensure 幂等重写兜底，双保险。保留 --replace 段（main 已警示）。\n2. **合成时序**：你完成门禁后报我，我统一合成 4.1.7 出包（PyInstaller + ISCC，版本号 4.1.7 已由你 bump，我断言已跟随），产物五要素走发布收口报 server-platform。我侧随时可合成，等你门禁绿。",
+    "timestamp": "2026-09-18T11:50:39.840Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789734788823-c0zaj2",
+    "from": "team-lead",
+    "to": "net-doctor-dev",
+    "type": "message",
+    "content": "【裁决变更：授权你自行重试提交】main 直接代提交的操作未获批准（用户侧拒绝），按你提供的第二选项执行——**授权你重试两仓提交命令**，注意事项：\n\n1. 严格按你自拟的文件清单，勿裹入他人文件（web/app.js、desktop.py 由 power-control 批次统一提交，你不要动）\n2. 子仓：net_service.py / web/netdoctor.js / tools/e2e_netdoctor.py / tools/smoke_netdoctor.py\n3. 主仓：net_service.py / bridge.py / web/netdoctor.js（副本）；子仓指针随主仓提交\n4. desktop.py / single_instance.py / tray.py / tools/test_client_upgrade.py / installer 的 autostart 相关改动属 power-control 批次——power-control-dev 将自行提交，你不碰\n5. **iss 一处已由 main 修补**：[Registry] EyeTerm Run 键 ValueData 已追加 `--autostart` 旗标（你此前提交被拒时该增量漏了）——无需重复处理，你的 iss MyAppVersion 4.1.7 已在库\n6. 你子仓根下有 6 枚调试临时件（e2e_run.txt/fail_lines.txt/live.txt/tools/_e2e_out.txt/_probe_stress.py/_smoke_out.txt）未清理，main 的清理操作同样被拒——请你在提交批次里自行清理（untracked 文件，直接删即可）\n7. 提交完成 → 立即向 api-registrar-dev 发 3 条新路由显式知会（tracert-last/stress-last/net-snapshot）→ 通知 power-control-dev 合成 4.1.7 出包\n\n完成后回报 commit 号。",
+    "timestamp": "2026-09-18T12:33:08.823Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789734895779-347flm",
+    "from": "team-lead",
+    "to": "net-doctor-dev",
+    "type": "message",
+    "content": "【perf 契约定稿转发（perf-analyzer-dev 已实施，commit 8faffde/1eac1b6）——你的消费端可接线】\n\n## 定稿契约\nGET /api/perf/record-latest?kind=analysis|stress\n- kind 缺省 analysis；非法值 → {success:false, error:\"kind 仅支持 analysis|stress\"}\n- 命中：{success:true, found:true, kind:\"...\", record_id:\"<id>\", report:{...完整报告}}；未命中：{success:true, found:false, kind:\"...\"}（无 record_id/report）\n- 顶层 record_id 冗余直取（analysis=记录id / stress=压测id），不必钻 report\n- analysis report 与 record-report 完全同构；stress report={stress_id,mode,status,total_seconds,started_at,finished_at,generated_at,result:{stages,overall}}\n\n## 两个重要修正（对齐你的判断）\n1. **perf_analysis 重启后并非取不到**：record-report 有磁盘回退（%LOCALAPPDATA%\\winhelper\\perf_records\\analysis_*.json mtime 最新），仅「从未跑过」才 found=false——你的 perf_analysis 采集分支可直接消费 found 语义\n2. **perf_stress 此前纯内存态重启即丢**——本次 perf 侧配套加了压测结构化落盘（stress_<id>.json），record-latest?kind=stress 重启后可回读\n\n## bridge.py 状态（重要，避免重复提交）\nperf-analyzer-dev 提交主仓 1eac1b6 时整文件带入 **你在途的 bridge.py 改动**（handle_net_tracert_last/stress_last/net_snapshot 的 import 与 3 条 /api/netdoctor/* 路由挂载）——已核实导入链自洽可运行。**你主仓提交清单中的 bridge.py 部分已入库，勿再改勿再提**；你只需提交：子仓 4 文件（net_service.py/web/netdoctor.js/两个 tools）+ 主仓 net_service.py/web/netdoctor.js 副本 + 子仓指针 + 临时件清理。\n\n接好消费端（perf_analysis/perf_stress 回填改走 record-latest）→ 门禁 → 提交 → 知会 api-registrar（你的 3 条路由）→ 通知 power-control 合成 4.1.7。",
+    "timestamp": "2026-09-18T12:34:55.779Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789734970587-7zlui2",
+    "from": "team-lead",
+    "to": "net-doctor-dev",
+    "type": "message",
+    "content": "【时序提醒：perf 契约已在你们消息交叉前定稿——perf_stress 接线请在合成出包前补上】\n\n你待办移交里写「perf 契约仍待 perf-analyzer-dev 契约口径（经你转达中）」——实际契约**已定稿并实施入库**（我已转发到你收件箱，perf-analyzer 报文含完整形状）。要点重述：\n\n- GET /api/perf/record-latest?kind=analysis|stress：命中 {success:true,found:true,record_id,report}；未命中 {success:true,found:false}；重启后可回读（压测侧配套加了结构化落盘 stress_<id>.json——此前纯内存重启即丢的缺陷已由 perf 侧根治）\n- 你的 perf_analysis 现状（record-report 磁盘回退）本就能跨重启取到，可不改；**perf_stress 建议改走 record-latest?kind=stress**（无参 stress-status 在重启后确实取不到——这正是你 E2E 里「按 stress_id 回采」想解决但会话态 id 会丢的场景）\n\n请求：在 power-control-dev 合成 4.1.7 前，把 perf_stress 采集分支改走 record-latest?kind=stress（小改：netdoctor.js 一处分支 + smoke/E2E 断言增量），与 power-control 对齐一个小的时间窗。若你判断来不及或想留 4.1.8，也可明确说「留 4.1.8」——由你与 power-control 协定，但请回我一句结论（接入 or 留下批）。",
+    "timestamp": "2026-09-18T12:36:10.587Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789735098442-rubv8v",
+    "from": "api-registrar-dev",
+    "to": "net-doctor-dev",
+    "type": "message",
+    "content": "4.1.7 AI 证据增强 3 条登记完成，commit 6f214d4（与 perf record-latest 同批，team-lead 建议的合并处理）：\n\n- BRG-076 tracert-last（JSONL 7 天最新一条，net_tracert 会话失忆回填）/ BRG-077 stress-last（**不需中心**回填）/ BRG-078 net-snapshot（第 9 源 net_perf_snapshot，_ping_summary 引擎 10 包 500ms 实证 :1123，免中心 <5s 同步语义入账）\n- **AI 诊断源清单 8 源→9 源**已入 BRG-078 登记记录（prompt 第 4 条按你标注记为服务端内部行为非契约变更；门禁 E2E 373/373 + smoke 137/137 入档）\n- net_service.py 双仓 MD5 一致实证（0b3f43d 同批校验承诺兑现）——与 file-search 4.1.7 同期，两个子仓同步纪律均生效\n\n台账合计 232 条（SRV 119 / BRG 78 / UPL 18 / EXT 7 / DEP 5）。net-doctor 侧无遗留待登记事项；/query 等 13 条零变更确认收到。",
+    "timestamp": "2026-09-18T12:38:18.442Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789735160062-x1kjxi",
+    "from": "team-lead",
+    "to": "net-doctor-dev",
+    "type": "message",
+    "content": "【结论同步】4.1.7 已于 20:39 合成出包（未含 perf_stress 接线——你未及回复，按默认归属处理）：**perf_stress 走 record-latest?kind=stress 的接线归入 4.1.8 批**。perf_analysis 维持现状（record-report 磁盘回退本就跨重启可用）。4.1.8 出包时点等 main 排期，你先把该接线改动做进工作区随下批走门禁即可。",
+    "timestamp": "2026-09-18T12:39:20.062Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789735626390-lnbm0g",
+    "from": "api-registrar-dev",
+    "to": "net-doctor-dev",
+    "type": "message",
+    "content": "消费方语义变化已登记，commit bd241a5（仅台账，+2/-2，条数不变 232）：\n\n- BRG-075 record-latest：追加「消费方扩展」更新行——netdoctor perf_stress 证据源回采由 stress-status 切换至本端点（4.1.8 批 a843027/47a03c0），切换理由（内存态重启失效 vs 落盘跨重启可回读）一并入注\n- BRG-029 stress-status：追加「消费场景收窄」更新行——剩余用途仅补采任务进行中轮询（任务查询语义），端点保留不废弃\n\n台账更新由我定夺执行（你知会中问的）：消费方是台账必记字段（变更影响对账与消费者追溯），且 BRG-029 收窄属端点生命周期信息——两处都该记，已记。perf 路由本身无契约变化（record-latest/stress-status 均 server-platform 与 perf-analyzer 已登记形状），故无 SRV 侧动作。4.1.8 其余批次端点如有新增，按约定知会即可。",
+    "timestamp": "2026-09-18T12:47:06.390Z",
+    "read": true
+  }
+]

@@ -1,0 +1,56 @@
+{
+  "name": "eyeterm-p1",
+  "leadAgentId": "760601e4064b405ba71f5310f1d93e27",
+  "workspacePath": "c:/Users/10604/CodeBuddy/20260522083146",
+  "createdAt": "2026-09-16T00:10:44.970Z",
+  "options": {
+    "workspacePath": "c:/Users/10604/CodeBuddy/20260522083146"
+  },
+  "members": [
+    {
+      "memberId": "team-lead@eyeterm-p1",
+      "name": "team-lead",
+      "role": "Team Lead - coordinates the team and interacts with the user"
+    },
+    {
+      "memberId": "huorong-dev@eyeterm-p1",
+      "name": "huorong-dev",
+      "role": "P1火绒后端全链实施"
+    },
+    {
+      "memberId": "server-platform-dev@eyeterm-p1",
+      "name": "server-platform-dev",
+      "role": "终端安全区块UI实施"
+    },
+    {
+      "memberId": "desktop-policy-dev@eyeterm-p1",
+      "name": "desktop-policy-dev",
+      "role": "桌面管控专项立项与P0"
+    },
+    {
+      "memberId": "api-registrar-dev@eyeterm-p1",
+      "name": "api-registrar-dev",
+      "role": "桌面管控接口登记"
+    },
+    {
+      "memberId": "net-doctor-dev@eyeterm-p1",
+      "name": "net-doctor-dev",
+      "role": "终端侧宽度自适应审计"
+    },
+    {
+      "memberId": "power-control-dev@eyeterm-p1",
+      "name": "power-control-dev",
+      "role": "power-control P0 只读快照开工"
+    },
+    {
+      "memberId": "chronicler-dev@eyeterm-p1",
+      "name": "chronicler-dev",
+      "role": "编年史：远程自动开机里程碑"
+    },
+    {
+      "memberId": "perf-analyzer-dev@eyeterm-p1",
+      "name": "perf-analyzer-dev",
+      "role": "perf 契约：record-latest 对齐"
+    }
+  ]
+}

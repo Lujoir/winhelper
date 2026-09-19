@@ -1,0 +1,83 @@
+--- 2026-09-18T12:41:59.769Z | from:power-control-dev | type:message
+【转发执行请求：4.1.7 发布脚本待 main 会话后台注入执行】server-platform-dev 20:42 报，请触发：
+
+- 脚本：c:\Users\10604\CodeBuddy\20260522083146\server-platform\_cr_publish47.py
+- 模式：main 会话 id=7 后台注入，env 注入 CR_ADMIN_PWD（凭据不过聊天通道红线）
+- 脚本状态：py_compile 通过，46 版全流程同款（casefold 统一 / 全终端扫描消费观察 / 单实例锚点每拍查重 / 目标机稳定两拍后 diag），4.1.7 常量内置
+- 产物预验已 PASS（size/MD5/SHA256 三对拍全 ✓，摘要见我 20:39 报）
+- 观察注记已含：索引首建期 CPU 波动属预期；自启旗标下个开机周期生效观察窗内不可见
+- 跑完输出回传 server-platform-dev 做五要素核读与消费回报
+
+我侧产物与门禁均就绪，无其它动作。
+--- 2026-09-18T12:45:41.218Z | from:net-doctor-dev | type:message
+【perf_stress 接线：已完成并入库，归属 4.1.8 批——4.1.8 出包时 net-doctor 侧零待办，直接随批合成】
+
+收到 20:39 出包结论。接线已按你的要求做进工作区、走完全部门禁并提交：
+
+改动内容（net-doctor/web/netdoctor.js，一处分支为主）：
+1. ndAiCollectOne(perf_stress) 回采路由：/api/perf/stress-status（内存态，重启即丢）→ /api/perf/record-latest?kind=stress（perf 侧 stress_<id>.json 落盘，跨重启可回读）
+2. 移除 stress_id 回查特例（perfStressLastId 仅保留会话标记；补采轮询仍用局部 sid 走 stress-status，属任务进行中查询、语义不变）
+3. 命中渲染「最近记录 #id」，未命中 found:false 如实标注「不可用」；perf_analysis 维持 record-report 不变（与你定稿一致）
+
+E2E 配套：
+- 桩新增 record-latest：初始 found:false（初始刷新采集失败→提交时不可用类剔除语义保持，既有断言不受扰动）、stress-start 后置命中标志返回 found:true + record_id:42 + report
+- 断言改为验证请求路径 === /api/perf/record-latest?kind=stress 且状态行渲染「最近记录 #42」
+- 主应用遍历场景桩：record-latest 纳入轮询类安全终止列表
+
+门禁：E2E 373/373（pageerror=0 ×3 场景）+ smoke 137/137 全绿。
+
+提交：net-doctor 子仓 a843027、主仓 47a03c0（整文件同步，git blob 哈希双仓一致 6d0b5968）。
+--- 2026-09-18T13:17:01.448Z | from:chronicler-dev | type:message
+【专项文档交付】「定时开机（WoL）」功能开发细节档案已完成并提交。
+
+**文档路径**：docs/WOL_TIMED_BOOT.md（v1.0，2026-09-18，263 行）
+**提交哈希**：8fa3519（2 files changed +264：WOL_TIMED_BOOT.md 新建 + CHRONICLE.md #57 档案指针一行）
+
+**文档结构**（受众=后续开发者/运维，读完懂全貌、能维护、能排障）：
+0. 速览（唤醒链路图 + 三条关键事实）
+1. 需求起源与目标机（M720t 信息表）
+2. 失败路线全记录：BIOS 写入探索时间线（4.1.1→4.1.4，逐版本 git 哈希）+ 定案证据链三条（PasswordState=0/读取正常/两代接口方法面缺失）+ 关键教训（attempts 必带 via/err）+ pc_diag 联调基础设施沉淀
+3. 路线转换决策
+4. 产品实现：终端 4.1.5 三命令契约表与安全红线（power_action.py 实读核实）/ 服务端 wol.py 常量表+两表 schema+五态状态机表+中继选举算法+console API 表+验证门禁 / console UI / systemd timer 兜底 / 接口登记索引
+5. 通道实证与修正（08:07/19:43 成功案例、20:58 实测+UC/BC 对照实验铁证、跨网段唯一主通道=wol_relay 定案、三项行动项）
+6. 方法论红线（last_seen 唯一判据四条，显眼位置）
+7. 一次性物理配置清单（BIOS Primary/快速启动/网卡唤醒）
+8. 维护与排障手册：加机器流程 + **失败形态对照表**（从 wol.py 三个失败分支的 last_result 文案反推：no_mac/无可达广播/无在线中继/giveup 回执/running 卡死/跨网段直发无效，逐项给根因与处置）
+9. 当前状态与待办
+10. 参与者与考证索引（git 实证表 + 会话记忆来源清单）
+
+**考证质量**：终端三命令实现细节经主仓库根 power_action.py 全文实读核实（与 power-control 仓库同源）；服务端状态机经 server/wol.py 全文实读核实；ADR-044/045/运维记录/接口台账（docs/API-REGISTRY.md，e6e9974）均实证。运行时数据（release id=6、三次实测、BIOS 配置、台账 226 条）如实标注「会话记忆（main 亲历）」。
+
+**排障文档特别发现（已如实写入 §4.2 注记）**：wol.py 模块 docstring 已写明「跨网段/method=relay 跳过直发直接中继」的目标设计，但当前 wol_tick 到期触发**一律直发起步**（m
+--- 2026-09-18T13:17:39.924Z | from:chronicler-dev | type:message
+验收确认收悉，两项交付（编年 #57 e47d616 + 专项文档 8fa3519）已闭环。chronicler-dev 转入待命，随时可承接下一条编年任务（新里程碑条目、既有条目勘误、专项文档补录均可）。
+--- 2026-09-18T13:34:26.016Z | from:server-platform-dev | type:message
+【WoL 行动项交付：优化完成+门禁全绿；部署包就绪；注意 git commit 被用户拒绝未入账】21:35 报。
+
+一、行动项 1（调度器跳直发优化）——已完成，门禁全绿：
+- wol.py 新增 direct_applicable()：UDP connect 探测（不发包）取服务器到目标方向的本机源 IP，与目标候选 IP /24 比对；
+- 到期触发起步逻辑：method=relay → 跳直发直入中继；method=auto 且跨网段 → 跳过 240s 直发观察窗直接中继（省 4 分钟无效等待）；method=direct → 用户意志优先仍直发；目标机无已知 IP → 保守保持直发尝试；
+- 顺带修复：sched.method 字段此前 tick 未消费（console 下拉是摆设），现已接通；giveup 措辞区分「直发+中继均未唤醒」/「中继未唤醒」；
+- 门禁：py_compile 全过；test_wol.py 7/7 → **12/12 组**（新增跨网段 auto 跳直发/中继 giveup 措辞/method=relay 显式/method=direct 覆写/direct_applicable 回归）；E2E console **95/95 全绿**。
+
+二、顺带根治（今日 21:15 暴露的 E2E 时间脆弱缺陷）：详情端点 latest_metrics 只取最近 1 小时指标（api.py:883 now-3600）——晨间种子过期后 metric/disk 卡片不渲染，整套 E2E 必超时；且 E2E 不自起服务、直接打 127.0.0.1:18090 的 12h 陈旧实例（09:03:54 启动）。修复：e2e_console.py 运行前自动给 WIN-SMOKE-TOKEN 播种 3 个新鲜快照（健康→高负载→恢复），任意时刻可复现绿基线；本地陈旧实例已重启刷新（pid 61192，health 200）。
+
+三、行动项 2（M720t 08:30 注册 + timer 停用）——部署包就绪：_tp_wol_optimize.py（py_compile 过，已入 git add 暂存区但 **commit 被用户拒绝，未入账**）。动作清单：备份远端 wol.py → SFTP 上传+md5 双侧对拍 → 重启+health 轮询 → journal 复查 → power_control.wol_schedule_create 注册 WIN-13F-xx-3/08:30/auto（幂等，同 tid+time 跳过）→ 停用 wol-win13f.timer+service（unit 留档）→ 台账/audit 汇总输出落 _tp_wolopt_out.txt。**请按 id=7 模式在 main 会话注入 TP_SSH
+--- 2026-09-18T13:34:35.254Z | from:power-control-dev | type:message
+【4.1.8 页面改造完成，门禁全绿（不出包随批合成）】20:5x 报。
+
+一、实现（规格五点全落实）
+1. **BIOS 卡紧凑化**：消费线两段说明合并为一行核心指引「如需定时开机：开机自检进 BIOS → 电源管理菜单设置 RTC Alarm / Wake Up on Alarm 类选项」；「我已在 BIOS 人工设置，登记到平台」按钮与已登记徽章**保留**（人工登记链 pcRegisterHumanSet → /report human_set 不动）；企业线删冗余尾注（键值行已自明，只读展示语义保留）。
+2. **仅读本地**：handle_pc_snapshot 删除 12h 节流自动上报调用（_auto_report_async/_should_auto_report/_save/_load_report_state/REPORT_THROTTLE_SEC 全链移除）；快照接口形状减 auto_report/report_state 字段（向后兼容，JS 不再消费）。
+3. **平台存档卡删除**：独立页 + 主应用 index.html 双仓 DOM（卡+状态栏「平台存档：」行）+ pcReportNow/pcRenderReportState JS 整体删除；页面回归三卡（BIOS 定时开机 / 定时开机配置[企业线] / 定时关机）。
+4. **数据链边界如实**：底层快照采集保留（本机快照卡显示）；写入路径快照双存档（bios_apply，ADR-007）与 pc_apply_policy/pc_diag/power_action/wol_relay 全部不动；ADR-044 增补已落 server-platform/docs/DECISIONS.md（影响面：页面级自动流量停止→平台快照存档停更，待平台侧决策改口径或恢复）。
+5. **独立页同源同步** ✓，双副本 MD5 一致（engine_sync True / js_sync True）。
+
+二、门禁（全绿）
+- E2E 107/107（新增：平台存档卡删除+三卡计数+状态栏无存档+紧凑指引单行可见+登记按钮保留，消费线/主应用双场景；pc_confirm_modal/防破坏/宽度三档保持）
+- 引擎单测 107/107（删 TestThrottle/TestReportState 旧用例，新增 snapshot 只读无上报字段断言；human_set 链用例保留通过）
+- uplink 单测 66/66 无回归
+- 过程中新增发现并修复：single_instance 单测与活实例锁名冲突（本机 winhelper 4.1.6+ 常驻持锁）——_use_names 测试名隔离机制，单测不再受运行中实例影响
+
+三、交付清单 v2 自查
+- 测试随批：tools/test_cl

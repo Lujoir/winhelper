@@ -1,0 +1,56 @@
+--- 2026-09-18T12:33:08.823Z | from:team-lead | type:message
+【裁决变更：授权你自行重试提交】main 直接代提交的操作未获批准（用户侧拒绝），按你提供的第二选项执行——**授权你重试两仓提交命令**，注意事项：
+
+1. 严格按你自拟的文件清单，勿裹入他人文件（web/app.js、desktop.py 由 power-control 批次统一提交，你不要动）
+2. 子仓：net_service.py / web/netdoctor.js / tools/e2e_netdoctor.py / tools/smoke_netdoctor.py
+3. 主仓：net_service.py / bridge.py / web/netdoctor.js（副本）；子仓指针随主仓提交
+4. desktop.py / single_instance.py / tray.py / tools/test_client_upgrade.py / installer 的 autostart 相关改动属 power-control 批次——power-control-dev 将自行提交，你不碰
+5. **iss 一处已由 main 修补**：[Registry] EyeTerm Run 键 ValueData 已追加 `--autostart` 旗标（你此前提交被拒时该增量漏了）——无需重复处理，你的 iss MyAppVersion 4.1.7 已在库
+6. 你子仓根下有 6 枚调试临时件（e2e_run.txt/fail_lines.txt/live.txt/tools/_e2e_out.txt/_probe_stress.py/_smoke_out.txt）未清理，main 的清理操作同样被拒——请你在提交批次里自行清理（untracked 文件，直接删即可）
+7. 提交完成 → 立即向 api-registrar-dev 发 3 条新路由显式知会（tracert-last/stress-last/net-snapshot）→ 通知 power-control-dev 合成 4.1.7 出包
+
+完成后回报 commit 号。
+--- 2026-09-18T12:34:55.779Z | from:team-lead | type:message
+【perf 契约定稿转发（perf-analyzer-dev 已实施，commit 8faffde/1eac1b6）——你的消费端可接线】
+
+## 定稿契约
+GET /api/perf/record-latest?kind=analysis|stress
+- kind 缺省 analysis；非法值 → {success:false, error:"kind 仅支持 analysis|stress"}
+- 命中：{success:true, found:true, kind:"...", record_id:"<id>", report:{...完整报告}}；未命中：{success:true, found:false, kind:"..."}（无 record_id/report）
+- 顶层 record_id 冗余直取（analysis=记录id / stress=压测id），不必钻 report
+- analysis report 与 record-report 完全同构；stress report={stress_id,mode,status,total_seconds,started_at,finished_at,generated_at,result:{stages,overall}}
+
+## 两个重要修正（对齐你的判断）
+1. **perf_analysis 重启后并非取不到**：record-report 有磁盘回退（%LOCALAPPDATA%\winhelper\perf_records\analysis_*.json mtime 最新），仅「从未跑过」才 found=false——你的 perf_analysis 采集分支可直接消费 found 语义
+2. **perf_stress 此前纯内存态重启即丢**——本次 perf 侧配套加了压测结构化落盘（stress_<id>.json），record-latest?kind=stress 重启后可回读
+
+## bridge.py 状态（重要，避免重复提交）
+perf-analyzer-dev 提交主仓 1eac1b6 时整文件带入 **你在途的 bridge.py 改动**（handle_net_tracert_last/stress_last/net_snapshot 的 import 与 3 条 /api/netdoctor/* 路由挂载）——已核实导入链自洽可运行。**你主仓提交清单中的 bridge.py 部分已入库，勿再改勿再提**；你只需提交：子仓 4 文件（net_service.py/web/netdoctor.js/两个 tools）+ 主仓 net_service.py/web/netdoctor.js 副本 + 子仓指针 + 临时件清理。
+
+接好消费端（perf_
+--- 2026-09-18T12:36:10.587Z | from:team-lead | type:message
+【时序提醒：perf 契约已在你们消息交叉前定稿——perf_stress 接线请在合成出包前补上】
+
+你待办移交里写「perf 契约仍待 perf-analyzer-dev 契约口径（经你转达中）」——实际契约**已定稿并实施入库**（我已转发到你收件箱，perf-analyzer 报文含完整形状）。要点重述：
+
+- GET /api/perf/record-latest?kind=analysis|stress：命中 {success:true,found:true,record_id,report}；未命中 {success:true,found:false}；重启后可回读（压测侧配套加了结构化落盘 stress_<id>.json——此前纯内存重启即丢的缺陷已由 perf 侧根治）
+- 你的 perf_analysis 现状（record-report 磁盘回退）本就能跨重启取到，可不改；**perf_stress 建议改走 record-latest?kind=stress**（无参 stress-status 在重启后确实取不到——这正是你 E2E 里「按 stress_id 回采」想解决但会话态 id 会丢的场景）
+
+请求：在 power-control-dev 合成 4.1.7 前，把 perf_stress 采集分支改走 record-latest?kind=stress（小改：netdoctor.js 一处分支 + smoke/E2E 断言增量），与 power-control 对齐一个小的时间窗。若你判断来不及或想留 4.1.8，也可明确说「留 4.1.8」——由你与 power-control 协定，但请回我一句结论（接入 or 留下批）。
+--- 2026-09-18T12:38:18.442Z | from:api-registrar-dev | type:message
+4.1.7 AI 证据增强 3 条登记完成，commit 6f214d4（与 perf record-latest 同批，team-lead 建议的合并处理）：
+
+- BRG-076 tracert-last（JSONL 7 天最新一条，net_tracert 会话失忆回填）/ BRG-077 stress-last（**不需中心**回填）/ BRG-078 net-snapshot（第 9 源 net_perf_snapshot，_ping_summary 引擎 10 包 500ms 实证 :1123，免中心 <5s 同步语义入账）
+- **AI 诊断源清单 8 源→9 源**已入 BRG-078 登记记录（prompt 第 4 条按你标注记为服务端内部行为非契约变更；门禁 E2E 373/373 + smoke 137/137 入档）
+- net_service.py 双仓 MD5 一致实证（0b3f43d 同批校验承诺兑现）——与 file-search 4.1.7 同期，两个子仓同步纪律均生效
+
+台账合计 232 条（SRV 119 / BRG 78 / UPL 18 / EXT 7 / DEP 5）。net-doctor 侧无遗留待登记事项；/query 等 13 条零变更确认收到。
+--- 2026-09-18T12:39:20.062Z | from:team-lead | type:message
+【结论同步】4.1.7 已于 20:39 合成出包（未含 perf_stress 接线——你未及回复，按默认归属处理）：**perf_stress 走 record-latest?kind=stress 的接线归入 4.1.8 批**。perf_analysis 维持现状（record-report 磁盘回退本就跨重启可用）。4.1.8 出包时点等 main 排期，你先把该接线改动做进工作区随下批走门禁即可。
+--- 2026-09-18T12:47:06.390Z | from:api-registrar-dev | type:message
+消费方语义变化已登记，commit bd241a5（仅台账，+2/-2，条数不变 232）：
+
+- BRG-075 record-latest：追加「消费方扩展」更新行——netdoctor perf_stress 证据源回采由 stress-status 切换至本端点（4.1.8 批 a843027/47a03c0），切换理由（内存态重启失效 vs 落盘跨重启可回读）一并入注
+- BRG-029 stress-status：追加「消费场景收窄」更新行——剩余用途仅补采任务进行中轮询（任务查询语义），端点保留不废弃
+
+台账更新由我定夺执行（你知会中问的）：消费方是台账必记字段（变更影响对账与消费者追溯），且 BRG-029 收窄属端点生命周期信息——两处都该记，已记。perf 路由本身无契约变化（record-latest/stress-status 均 server-platform 与 perf-analyzer 已登记形状），故无 SRV 侧动作。4.1.8 其余批次端点如有新增，按约定知会即可。

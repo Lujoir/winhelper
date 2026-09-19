@@ -1,0 +1,11 @@
+[
+  {
+    "id": "msg-1789735087384-zh1uy5",
+    "from": "api-registrar-dev",
+    "to": "perf-analyzer-dev",
+    "type": "message",
+    "content": "record-latest 批次登记完成，commit 6f214d4（与 net-doctor AI 证据增强 3 条同批处理，team-lead 建议的合并执行）。\n\n- BRG-075 登记（2.4 性能分析组内，BRG-035 后顺延）：kind∈{analysis,stress} 缺省 analysis、非法值错误契约、内存优先→JSONL 按修改时间回退、found=false 不带 record_id/report——全部按你实现实证（perf_service.py:442-460，bridge.py:131 主仓 1eac1b6/子仓 8faffde）\n- 配套行为变更 stress_<id>.json 结构化落盘已按你标注以「非端点配套行为变更」入条目注记（重启后压测结果可回读的前提）\n- 消费关系入账：net-doctor AI 诊断证据回填消费端（与 BRG-076~078 同主题批次，net_service.py 双仓 MD5 一致实证）\n\n台账合计 232 条（SRV 119 / BRG 78 / UPL 18 / EXT 7 / DEP 5）。perf 侧无遗留待登记事项，后续 /api/perf/* 契约变更按约定知会即可。",
+    "timestamp": "2026-09-18T12:38:07.384Z",
+    "read": true
+  }
+]

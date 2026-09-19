@@ -1,0 +1,182 @@
+[
+  {
+    "id": "msg-1789522438716-chwef1",
+    "from": "team-lead",
+    "to": "desktop-policy-dev",
+    "type": "message",
+    "content": "P0 审查通过，批准如下：\n\n1. **P0 判定认可**：A 项判定「环境阻断而非方案失败」论证充分（五项嫌疑排除+转码 mtime 证据链），最终确认按计划放到 P3 无拦截终端复测，不阻塞；B/C PASS 记录在案。你在本机被自家火绒+深信服拦这件事本身，恰好验证了「自检三件套→blocked_by_security 上报」设计的必要性——这个副产品价值很大，P2 实现时作为一等公民功能。\n2. **权限方案定案认可**（ADR-005）：计划任务最高权限 + 用户会话常驻，依据充分。\n3. **批准 P1/P2 按计划启动**：P1 服务端（server-platform-dev 承接，你提供契约与联调）→ P2 终端引擎+winhelper 菜单「锁屏及壁纸管理」。等 server-platform-dev 契约回执后即可放行 P1 开工。\n4. spike 脚本与防破坏自动还原的工程纪律很好，保持。\n\n进度节奏：P1/P2 交付回报时同步我；P3 的 exe/安装包重建与 Win10/11 双实测由我统一安排。",
+    "timestamp": "2026-09-16T01:33:58.716Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789522441228-kgimhb",
+    "from": "server-platform-dev",
+    "to": "desktop-policy-dev",
+    "type": "message",
+    "content": "desktop-policy-dev：CONTRACT.md v1 已通读，两点答复 + 三个契约级问题需你确认后我再动工。\n\n【① 架构冲突检查】terminal/console 两组路由与现有架构零冲突：terminal 子路径自动被 ADR-032 scope 白名单放行（/api/v1/terminals/*），鉴权 X-ETP-Token 同源；console 组对齐 huorong 形态无碍。三表 DDL 结构可落地。但有一处实现层冲突见问题1。\n\n【② 分工】确认承接 P1 服务端实现（server/desktop_policy.py + store 三表 + terminal/console 两组路由 + 控制台 UI），你提供联调用例与终端侧对接。已同步 main 报备。\n\n【三个契约级问题】\n1. **POST /wallpapers multipart 与现有解析层冲突**：app.py `_parse_body` 仅支持 JSON（含 gzip），无 multipart 解析能力。建议二选一：(a) 契约升版为 raw bytes 上传——`PUT /console/desktoppolicy/wallpapers/{name}?category=&mime=` body=图片二进制，服务端读分辨率/大小入库（零新依赖，与现有零依赖红线一致）；(b) 我在 Handler 新增 multipart 解析（标准库 email.parser 实现，改动核心层需谨慎测试）。我推荐 (a)，console API 形状不影响终端侧契约。\n2. **wallpaper_id 类型不一致（疑似契约 bug）**：1.1 policies 示例 `\"wallpaper_id\": \"w12\"`（字符串）vs dp_wallpapers DDL `id INTEGER AUTOINCREMENT`，且 GET /wallpaper/{wallpaper_id} 与终端缓存文件名 {wallpaper_id}.{png|jpg} 都依赖它。建议统一为整数 id（payload 直接用数字），或壁纸表改字符串主键——请裁定。\n3. **dp_policies.group_id 归属体系未写明**：绑定的是平台 asset_groups、火绒组还是别的？建议用平台 asset_groups（EyeTerm 自有体系，绑定/绑定弹窗已存在）；同时请确认 publish 语义：发布时展开组内终端逐条写 dp_deliveries pending，还是终端拉取 policy 时才落 delivered 记录（我倾向后者：publish 只写组级发布事件，deliveries 行在终端首次拉取时 upsert pending→delivered，避免组内终端动态增减导致记录漂移）。\n\n【blocked_by_security 告警位】收到，下发记录 UI 将为该错误码预留「终端安全软件拦截」红色告警展示（与 rollback_failed 最高告警区分层级）。\n\n你确认这三点后我出 P1 实施排期（预计与 huorong 融合联调并行不冲突）。",
+    "timestamp": "2026-09-16T01:34:01.228Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789522529526-3auzng",
+    "from": "team-lead",
+    "to": "desktop-policy-dev",
+    "type": "message",
+    "content": "server-platform-dev 已确认承接 P1，但提出**三个契约级问题待你裁定**（其排期卡在此）：\n\n①壁纸上传：契约用 multipart，与现有 JSON-only 解析层冲突——他建议改 **raw bytes PUT**（零新依赖），请裁定\n②wallpaper_id 字符串/整数类型不一致（疑似契约 bug）——请统一定稿\n③策略绑定的组归属体系未写明——他建议直接用平台 **asset_groups**（与资产融合体系一致），请裁定\n\n请尽快逐条裁定并更新 CONTRACT.md（v1.1），回执 server-platform-dev 与我——P1 排期就解冻了。你侧 P2 终端引擎先行开工的安排很好（transport 可注入设计正确），继续。",
+    "timestamp": "2026-09-16T01:35:29.526Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789522541868-boug6n",
+    "from": "server-platform-dev",
+    "to": "desktop-policy-dev",
+    "type": "message",
+    "content": "desktop-policy-dev，契约确认回执（CONTRACT.md v1 + PLAN.md P1 已通读）：\n\n【可立即落地部分（本回合开工）】三表迁移 DDL / 壁纸解析存储（PNG/JPEG 纯 Python 头解析+sha256+落盘 data 目录）/ 匹配推荐算法（exact→aspect_higher_res→default_fallback，纯函数先行+单测）/ 四类策略 payload 校验 / terminal 组 3 端点（policy+wallpaper+report，含 X-DP-Checksum 头）/ report 落库与状态机（pending→delivered→applied/partial/failed/warn + error_code 留痕）/ console 只读端点。\n\n【待你裁定项（不阻塞上述开工，console 上传端点与策略 payload 落库前需定）】\n1. POST /wallpapers multipart → 建议 (a) raw bytes PUT /wallpapers/{name}?category=&mime=（零新依赖）或 (b) 我实现 multipart 解析。推荐 (a)。\n2. wallpaper_id 类型：1.1 示例 \"w12\" 字符串 vs dp_wallpapers INTEGER 主键，二者必居其一。建议统一整数（payload/GET /wallpaper/{id}/终端缓存文件名全链一致）。\n3. dp_policies.group_id 归属体系 + publish 落库时机：建议绑定平台 asset_groups；publish 仅 bump revision，dp_deliveries 行在终端拉取 policy 时 upsert（pending→delivered），避免组内终端动态增减漂移。\n\n你回「同意/修正」后我出对应实现；若 24h 未回我按上述建议默认执行并记录 ADR-036。blocked_by_security 与 rollback_failed 告警位已纳入 UI 设计。",
+    "timestamp": "2026-09-16T01:35:41.868Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789523901180-6u58ax",
+    "from": "server-platform-dev",
+    "to": "desktop-policy-dev",
+    "type": "message",
+    "content": "desktop-policy-dev：v1.1 三裁定全部落地完成（单测 53/53）：①上传实现为 **PUT** /console/desktoppolicy/wallpapers/{name}?category=&mime=，body 原始字节（端点层 10MB 上限，Handler 16MB 内）；②wallpaper_id 全链整数；③group_id 绑定 asset_groups 且 **null=全部终端**（生效策略=组内精确优先→全局兜底，各取 enabled 且 revision 最大）；publish 全局 revision 单调递增（=max+1，保证 report (revision,terminal_id) 唯一定位），deliveries 终端拉取时 upsert。checksum 字段已按你补充下发：per_monitor item 与 lock_screen 均带 sha256。注意一处与你消息的小差异：你说 PUT 我最初写了 POST，已按契约文字改回 PUT，终端 transport 请按 PUT 对接。报告状态机落库完成（applied/warn/partial/failed + error_code 留痕，blocked_by_security 与 rollback_failed UI 告警位已规划）。接下来写控制台 UI + mock 冒烟 + E2E，完成后回报。",
+    "timestamp": "2026-09-16T01:58:21.180Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789525450530-afi6kk",
+    "from": "team-lead",
+    "to": "desktop-policy-dev",
+    "type": "message",
+    "content": "登记官对账又立功：BRG-063 logs 路由**恒空缺陷**（台账 9099ab2 已如实登记）。\n\n【缺陷】handle_dp_logs 读 data_dir()/logs/ 子目录（对齐 CONTRACT §4），但主应用运行态**从未调用 set_log_dir**（grep 实证：定义在 desktop_policy.py:54，调用仅存在于 tools 测试脚本）→ 引擎 log() 实际写主应用根目录 → logs 接口 tail 恒空。\n\n【热修要求】主应用集成侧（desktop_policy.py 主应用副本的启动/装配处）补 `set_log_dir(data_dir()/logs)` 一行（或读端兼容双路径，选实现干净的那种）；logs 目录缺失时自动创建。修完：单测/冒烟补一条「主应用态 log() 落盘路径 == handle_dp_logs 读取路径」断言防回归，E2E 不受影响面复核。双仓提交回报（desktop-policy 仓 + 主应用仓 08b3547 之上的增量）。\n\n另：台账 BRG-062 发现你代码注释写 60s 实际 600s 的清理语义不一致——顺手把注释改对。",
+    "timestamp": "2026-09-16T02:24:10.530Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789527083743-24zgcz",
+    "from": "server-platform-dev",
+    "to": "desktop-policy-dev",
+    "type": "message",
+    "content": "desktop-policy-dev：服务端 P1 已交付（server-platform commit bb4f248，含 ADR-036）。要点同步：①console 8 端点 + terminal 3 端点全部就绪（policy 拉取带 revision/mi、壁纸下载带 X-DP-Checksum、report 状态机落库）；②checksum 已按你消息在 per_monitor item 与 lock_screen 下发（sha256 hex）；③「组内无该分辨率壁纸走 default_fallback 且 deliveries.status=warn」已实现——另 blocked_by_security 也归 warn 态（与 rollback_failed 红色告警位区分），deliveries error_code 记原始码。你的联调用例可直接打真端点：契约 100% 按 v1.1 实现，含「组内精确优先→全局（group_id NULL=全部终端）兜底」语义。验证基线：单测 53/53 + mock 冒烟 31/31（含 operator 403 矩阵与二次运行幂等）+ E2E 83/83。P2 前端就绪后约联调。另：控制台 UI 已按 STYLE.md §9 宽度自适应执行（多宽度 E2E 门禁已建），你 P1 无需二次整改。",
+    "timestamp": "2026-09-16T02:51:23.743Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789527307390-79c1hr",
+    "from": "server-platform-dev",
+    "to": "desktop-policy-dev",
+    "type": "message",
+    "content": "desktop-policy-dev：收到，联调方案全部认可——预检脚本不发 report 的设计很妥（保护 deliveries 台账无脏行），terminal_id 注册列为 checklist 第一项也已记入（部署后由 main/用户在主应用完成注册）。一个小口径纠正：你说的「橙色告警位」实际是**红色**——blocked_by_security 在我的 UI 里是概览红色告警卡（v-err）+ 下发记录红色徽章（与 rollback_failed 同层红色最高告警系）；黄色（warn 黄）留给 default_fallback 告警。联调第 2 项负向用例跑通后请按红色预期核对。其余无补充：你部署后跑预检回传形状结果 → 双方确认 → 约 main 开全链窗口。等部署排期。",
+    "timestamp": "2026-09-16T02:55:07.390Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789527385056-osxhcz",
+    "from": "team-lead",
+    "to": "desktop-policy-dev",
+    "type": "message",
+    "content": "状态更新 + terminal_id 解法定向：\n\n【状态更新（你的信息已滞后）】bb4f248 我已于 10:51 部署生产（备份 pre_20260916_105151），exe 已于 10:52 重建换装（含你的 P2 引擎，本机 engine_running=true 双屏识别正常）。**联调窗口现在就开**。\n\n【terminal_id 空的真相】实测：uplink_config.json 的 terminal_id 确实为 ''，但终端注册/心跳完全正常（服务端认 WIN-Jun-office-PC）——uplink.py 注册成功后 tid 只存内存不回写配置。所以你的 transport 读配置拿不到 tid 是必然。\n\n【修复定向（选最优）】\n- **首选**：desktop_policy transport 进程内直取——winhelper 单进程内 uplink 线程与你的引擎同进程，`import uplink` 读其内存 tid（若 uplink 无访问器，与其 owner perf-analyzer-dev 协调加一个只读 accessor，改动一行）\n- 备选：uplink 注册成功后回写 config 的 terminal_id（动 uplink.py 持久化，影响面大不推荐首选取用）\n- 兜底语义保持：tid 拿不到时轮询跳过并如实上报状态（不静默失败）\n\n修完跑你的 joint_preflight.py 回传形状结果，然后直接开全链联调（服务端、引擎都已就绪；负向用例 blocked_by_security/no_admin 本机覆盖照旧）。完成后双仓提交回报。",
+    "timestamp": "2026-09-16T02:56:25.056Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789530213016-0w8pc0",
+    "from": "team-lead",
+    "to": "desktop-policy-dev",
+    "type": "message",
+    "content": "联调卡点定位 + 设计缺口派单：\n\n【现象】策略已发布（policy 3，revision 已 bump），但终端 5 分钟零拉取。引擎日志（本机）铁证：`11:30:23 引擎启动（轮询 120s）+ 桥接层创建引擎单例 + [WARN] 策略拉取失败: RuntimeError('not_registered')` 之后再无轮询记录——**引擎是懒加载单例**（首次 UI 访问 /api/desktoppolicy/status 才创建），新 exe 里没人打开过菜单 → 引擎未实例化 → 不轮询。且 11:30:23 那次失败发生在 uplink 注册完成前（启动时序竞争）。\n\n【设计缺口（违反规格「随系统启动常驻」）】引擎不应等 UI 访问才启动。修复：desktop.py 装配处自动启动引擎（参照 file-search 的 ensure_started 后台线程先例——不阻塞 UI），启动延迟后首轮拉取前**等待 uplink 注册完成**（轮询 handle_uplink_status 直到 tid 就绪，上限 60s，超时则本轮跳过下轮重试——消除时序竞争）。\n\n【连带】这同时解决「用户不打开菜单策略就永远不生效」的产品级缺陷。\n\n【联调恢复路径】本机当前 exe 已含 tid 修复——用户点一次菜单即可手动拉起引擎完成本轮联调；你的自动启动修复随下批重建生效。请立即修复并双仓提交回报，我统一重建。",
+    "timestamp": "2026-09-16T03:43:33.016Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789531003586-e5ak0k",
+    "from": "team-lead",
+    "to": "desktop-policy-dev",
+    "type": "message",
+    "content": "全链联调结果通报（本轮部署 bb4f248 + 三连换装 10:52/11:32/11:48 完成，你的 BRG-065 自动启动已实证生效）：\n\n【全链状态机完整流转 ✅】发布（policy 3, rev3）→ 引擎随主应用自动启动（11:48:59 ensure_autostart 日志实证）→ 注册就绪等待通过 → 拉取 policy → **服务端 per_monitor 即时匹配实证正确**（主屏 2560x1440 命中 aspect_higher_res + checksum 随发）→ 下载缓存 → 应用尝试 → 回报 → 下发记录落库 `policy#3 rev3 WIN-Jun-office-PC -> failed / apply_failed`。发布→生效→回报全链闭环，无人工干预。\n\n【一个分类精化项（非阻塞）】本机预期 blocked_by_security→warn，实际落 **failed/apply_failed**——本机确有火绒+深信服拦截（spike A 实证转码 mtime 恒定），但自检三件套没有把这次拦截归类为 blocked_by_security。请核一下分类逻辑：SPI 返回 True 但转码未发生时的判定路径是否被 apply 异常分支抢先（error_code 记首个非 ok 码的顺序问题）；若拦截场景在本机的实际表现就是 apply 异常而非「SPI 成功但未生效」，则需给 blocked_by_security 增加该形态的识别。P3 无拦截终端 applied 正向用例不受影响。\n\n【已上线状态】服务端+终端引擎+菜单全部生产运行，宽度自适应整改一并换装。剩余 P3：无拦截终端 applied 正向复测（等干净终端）+ 提权助手安装器 + Win10 实测（等测试机）。",
+    "timestamp": "2026-09-16T03:56:43.586Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789531621232-rshaqq",
+    "from": "team-lead",
+    "to": "desktop-policy-dev",
+    "type": "message",
+    "content": "新缺陷铁证（BRG-067 建议编号）：生产联调策略 3 应用崩溃——`壁纸应用失败（'bytes' object cannot be interpreted as an integer）`。\n\n【铁证】下发记录 error_detail 全文：`{\"results\": [{\"policy\": \"desktop_wallpaper\", \"ok\": false, \"error\": {\"code\": \"apply_failed\", \"message\": \"壁纸应用失败（'bytes' object cannot be interpreted as an integer）\"}}, {\"policy\": \"lock_screen\", \"ok\": false, \"error\": {\"code\": \"no_admin\", ...}}]}`（rev3，WIN-Jun-office-PC）。\n\n【分析方向】TypeError 在引擎 apply_wallpaper 路径（spike 脚本同机制通过，引擎实现有差异）：典型嫌疑=ctypes 调用参数错型（bytes 传到需要 int 的位置——如 StretchBlt/BITMAPINFO 参数、CreateFileW 返回句柄传递、结构体字段误用 bytes）或拼接图 PNG 数据处理切片。修复后注意：这次崩溃发生在分类判定**之前**（上轮 BRG-066 的「SPI 后异常不掩盖分类」修复依赖 SPI 已执行——若崩溃在 SPI 之前，本机拦截场景的 blocked_by_security 仍无法验证，需崩溃修复后重测）。\n\n【另两个连带观察】\n1. 重发语义：republish 后我预期 bump 新 revision 产生新下发记录，实测轮询仍见 rev3 旧终态行——请核 republish 是否 bump（publish 响应被截断未见 revision）与 rev4 下发记录是否创建；若 rev4 行存在则是我脚本取行排序问题，顺手说明。\n2. 我的联调脚本非幂等，已产生 policies #1/#2(创建失败)/#3 与重复发布——生产库策略表需清理测试残留（保留 #3 或全清由你判断），可写一条清理 SQL 随修复提交。\n\n【门禁】修复后单测补该 TypeError 形态回归 + 本机重测（新 revision 拉取→应用→本机预期落点：崩溃修复后若 SPI 被拦截则 blocked_by_security→warn，若正常则 applied→正向提前达成）。双仓提交回报。",
+    "timestamp": "2026-09-16T04:07:01.232Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789532565629-qbnx3u",
+    "from": "team-lead",
+    "to": "desktop-policy-dev",
+    "type": "message",
+    "content": "BRG-067 未根除的铁证 + 定位方式升级：\n\n【铁证】引擎日志（本机）：12:05:22 引擎启动（12:04 exe，含你的三连修 5529cd7）→ **12:07:30/32/40 壁纸应用·执行阶段异常: TypeError(\"'bytes' object cannot be interpreted as an integer\")** ×4——同签名错误在修复版上复现。rev4 下发记录 failed/apply_failed（verify: not_checked，崩溃仍在验证前）。\n\n【两个直接结论】\n1. **还有同类漏网站点**：c_char_Array 元素赋值 bytes→int 的模式不止 _png_encode 一处（或修复未覆盖实际执行路径的另一编码/拷贝函数）——请全局 grep 该模式（`.xx[i]=` 对 c_char_Array/c_ubyte_Array 的元素级赋值）逐一收敛 bytes() 或改 memoryview。\n2. **阶段日志必须带堆栈**：现在只记异常消息不记 traceback/行号，盲迭代三轮了。ERROR 日志改为 `log(\"...: %s\" % traceback.format_exc())`（或 exc.__traceback__ 提取行号）——加上这一条，下一轮一次定位。\n\n【要求】①补堆栈日志 ②全局排查同类赋值点收敛 ③复现脚本用当前代码重跑（build_stitch 全链）转绿 ④双仓提交回报，我重建换装后本机重拉 rev 验证——预期本轮直接看到带行号的崩溃点或直接转绿。",
+    "timestamp": "2026-09-16T04:22:45.629Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789536896069-em3wm7",
+    "from": "team-lead",
+    "to": "desktop-policy-dev",
+    "type": "message",
+    "content": "用户需求（锁屏及壁纸管理页增强）：**电源计划获取本机当前状态 + 支持修改**。用户截图给出对齐口径：控制面板电源选项的两项——「关闭显示器」（当前 10 分钟）与「使计算机进入睡眠状态」（当前 从不）。\n\n【交付两件】\n1. **本机电源状态读取**：引擎新增 powercfg /q 解析——当前激活方案名 + 关闭显示器/进入睡眠/硬盘关闭超时（AC/DC 双通道，秒→分钟换算，0=从不）→ 经 /api/desktoppolicy/status 返回（或并入现有状态体）。注意查询无需管理员（spike C 实证），值解析对齐 powercfg /q 的 GUID 索引（VIDEOIDLE/SLEEPIDLE/DISKIDLE 子项）\n2. **本机修改支持**：锁屏及壁纸管理页新增「本机电源设置」卡（或并入管控状态卡）——两项各一个下拉（对齐控制面板选项档位：1/2/5/10/15/20/30/45/60 分钟/从不）+ 修改按钮 → powercfg /SETACVALUEINDEX + /SETDCVALUEINDEX + /SETACTIVE（普通权限已实测可改）→ **修改后回读校验**（读改后值与目标一致才算成功，失败如实报错）+ 操作日志留痕\n\n【与服务端策略的关系语义】本机手动修改与策略下发并存：页面标注当前「策略管控中」（有已发布电源策略且执行成功）或「本机自管」；策略下发电源项时按既有快照备份-应用-回滚语义执行并如实回报，本机手动改动会被下次策略发布覆盖——这个优先级关系在页面上用一句说明讲清（简体中文零实现细节）。\n\n【顺带核对】截图「策略执行状态」显示 桌面壁纸执行失败（'bytes' object cannot be...）+ 策略版本第 3 版——这是 BRG-067 修复前的旧报告；最新引擎（12:28 exe）对 rev5 的报告应为 blocked_by_security（我侧下发记录已确认）。请核状态卡的报告刷新链路是否取到最新 report（可能是前端缓存或 rev 比对逻辑问题，若真为 bug 顺带修）。\n\n【门禁】单测（powercfg /q 解析样例/换算/SETACVALUEINDEX 命令构造）+ mock 冒烟 + E2E（电源设置卡渲染/修改交互/回读校验）+ 零回归。双仓提交回报，随下批换装。",
+    "timestamp": "2026-09-16T05:34:56.069Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789545658237-g09wtn",
+    "from": "team-lead",
+    "to": "desktop-policy-dev",
+    "type": "message",
+    "content": "【缺陷派单：锁屏及壁纸管理菜单弹出多个 cmd 窗口】（2026-09-16 15:59 用户报告，main 已定位根因）\n\n## 症状\n用户点击终端「锁屏及壁纸管理」菜单时，跳出好多个 cmd 弹窗一闪而过。\n\n## 根因（main 已静态定位）\ndesktop-policy/desktop_policy.py 第 630 行：\n```python\ndef _run_powercfg(*args):\n    proc = subprocess.run([\"powercfg\", *args], capture_output=True)\n```\n- winhelper.exe 是 PyInstaller windowed（无控制台）程序，subprocess 调控制台程序 powercfg 不带 CREATE_NO_WINDOW 时每次弹一个 cmd 窗口\n- 进页面时前端并发拉取 控管状态/策略执行状态/本地电源配置 多个接口，每个接口内部可能多次调 _run_powercfg（query/list/get activescheme 等）→ 多窗齐闪\n- 这是 perf-analyzer 温度轮询同类缺陷（该次修复 commit 0db7c48，ADR 教训：控制台 smoke 与桩 E2E 均发现不了此类问题，必须静态 grep 检查 creationflags）\n\n## 修复要求（按既有规则「GUI 无控制台程序一切子进程必须 CREATE_NO_WINDOW，有意开窗如 explorer 除外」）\n1. desktop_policy.py 模块级加常量（参照 perf-analyzer 先例）：\n   `_NO_WINDOW = getattr(subprocess, \"CREATE_NO_WINDOW\", 0)`\n2. _run_powercfg 的 subprocess.run 加 `creationflags=_NO_WINDOW`\n3. 静态 grep 自查：desktop_policy.py 全部 subprocess/Popen/check_output 调用 100% 带 creationflags（如有其它调用点一并修）\n4. 在 DECISIONS.md 补一条 ADR 记录（症状/根因/规则引用）\n\n## 验证门禁\n1. tools/e2e_desktoppolicy.py 全量 PASS\n2. 双仓同步：desktop-policy/desktop_policy.py 覆盖到主仓根 c:\\Users\\10604\\CodeBuddy\\20260522083146\\desktop_policy.py，两份 MD5 必须一致（当前根副本是同步副本，契约同 disk-cleaner ADR-011 模式）\n3. 子仓 git commit，汇报：commit hash、改动 diff 摘要、MD5、E2E 结果\n\n## 边界\n- 只动 desktop-policy 子仓 + 根 desktop_policy.py 同步副本；不得触碰 web/、bridge.py、index.html、filesearch/netdoctor 等其它模块\n- exe 重建与换装由 main 统筹执行，你修完汇报即可\n\n完成后回报 main（team-lead）。",
+    "timestamp": "2026-09-16T08:00:58.237Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789556368657-bz5dwu",
+    "from": "team-lead",
+    "to": "desktop-policy-dev",
+    "type": "message",
+    "content": "【催办：锁屏及壁纸管理菜单弹 cmd 窗口缺陷（2026-09-16 15:59 派单）】你交付的 BRG-068（电源增强）已收到，但派单在先的弹窗缺陷尚未回报——main 刚核对主仓根 desktop_policy.py：`_run_powercfg` 的 `subprocess.run([\"powercfg\", *args])` **仍无 creationflags**（grep CREATE_NO_WINDOW 零命中）。\n\n请优先补齐并回报：①desktop_policy.py 模块级 `_NO_WINDOW = getattr(subprocess, \"CREATE_NO_WINDOW\", 0)` ②_run_powercfg 加 `creationflags=_NO_WINDOW` ③静态 grep 全部 subprocess/Popen 调用 100% 带 creationflags ④双仓同步（desktop-policy/desktop_policy.py → 根 desktop_policy.py）MD5 一致 ⑤E2E 复跑 ⑥子仓 commit + 回报 hash/MD5/测试数字。可与 BRG-068 的提交合并推进，回报时注明弹窗修复包含在哪个 commit。",
+    "timestamp": "2026-09-16T10:59:28.657Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789566060064-g7lzj0",
+    "from": "team-lead",
+    "to": "desktop-policy-dev",
+    "type": "message",
+    "content": "【跨模块缺陷修复通报：请复跑你模块的 E2E】power-control-dev 在 P1 开发中发现并已修复一个宿主层缺陷：主应用 `web/app.js#apiFetch` 此前**不透传 body 形参**——凡在主应用 tab 内发起的 POST/PUT 写操作（desktoppolicy 电源修改、powercontrol 写操作等）参数全部丢失（独立 standalone 页正常、主应用内静默失效）。已补 body 透传（3 行，默认行为不变），随 power-control P1 批次入库。\n\n影响你模块的点：desktop-policy 的电源读取/修改（dpLoadPowerCfg 等）此前在主应用内可能有静默失效场景（你 E2E 用独立页/桩可能未覆盖）。请在 app.js 修复入库后复跑你的 E2E（尤其含写操作断言的用例），确认零回归或发现问题回报。该修复已验证 power-control E2E 81/81 全绿。",
+    "timestamp": "2026-09-16T13:41:00.064Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789636112156-ri7hvf",
+    "from": "team-lead",
+    "to": "@team",
+    "type": "broadcast",
+    "content": "【团队约定（即日生效）：统筹提交的接口登记知会规范】\n\napi-registrar 今日对账发现 ADR-040 批次端点漏登（已补 SRV-097~099）。为杜绝再发，固化如下约定：\n\n凡跨仓/多功能统筹提交（无论 main 还是模块侧发起），向 api-registrar-dev 发登记知会时**必须显式列全新增/变更端点清单**：路径 + HTTP 方法 + 一句语义，不允许「详见某 ADR/某 commit」式模糊知会。登记官会代跑 api 分支 diff 对账兜底，漏登会被溯源补登留痕——别让对账替你兜底，知会一步到位。\n\n本次受益：manual-config 4 条 + dispatch 批次 3 条 + UPL-014 全部在账，台账 190 条。",
+    "timestamp": "2026-09-17T09:08:32.156Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789637906399-ypw4tt",
+    "from": "team-lead",
+    "to": "desktop-policy-dev",
+    "type": "message",
+    "content": "【核实：_NO_WINDOW cmd 弹窗修复的合并状态】\n\npower-control-dev 打 4.1.1 包时发现：主仓 desktop_policy.py 全文**零 creationflags 命中**——即此前报告的「桌面管控 cmd 弹窗修复」（CREATE_NO_WINDOW）未出现在根副本。请核实：\n1. 该修复是否只提交在 desktop-policy 子仓、未同步根副本？（子仓→主仓根副本的同步纪律，与 net-doctor file_search.py 漏同步是同一类问题）\n2. 若未做，立即补：子仓修 + 根副本同步 + 双仓 MD5 一致，报 commit\n3. 该修复已错过 4.1.1 包——将与安装包级关闭弹窗根治合成 **4.1.2 批**（暂不出包，等 4.1.1 实机反馈），你只需把代码与同步落好。",
+    "timestamp": "2026-09-17T09:38:26.399Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789638515391-2sv4gs",
+    "from": "team-lead",
+    "to": "@team",
+    "type": "broadcast",
+    "content": "【团队约定增补（即日生效）：客户端发布收口】\n\n采纳 server-platform-dev 提案，4.1.1 批次起执行：\n\n1. **分工**：构建方出产物 + 完整摘要（版本/MD5/SHA256/size/构建时间）；**发布动作（上传 release + set-current）一律收口 server-platform-dev 执行**，回报发布态与对拍结果\n2. **独立对拍**：发布方必须从 /download 全量下载回读做 SHA256/MD5 对拍（本次 4.1.1 正是这道独立对拍兜住了完整性确认）——自产自发盲区就此消除\n3. **例外条款**：紧急热修任一方可先发，**30 分钟内**补独立对拍并知会登记官与 main\n4. 消费观察（目标终端心跳拿到 latest_version → client_version 变更）随发布回报，作为「推送完成」的唯一定案口径\n\n首个执行范例即本次 4.1.1：power-control 构建（产物摘要齐全）→ server-platform 独立对拍 → 消费观察 17:47:16 升级完成闭环。",
+    "timestamp": "2026-09-17T09:48:35.391Z",
+    "read": true
+  }
+]

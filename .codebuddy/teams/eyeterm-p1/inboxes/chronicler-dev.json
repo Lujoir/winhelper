@@ -1,0 +1,20 @@
+[
+  {
+    "id": "msg-1789737144012-85yy4m",
+    "from": "team-lead",
+    "to": "chronicler-dev",
+    "type": "message",
+    "content": "【新任务：用户点名要求——为「定时开机（WoL）」功能写一份专门的功能开发细节文档（不是编年条目，是独立完整文档）】\n\n用户原话：「将定时开机的功能开发的细节都好好记住，让记录的子agent专门写个文档」。\n\n## 文档要求\n- 独立成篇（建议 docs/ 下专门文件，如 WOL_TIMED_BOOT.md，命名按你的档案惯例），你编年档案（CHRONICLE.md #57）中加一行指向该文档的索引即可\n- 受众：后续接手的开发者/运维，要求「读完就能懂全貌、能维护、能排障」\n\n## 必须覆盖的开发细节（main 全程亲历，以下为提纲+事实库）\n\n**1. 需求起源与 BIOS 写入探索（失败路线全记录）**\n- M720t（WIN-13F-xx-3，172.17.90.18，i5-9500，MAC 6C4B90CB4AE4）定时开机需求\n- 老接口链：Lenovo_SetBiosSetting 写入（plain/bracket 两轮格式）+ Lenovo_SaveBiosSetting 提交链（探测-提交合一，4.1.1 引入）→ 实证类不存在（save_class=false，commit rv=\"no-save-class\"）\n- 新一代接口回退（4.1.3）：Lenovo_BiosSetting 实例级 SetBiosSetting → 实证「找不到方法」（方法面缺失）\n- 诊断工具链：UPL pc_diag 只读诊断命令（4.1.2 引入：SaveBiosSetting 探测/PasswordState/RTC 读回/attempts 全量/日志尾/4.1.4 增 wmi_surface 穷尽枚举）+ 平台 POST /console/terminals/{tid}/diag + pc_diag_records 存档——这套联调通道是本功能定案的关键基础设施\n- 定案证据链：PasswordState=0（排除密码）、读取通道正常、写入两代接口均方法面缺失=固件只读；关键教训：attempts 必带 via/err（4.1.3 起），此前 rc=0+rv=null 假象曾误判「BIOS 静默忽略」\n\n**2. 路线转换决策**：2026-09-18 拍板「平台定时 WoL」替代 BIOS 写入（不依赖 BIOS 写接口、对所有 WoL 可用终端通用）\n\n**3. 产品实现（两端）**\n- 终端 4.1.5（release id=6）：power_action（中心发起 shutdown|restart，delay≤3600 白名单、仅中心可发、本地 UI 零入口+E2E 防回归断言、倒计时知会不可本地取消）/ power_action_abort（shutdown /a，rc=1116 无 pending 为正常态）/ wol_relay（跨网段中继代发：MAC 四形态归一大写 12hex、广播地址严格校验、SO_BROADCAST、仅中心发起+审计）——一包三能力\n- 服务端（server-platform 85ae733，ADR-044/045）：server/wol.py 调度守护（20s 节拍、wol_enabled 总开关；执行链=直发→240s 观察→同网段中继升级→再 240s→give_up 结论落档，五态留痕）；wol_schedules/wol_attempts 两表；唤醒确认**唯一以目标机 last_seen 恢复为准**\n- console UI：「立即开关机与远程唤醒」卡（行级重启/关机按钮 uiConfirm danger+120s 撤销横幅+回执轮询、WoL 定时唤醒表五态徽章+新建弹窗、手动唤醒弹窗直发/代发二选一、最近尝试留痕表）\n- 兜底：生产 systemd timer（wol-win13f.timer 每日 08:30 服务器直发 /usr/local/bin/wol_win13f.py 三地址三连发）\n- 接口登记：SRV-113~119 + UPL-016~018（台账 226 条）\n\n**4. 通道实证与修正（2026-09-18~19）**\n- 同网段直发成功 ×2：08:07（BIOS Automatic 模式即成功，08:09:56 last_seen 恢复）；19:43（Primary 已设，60s last_seen 恢复，干净终验）\n- 服务器跨网段直发无效：20:58 SRV-116 实测（端点 ok=true 但 300s 未恢复）+ **单播/广播对照实验铁证**（服务器同时发 UC/BC 到同网段在线终端 172.17.90.215:9147：UC 3/3 秒达、BC 0/3 被滤）——三层设备默认禁转 directed broadcast（业界默认安全实践），255.255.255.255 从不过网段\n- **产品结论：跨网段唤醒唯一主通道 = wol_relay 同网段中继**；直发仅同网段形态有效\n- 行动项（server-platform 排期中）：调度器对跨网段目标跳过直发观察窗直接中继；注册 M720t wol_schedules 每日 08:30；systemd timer 停用或标注「跨网段无效」\n\n**5. 方法论沉淀（重要，写进文档显眼位置）**\n- 电源态/唤醒判定**唯一权威判据 = 平台 last_seen 心跳**；严禁 ICMP/TCP/ARP 探测判定（防火墙/安全软件机器开机也全静默——用户实机纠错，此前多轮探测判读作废）\n- 干净终验流程：last_seen 消失（真关机）→ 发包 → last_seen 恢复 = 成功\n- 勘误入档：server-platform docs/DECISIONS.md 运维记录（6079c6d）；编年 #57\n\n**6. 一次性物理配置（BIOS 写只读的补偿）**：BIOS Wake on LAN=Primary（用户已设）；Windows 关快速启动 + 网卡「允许此设备唤醒计算机」+「唤醒魔包」启用（完整性前提）\n\n**7. 参与者**：用户（物理配置/实机验证/方法论纠错/里程碑定性「里程碑式的一幕」）；main（统筹/路线拍板/对照实验/纠错定案）；server-platform-dev（服务端调度+产品化+发布收口+勘误）；power-control-dev（终端 4.1.5 三命令）；api-registrar-dev（SRV-113~119/UPL-016~018）；net-doctor-dev（pc_diag 联调通道协作者——注：pc_diag 属 power-control 域，net-doctor 为同期在途批次）\n\n**8. 当前状态与待办**：M720t 每日 08:30 自动开机已闭环（等待 wol_schedules 注册落地后由平台调度承担）；4.1.7 发布收口进行中（与本功能无直接耦合但同期）；4.1.8 批（perf_stress 接线已入库、wol give_up 文案补充待排期）\n\n完成后：写入档案、git 提交、CHRONICLE.md #57 加文档指针，然后 send_message 向 main 回报文档路径与 commit 号。",
+    "timestamp": "2026-09-18T13:12:24.012Z",
+    "read": true
+  },
+  {
+    "id": "msg-1789737446184-0bipui",
+    "from": "team-lead",
+    "to": "chronicler-dev",
+    "type": "message",
+    "content": "验收通过：WOL_TIMED_BOOT.md 落位确认（commit 8fa3519），结构完整、考证扎实。特别赞赏两处：①§4.2 抓出 wol.py docstring 与实际行为的分叉（method 字段未生效）并警示排障者——这正是「以代码为准」的档案纪律；②失败形态对照表从 last_result 文案反推根因，可操作性高。你的两项任务（编年 #57 + 专项文档）全部闭环，待团队批次收口后统一休整，先保持待命。",
+    "timestamp": "2026-09-18T13:17:26.184Z",
+    "read": true
+  }
+]
