@@ -36,3 +36,30 @@ python ai-agent/tools/cleanup.py --tmp-ttl-days 3
 ```
 
 > `.gitkeep` 之外的文件不会入库；用完即删是好习惯，别留到下一轮。
+
+## legacy/ — 存量临时文件归档（2026-09-20）
+
+主仓根与子仓根的历史遗留临时产物已集中归置于此：
+
+```
+tmp/legacy/main/            主仓根原有 _* 临时文件（59 个）
+tmp/legacy/server-platform/ 子仓 server-platform 根原有 _* 临时文件（94 个）
+```
+
+**背景**：项目根长期堆积一次性探针脚本、构建日志、调试输出（`_*.txt` / `_*.py` /
+`_*.bat` / `_*.ps1`）—— 主仓根 64 个、子仓根 98 个。它们既污染仓库根目录（把真实
+工程文件淹没在噪音里），也让人无法判断归属与是否还有用。按 ADR-005「只有 `tmp/`
+允许自动清理、主仓根禁止散落临时文件」执行归置。
+
+**保留说明**：
+- 根目录仍留 `_*.png`（VLAN 拓扑 / 界面截图等）—— 属交付证据，**未归置**
+- **已跟踪（git tracked）的 `_*.py` 脚本已移回原位**，不纳入归置
+
+**教训（本次实操踩到，记录下来避免重犯）**：
+批量移动前**必须先区分「已跟踪 / 未跟踪」**。我起初用 `Get-ChildItem -Filter "_*"`
+无差别移动，误移了 5 个 git 跟踪文件（`_diag_ai.py` / `_notify_dev.py` /
+`_restore_llm_key.py` / `_cr_publish46.py` / `_tp_wol_optimize.py`），导致工作区
+出现删除记录，需逐个恢复。
+**正确做法**：先用 `git ls-files` + `git -C <sub> ls-files` 取已跟踪集合，
+再从待移动集合中剔除；移动后必须跑 `git status --porcelain | Select-String "^ D"`
+验证无误删。
