@@ -2210,30 +2210,49 @@ function ndAiWaitCollect(maxTicks) {
     });
 }
 
-/* 2026-09-10 优化5：response_text 结构化渲染。服务端模型链强制输出
-   【故障原因分析】/【处理意见】/【风险提示】三段（server/ai.py 诊断 prompt），
-   按段分卡着色；元信息徽章化；无段落标记时回退纯文本。 */
+/* 2026-09-10 优化5：response_text 结构化渲染。按段分卡着色；元信息徽章化；
+   无段落标记时回退纯文本。
+
+   2026-09-20 扩展：**同时接受两套段名** ——
+   · 个人版（客户端本地直调，使用人视角）产出「怎么回事 / 怎么解决 / 还要注意」；
+   · 企业版（经中心 DIAG_SYSTEM_PROMPT，运维口径）产出「故障原因分析 / 处理意见 / 风险提示」。
+   两套并存是刻意的：本引擎的入口在客户端（使用者是使用人本人），但企业版的分析
+   仍由中心按运维口径生成。用 alts 同时匹配，保证两种模式的结论都能分卡渲染，
+   否则其中一种会静默退化成纯文本。 */
 var ND_AI_SECTIONS = [
-    { title: "故障原因分析", cls: "nd-ai-sec-cause" },
-    { title: "处理意见", cls: "nd-ai-sec-advice" },
-    { title: "风险提示", cls: "nd-ai-sec-risk" }
+    { title: "怎么回事", alts: ["故障原因分析"], cls: "nd-ai-sec-cause" },
+    { title: "怎么解决", alts: ["处理意见"], cls: "nd-ai-sec-advice" },
+    { title: "还要注意", alts: ["风险提示"], cls: "nd-ai-sec-risk" }
 ];
+
+function ndAiMatchSection(sec, text) {
+    var titles = [sec.title].concat(sec.alts || []);
+    for (var i = 0; i < titles.length; i++) {
+        var token = "【" + titles[i] + "】";
+        var p = text.indexOf(token);
+        if (p < 0) { token = titles[i]; p = text.indexOf(token); }
+        if (p >= 0) {
+            return { sec: sec, hs: p, cs: p + token.length, matched: titles[i] };
+        }
+    }
+    return null;
+}
 
 function ndAiSplitSections(text) {
     var t = String(text || "");
     var found = [];
     for (var i = 0; i < ND_AI_SECTIONS.length; i++) {
-        var token = "【" + ND_AI_SECTIONS[i].title + "】";
-        var p = t.indexOf(token);
-        if (p < 0) { token = ND_AI_SECTIONS[i].title; p = t.indexOf(token); }
-        if (p >= 0) { found.push({ sec: ND_AI_SECTIONS[i], hs: p, cs: p + token.length }); }
+        var hit = ndAiMatchSection(ND_AI_SECTIONS[i], t);
+        if (hit) { found.push(hit); }
     }
     if (!found.length || found[0].sec !== ND_AI_SECTIONS[0]) { return null; }
     var segs = [];
     for (var j = 0; j < found.length; j++) {
         var end = (j + 1 < found.length) ? found[j + 1].hs : t.length;
         var body = t.slice(found[j].cs, end).replace(/^[\s：:、\-—·.]*/, "").replace(/\s+$/, "");
-        segs.push({ title: found[j].sec.title, cls: found[j].sec.cls, body: body });
+        /* title 用**实际命中的那个**（企业版显示"故障原因分析"，个人版显示"怎么回事"），
+           避免把运维口径的段标成使用人标题造成语义错位 */
+        segs.push({ title: found[j].matched, cls: found[j].sec.cls, body: body });
     }
     return segs;
 }
