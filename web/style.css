@@ -37,51 +37,81 @@ body {
     line-height: 1.6;
 }
 
-/* --- 顶部导航 --- */
-.navbar {
+/* --- 左侧导航（2026-09-19 改版：顶部横向 → 左侧边栏）---
+   动机：横向导航可用宽度固定，而功能数持续增长——7 个一级菜单已在 1380px
+   窗体下挤满。侧边栏纵向空间充裕，加功能零成本（新增菜单即插入一个按钮）。
+   窄窗（≤1120px）自动折叠为图标条（56px），主内容区随之左移（见文件末）。 */
+.navbar.sidebar {
     position: fixed;
-    top: 0; left: 0; right: 0;
+    top: 0; left: 0; bottom: 0;
+    width: 196px;
     z-index: 100;
     display: flex;
-    align-items: center;
-    gap: 24px;
-    padding: 0 28px;
-    height: 60px;
-    background: rgba(15,17,23,.85);
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 10px;
+    background: rgba(15,17,23,.92);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
-    border-bottom: 1px solid var(--border-color);
+    border-right: 1px solid var(--border-color);
 }
 
-.nav-brand {
+.side-brand {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 9px;
+    padding: 4px 8px 12px;
+    border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
 }
 
-.nav-logo { color: var(--accent-cyan); }
+.side-brand-text { display: flex; flex-direction: column; min-width: 0; }
+
+.nav-logo { color: var(--accent-cyan); flex-shrink: 0; }
 
 .nav-title {
-    font-size: 17px;
+    font-size: 13.5px;
     font-weight: 700;
+    line-height: 1.25;
     background: linear-gradient(135deg,var(--accent-cyan),var(--accent-blue));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+    white-space: nowrap;
 }
 
-.nav-tabs {
-    display: flex;
-    gap: 4px;
-    flex: 1;
+.nav-ver {
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
 }
+
+.side-menu {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.side-group-label {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: .6px;
+    color: var(--text-muted);
+    padding: 12px 10px 5px;
+}
+.side-menu > .side-group-label:first-child { padding-top: 4px; }
 
 .nav-tab {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 8px 16px;
+    gap: 9px;
+    width: 100%;
+    padding: 9px 11px;
     border: none;
     border-radius: var(--radius-sm);
     background: transparent;
@@ -90,8 +120,12 @@ body {
     font-weight: 500;
     cursor: pointer;
     transition: var(--transition);
+    text-align: left;
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
+.nav-tab svg { flex-shrink: 0; }
 .nav-tab:hover { background: var(--bg-hover); color: var(--text-primary); }
 
 .nav-tab.active {
@@ -100,32 +134,23 @@ body {
     font-weight: 600;
 }
 
-/* --- 导航条窄视口降级（STYLE.md §9 宽度自适应）---
-   页签不换行不挤压（flex-shrink:0 + nowrap），容器内滚动兜底；
-   ≤1240px 收紧间距并隐藏标题文字，保证 1080px 视口单行完整放下。 */
-.nav-ver {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    white-space: nowrap;
-    align-self: center;
-    margin-top: 2px;
-}
-
-.nav-tabs { min-width: 0; overflow-x: auto; overflow-y: hidden; }
-.nav-tab { flex-shrink: 0; white-space: nowrap; }
-
-@media (max-width: 1240px) {
-    .navbar { gap: 14px; padding: 0 16px; }
-    .nav-tab { padding: 8px 10px; }
-    .nav-title { display: none; }
-}
-
-.nav-actions {
+.nav-actions.side-foot {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
     flex-shrink: 0;
+}
+
+/* 窄窗折叠为图标条：隐藏标题/分组/文字，仅留图标（56px） */
+@media (max-width: 1120px) {
+    .navbar.sidebar { width: 56px; padding: 12px 6px; }
+    .side-brand { justify-content: center; padding: 4px 0 10px; }
+    .side-brand-text, .side-group-label { display: none; }
+    .nav-tab { justify-content: center; padding: 10px 0; font-size: 0; gap: 0; }
+    .nav-actions.side-foot { justify-content: center; }
+    .mode-badge { display: none; }
 }
 
 .log-select {
@@ -157,10 +182,14 @@ body {
 
 .refresh-btn:hover { background: var(--bg-hover); color: var(--accent-cyan); border-color: var(--accent-cyan); }
 
-/* --- 主内容（宽度跟随窗体自适应） --- */
+/* --- 主内容（左侧让位给侧边栏；宽度跟随窗体自适应） --- */
 .main-content {
-    margin-top: 60px;
-    padding: 24px 28px 60px;
+    margin-left: 196px;
+    padding: 22px 26px 60px;
+}
+
+@media (max-width: 1120px) {
+    .main-content { margin-left: 56px; }
 }
 
 /* --- Tab 切换 --- */
