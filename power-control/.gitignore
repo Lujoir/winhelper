@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+
+tools/*_out.txt
+tools/e2e_out.txt
+
+# 构建产物（PyInstaller 中间件与打包结果，不入库）
+build/
+dist/

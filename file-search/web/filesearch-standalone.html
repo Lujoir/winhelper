@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>文件检索 · 独立测试页｜观枢终端平台 EyeTerm</title>
+<style>
+:root { --bg: #12151d; --bg-card: #171a23; --bg-hover: #1d212e; --panel2: #1d212e;
+        --border: #262b3a; --text: #e8ebf2; --text-2: #8a93a5; --text-3: #5a6274;
+        --cyan: #4fc3f7; --ok: #43a047; --warn: #ffb74d; --err: #e05252; --radius: 10px; }
+body { margin: 0; background: var(--bg); color: var(--text);
+       font-family: "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 13px; }
+.main-content { max-width: 1080px; margin: 0 auto; padding: 18px 20px 60px; }
+.page-header h2 { margin: 6px 0 2px; font-size: 19px; }
+.page-subtitle { margin: 0 0 14px; color: var(--text-2); font-size: 12.5px; }
+.section-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 14px; }
+.card-header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+/* 卡头按钮贴卡头右缘（与折叠箭头间距统一，对齐网络排障五卡/AI 卡先例，2026-09-15 整改） */
+.card-header .disk-toolbar { margin-left: auto; }
+.card-header h3 { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--cyan); letter-spacing: .5px; flex: 0 0 auto; }
+.card-body { padding: 15px 17px; }
+.section-card.collapsed > *:not(.card-header) { display: none !important; }
+.section-card.collapsed > .card-header { border-bottom: none; }
+.nd-chevron { color: var(--text-2); transition: transform .2s ease; }
+.section-card.collapsed .nd-chevron { transform: rotate(-90deg); }
+.nd-btn { background: var(--bg-hover); color: var(--cyan); border: 1px solid var(--border); border-radius: 8px; padding: 6px 14px; cursor: pointer; font-size: 12.5px; }
+.nd-btn:hover { border-color: var(--cyan); }
+.nd-btn.primary { background: var(--cyan); color: #10213a; font-weight: 600; border-color: transparent; }
+.nd-btn:disabled { background: var(--bg-hover); color: var(--text-2); cursor: not-allowed; opacity: .6; }
+.nd-input { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 12.5px; }
+.nd-summary { font-size: 12px; color: var(--text-2); margin: 0 0 10px; line-height: 1.6; min-height: 16px; word-break: break-all; }
+.nd-hint { color: var(--text-2); font-size: 12px; }
+.nd-empty { color: var(--text-3); font-size: 12.5px; padding: 10px 0; }
+.nd-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 6px 0; }
+.nd-table th { color: var(--text-2); font-weight: 600; background: rgba(255,255,255,.02); border-bottom: 1px solid var(--border); padding: 5px 9px; text-align: left; }
+.nd-table td { border: none; border-bottom: 1px solid rgba(42,47,69,.55); padding: 5px 9px; text-align: left; }
+.nd-table tbody tr:nth-child(even) { background: rgba(255,255,255,.015); }
+.nd-num { font-variant-numeric: tabular-nums; }
+.nd-th-sort { cursor: pointer; user-select: none; }
+.nd-th-sort:hover { color: var(--cyan); }
+.nd-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 2px; }
+.nd-chip { background: var(--bg-hover); color: var(--text-2); border: 1px solid var(--border); border-radius: 10px; padding: 2px 10px; cursor: pointer; font-size: 12px; }
+.nd-chip:hover { border-color: var(--cyan); color: var(--cyan); }
+.nd-chip.on { background: var(--cyan); color: #10213a; border-color: transparent; font-weight: 600; }
+.nd-ctx { display: none; position: fixed; z-index: 1200; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 4px; box-shadow: 0 8px 28px rgba(0,0,0,.5); min-width: 130px; }
+.nd-ctx-item { padding: 7px 12px; font-size: 12.5px; color: var(--text); cursor: pointer; border-radius: 6px; }
+.fs-filter-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.nd-type-filter { position: relative; display: inline-block; }
+.nd-type-filter summary { list-style: none; cursor: pointer; }
+.nd-type-filter summary::-webkit-details-marker { display: none; }
+.nd-type-panel { position: absolute; top: calc(100% + 4px); left: 0; z-index: 100; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; max-height: 260px; overflow-y: auto; min-width: 170px; box-shadow: 0 8px 28px rgba(0,0,0,.5); }
+.nd-type-item { display: flex; align-items: center; gap: 6px; padding: 4px 0; font-size: 12.5px; color: var(--text-2); cursor: pointer; white-space: nowrap; }
+.nd-type-item:hover { color: var(--text); }
+.nd-type-item input { margin: 0; accent-color: var(--cyan); }
+.nd-ctx-item:hover { background: var(--bg-hover); color: var(--cyan); }
+.nd-badge { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 12px; }
+.nd-ok { background: rgba(67,160,71,.15); color: #81c784; }
+.nd-warn { background: rgba(255,183,77,.12); color: var(--warn); }
+.nd-muted { background: rgba(255,255,255,.05); color: var(--text-2); }
+.hm-row { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: 12.5px; border-bottom: 1px dashed rgba(42,47,69,.6); }
+.hm-row-label { color: var(--text-2); flex-shrink: 0; }
+/* 文件资源管理器详情风格：图标（内联 SVG 类别着色）+ 友好类型名 */
+.fs-icon { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; margin-right: 5px; flex-shrink: 0; }
+.fs-icon svg { display: block; }
+.fs-name-cell { white-space: nowrap; }
+.fs-name { display: inline-block; vertical-align: middle; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: calc(100% - 22px); }
+.fs-type-cell { white-space: nowrap; }
+.fs-dir { font-weight: 500; }
+.fs-dir .fs-name { color: var(--cyan); }
+/* 结果表列宽：名称/类型/路径默认 160/160/230（自动布局的 2/3），表头右缘可拖拽（2026-09-16） */
+#fsBody table.fs-cols { table-layout: fixed; }
+#fsBody table.fs-cols td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#fsBody table.fs-cols thead th { position: relative; }
+.fs-rs { position: absolute; top: 0; right: -3px; width: 7px; height: 100%; cursor: col-resize; z-index: 5; }
+.fs-rs:hover, body.fs-col-dragging .fs-rs { background: rgba(79, 195, 247, .28); }
+body.fs-col-dragging { user-select: none; cursor: col-resize; }
+</style>
+</head>
+<body>
+<div class="main-content">
+<div id="tab-filesearch" class="tab-content active">
+    <div class="page-header">
+        <h2>文件检索</h2>
+        <p class="page-subtitle">本机全盘检索 · 秒级定位文件与目录</p>
+    </div>
+
+    <div class="section-card nd-styled" data-collapse>
+        <div class="card-header">
+            <h3>文件检索</h3>
+            <div class="disk-toolbar">
+                <button class="nd-btn primary" id="fsSearchBtn" onclick="fsStartSearch()">开始检索</button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="nd-summary" id="fsSummary"></div>
+            <div class="hm-row nd-ai-row"><span class="hm-row-label">关键词</span>
+                <span class="nd-hint">支持语法（如 ext:pdf），大小写不敏感</span></div>
+            <input id="fsQuery" class="nd-input" type="text" style="width:100%"
+                placeholder="输入关键词，如 report 或 ext:pdf">
+            <div id="fsChips" class="nd-chips"></div>
+            <div class="fs-filter-row" id="fsFilterRow" style="display:none;">
+                <span class="hm-row-label">类型</span>
+                <details class="nd-type-filter" id="fsTypeFilterWrap">
+                    <summary class="nd-btn" id="fsTypeFilterBtn">选择类型</summary>
+                    <div id="fsTypeFilterPanel" class="nd-type-panel"><div class="nd-hint">加载中…</div></div>
+                </details>
+                <span class="hm-row-label">自定义</span>
+                <input type="text" id="fsCustomExt" class="nd-input" style="width:auto;min-width:150px;"
+                    placeholder="如 dwg,psd,7z">
+                <span class="hm-row-label">修改时间</span>
+                <input type="date" id="fsDateFrom" class="nd-input" style="width:auto;min-width:118px;">
+                <span class="nd-hint">至</span>
+                <input type="date" id="fsDateTo" class="nd-input" style="width:auto;min-width:118px;">
+            </div>
+            <div style="margin-top:10px">
+                <button class="nd-btn primary" onclick="fsStartSearch()">开始检索</button>
+                <span class="nd-hint" id="fsSearchTip"></span>
+            </div>
+            <div id="fsBody"><div class="nd-empty">尚未检索</div></div>
+        </div>
+    </div>
+</div>
+</div>
+<script src="filesearch.js"></script>
+<script>
+(function () {
+    initFileSearchTab();
+})();
+</script>
+</body>
+</html>

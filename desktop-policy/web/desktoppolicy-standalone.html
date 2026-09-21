@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>锁屏及壁纸管理 · 独立测试页｜观枢终端平台 EyeTerm</title>
+    <style>
+        :root {
+            --bg: #10131b; --bg-card: #171a23; --bg-hover: #1d212e;
+            --border: #262b3a; --text: #e8ebf2; --text-2: #8a93a5; --text-3: #5a6274;
+            --cyan: #4fc3f7; --radius: 10px;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.7 "Segoe UI", "Microsoft YaHei", sans-serif; }
+        .navbar { display: flex; align-items: center; gap: 14px; padding: 12px 22px; background: var(--bg-card); border-bottom: 1px solid var(--border); }
+        .navbar .nav-title { font-weight: 700; font-size: 15px; }
+        .navbar .nav-tag { font-size: 11.5px; color: var(--text-2); border: 1px solid var(--border); border-radius: 12px; padding: 1px 10px; }
+        .main-content { max-width: 1080px; margin: 0 auto; padding: 18px 20px 60px; }
+        .page-header h2 { margin: 6px 0 2px; font-size: 19px; }
+        .page-subtitle { margin: 0 0 14px; color: var(--text-2); font-size: 12.5px; }
+        .section-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 14px; }
+        .card-header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+        .card-header h3 { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--cyan); letter-spacing: .5px; flex: 0 0 auto; }
+        .card-body { padding: 15px 17px; }
+        .nd-btn { background: var(--bg-hover); color: var(--cyan); border: 1px solid var(--border); border-radius: 8px; padding: 6px 14px; cursor: pointer; font-size: 12.5px; }
+        .nd-btn:hover { border-color: var(--cyan); }
+        .nd-btn:disabled { opacity: .45; cursor: default; }
+        .nd-btn.primary { background: rgba(79,195,247,.14); }
+        .nd-badge { display: inline-block; border: 1px solid; border-radius: 20px; padding: 1px 10px; font-size: 11.5px; vertical-align: 1px; white-space: nowrap; }
+        .nd-ok { color: #66bb6a; border-color: rgba(102,187,106,.5); background: rgba(102,187,106,.1); }
+        .nd-warn { color: #ffb74d; border-color: rgba(255,183,77,.5); background: rgba(255,183,77,.1); }
+        .nd-err { color: #ef5350; border-color: rgba(239,83,80,.5); background: rgba(239,83,80,.1); }
+        .nd-muted { color: var(--text-2); border-color: var(--border); background: var(--bg-hover); }
+        .nd-hint { color: var(--text-2); font-size: 12px; }
+        .nd-empty { color: var(--text-3); font-size: 12.5px; padding: 10px 0; }
+        .nd-summary { margin: 0 0 10px; line-height: 1.6; font-size: 12px; color: var(--text-2); }
+        .hm-row { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: 12.5px; border-bottom: 1px dashed rgba(42,47,69,.6); }
+        .hm-row-label { color: var(--text-2); flex-shrink: 0; }
+        .hm-row-value { color: var(--text); }
+        .nd-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 6px 0; }
+        .nd-table th, .nd-table td { border-bottom: 1px solid rgba(42,47,69,.55); padding: 5px 9px; text-align: left; }
+        .nd-table th { color: var(--text-2); font-weight: 600; background: rgba(255,255,255,.02); border-bottom: 1px solid var(--border); }
+        .nd-table tbody tr:nth-child(even) { background: rgba(255,255,255,.015); }
+        .nd-num { font-variant-numeric: tabular-nums; }
+        .nd-statusbar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 14px; flex-wrap: wrap; }
+        .nd-statusbar b { font-size: 13.5px; font-weight: 600; color: var(--cyan); letter-spacing: .5px; }
+        .nd-statusbar .sb-value { color: var(--text-2); font-size: 12.5px; }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <span class="nav-title">观枢终端平台｜EyeTerm</span>
+        <span class="nav-tag">锁屏及壁纸管理 · 独立测试页</span>
+    </div>
+    <div class="main-content">
+        <div class="page-header">
+            <h2>锁屏及壁纸管理</h2>
+            <p class="page-subtitle">统一管理这台电脑的桌面壁纸、锁屏界面、电源方案与空闲锁屏策略</p>
+        </div>
+
+        <div class="nd-statusbar">
+            <b>管控状态</b>
+            <span class="nd-badge nd-muted" id="dpLink">等待首个轮询周期</span>
+            <span class="sb-value">策略版本：<span id="dpRev">—</span></span>
+            <span class="sb-value">最近应用：<span id="dpReported">—</span></span>
+            <span class="sb-value">会话：<span id="dpSession">—</span></span>
+            <button class="nd-btn primary" id="dpBtnPoll">立即获取最新策略</button>
+        </div>
+
+        <section class="section-card">
+            <div class="card-header"><h3>策略执行状态</h3></div>
+            <div class="card-body" id="dpStatusWrap">
+                <p class="nd-summary">四类策略在本机各自的最新执行结果。</p>
+                <div class="hm-row"><span class="hm-row-label">桌面壁纸</span><span class="hm-row-value" id="dpResWallpaper">—</span></div>
+                <div class="hm-row"><span class="hm-row-label">锁屏界面</span><span class="hm-row-value" id="dpResLock">—</span></div>
+                <div class="hm-row"><span class="hm-row-label">电源方案</span><span class="hm-row-value" id="dpResPower">—</span></div>
+                <div class="hm-row"><span class="hm-row-label">空闲自动锁屏</span><span class="hm-row-value" id="dpResIdle">—</span></div>
+                <div id="dpNotes" style="margin-top:8px"></div>
+                <div class="nd-hint" id="dpStatusErr" style="margin-top:4px"></div>
+            </div>
+        </section>
+
+        <section class="section-card">
+            <div class="card-header"><h3>显示器布局</h3></div>
+            <div class="card-body">
+                <p class="nd-summary">壁纸将按每个屏幕的分辨率与位置分别适配，内容不变形、不留黑边。</p>
+                <div id="dpMonBody"><div class="nd-empty">正在读取显示器信息…</div></div>
+            </div>
+        </section>
+
+        <section class="section-card">
+            <div class="card-header">
+                <h3>本机电源设置</h3>
+                <button class="nd-btn" id="dpBtnPowerRefresh">刷新</button>
+            </div>
+            <div class="card-body" id="dpPowerCfgBody">
+                <div class="nd-empty">正在读取本地电源配置…</div>
+            </div>
+        </section>
+
+        <section class="section-card">
+            <div class="card-header">
+                <h3>本地电源配置</h3>
+                <div class="disk-toolbar">
+                    <button class="nd-btn" onclick="dpLoadPowerCfg()">刷新</button>
+                </div>
+            </div>
+            <div class="card-body" id="dpPowerCfgBody">
+                <div class="nd-empty">正在读取本地电源配置…</div>
+            </div>
+        </section>
+
+        <section class="section-card">
+            <div class="card-header"><h3>手动操作</h3></div>
+            <div class="card-body">
+                <p class="nd-summary">联网获取并应用最新策略；断网时可将已保存的策略重新应用到本机。</p>
+                <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center">
+                    <button class="nd-btn primary" id="dpBtnPoll2">立即获取最新策略</button>
+                    <button class="nd-btn" id="dpBtnReapply">重新应用当前策略</button>
+                    <button class="nd-btn" id="dpBtnLogs">打开执行日志位置</button>
+                    <span class="nd-hint" id="dpTaskTip"></span>
+                </div>
+            </div>
+        </section>
+    </div>
+    <script src="desktoppolicy.js"></script>
+    <script>
+        (function () {
+            var bind = function (id, target) {
+                var el = document.getElementById(id);
+                if (el) el.addEventListener("click", target);
+            };
+            bind("dpBtnPoll", function () { window.dpRunTask("/api/desktoppolicy/policy-now"); });
+            bind("dpBtnPoll2", function () { window.dpRunTask("/api/desktoppolicy/policy-now"); });
+            bind("dpBtnReapply", function () { window.dpRunTask("/api/desktoppolicy/apply-now"); });
+            bind("dpBtnLogs", function () { window.dpOpenLogs(); });
+            bind("dpBtnPowerRefresh", function () { window.dpLoadPowerCfg(); });
+            window.dpInitStandalone();
+        })();
+    </script>
+</body>
+</html>

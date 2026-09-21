@@ -1,0 +1,22 @@
+[Unit]
+Description=EyeTerm Terminal Platform Server (观枢终端平台服务端)
+After=network.target
+
+[Service]
+Type=simple
+User=eyeterm
+Group=eyeterm
+WorkingDirectory=/data/terminal-platform/app/server
+Environment=ETP_CONFIG=/data/terminal-platform/config.json
+ExecStart=/data/terminal-platform/venv/bin/python /data/terminal-platform/app/server/app.py
+Restart=always
+RestartSec=3
+# console_port=443 (<1024) 需绑定特权端口：eyeterm 用户经 systemd 环境能力授权
+# （2026-09-19 部署后 crash 实证：旧进程以历史高权限绑 443，restart 后 eyeterm 无
+# CAP_NET_BIND_SERVICE 即 PermissionError —— 修复必须留在模板，防部署复发）
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

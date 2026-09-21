@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>自动开关机 · 独立测试页｜观枢终端平台 EyeTerm</title>
+    <style>
+        :root {
+            --bg: #10131b; --bg-card: #171a23; --bg-hover: #1d212e;
+            --border: #262b3a; --text: #e8ebf2; --text-2: #8a93a5; --text-3: #5a6274;
+            --cyan: #4fc3f7; --radius: 10px;
+            color-scheme: dark;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.7 "Segoe UI", "Microsoft YaHei", sans-serif; }
+        .navbar { display: flex; align-items: center; gap: 14px; padding: 12px 22px; background: var(--bg-card); border-bottom: 1px solid var(--border); }
+        .navbar .nav-title { font-weight: 700; font-size: 15px; }
+        .navbar .nav-tag { font-size: 11.5px; color: var(--text-2); border: 1px solid var(--border); border-radius: 12px; padding: 1px 10px; }
+        /* STYLE.md §9：流式宽度，max-width 用大断点 */
+        .main-content { max-width: 1600px; margin: 0 auto; padding: 18px 20px 60px; }
+        .page-header h2 { margin: 6px 0 2px; font-size: 19px; }
+        .page-subtitle { margin: 0 0 14px; color: var(--text-2); font-size: 12.5px; }
+        .section-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 14px; }
+        .card-header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+        .card-header h3 { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--cyan); letter-spacing: .5px; flex: 0 0 auto; }
+        .card-body { padding: 15px 17px; }
+        .nd-btn { background: var(--bg-hover); color: var(--cyan); border: 1px solid var(--border); border-radius: 8px; padding: 6px 14px; cursor: pointer; font-size: 12.5px; }
+        .nd-btn:hover { border-color: var(--cyan); }
+        .nd-btn:disabled { opacity: .45; cursor: default; }
+        .nd-btn.primary { background: rgba(79,195,247,.14); }
+        .nd-badge { display: inline-block; border: 1px solid; border-radius: 20px; padding: 1px 10px; font-size: 11.5px; vertical-align: 1px; white-space: nowrap; }
+        .nd-ok { color: #66bb6a; border-color: rgba(102,187,106,.5); background: rgba(102,187,106,.1); }
+        .nd-warn { color: #ffb74d; border-color: rgba(255,183,77,.5); background: rgba(255,183,77,.1); }
+        .nd-err { color: #ef5350; border-color: rgba(239,83,80,.5); background: rgba(239,83,80,.1); }
+        .nd-muted { color: var(--text-2); border-color: var(--border); background: var(--bg-hover); }
+        .nd-hint { color: var(--text-2); font-size: 12px; }
+        .nd-empty { color: var(--text-3); font-size: 12.5px; padding: 10px 0; }
+        .nd-summary { margin: 0 0 10px; line-height: 1.6; font-size: 12px; color: var(--text-2); }
+        .hm-row { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: 12.5px; border-bottom: 1px dashed rgba(42,47,69,.6); }
+        .hm-row:last-child { border-bottom: none; }
+        .hm-row-label { color: var(--text-2); flex-shrink: 0; }
+        .hm-row-value { color: var(--text); text-align: right; word-break: break-all; }
+        .nd-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 6px 0; }
+        .nd-table th, .nd-table td { border-bottom: 1px solid rgba(42,47,69,.55); padding: 5px 9px; text-align: left; }
+        .nd-table th { color: var(--text-2); font-weight: 600; background: rgba(255,255,255,.02); border-bottom: 1px solid var(--border); }
+        .nd-table tbody tr:nth-child(even) { background: rgba(255,255,255,.015); }
+        .nd-num { font-variant-numeric: tabular-nums; }
+        .nd-statusbar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 14px; flex-wrap: wrap; }
+        .nd-statusbar b { font-size: 13.5px; font-weight: 600; color: var(--cyan); letter-spacing: .5px; }
+        .nd-statusbar .sb-value { color: var(--text-2); font-size: 12.5px; }
+        .pc-err { color: #ef9a9a; font-size: 11.5px; min-height: 16px; }
+        /* P1 配置卡表单（对齐主应用 tab 样式块） */
+        .pc-form-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; flex-wrap: wrap; }
+        .pc-form-label { color: var(--text-2); font-size: 12.5px; min-width: 64px; flex-shrink: 0; }
+        #pcBootTime, #pcSdTime, #pcCenterTime { width: 92px; text-align: center; }
+        #pcBootDate, #pcSdDate, #pcCenterDate { width: 130px; }
+        .nd-input, .nd-select { background: var(--bg-hover); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 12.5px; }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <span class="nav-title">观枢终端平台｜EyeTerm</span>
+        <span class="nav-tag">自动开关机 · 独立测试页</span>
+    </div>
+    <div class="main-content">
+        <div class="page-header">
+            <h2>自动开关机</h2>
+            <p class="page-subtitle">查看这台电脑的定时开机与关机配置状态（本页仅读取，不会改动设置）</p>
+        </div>
+
+        <div class="nd-statusbar">
+            <b>本机快照</b>
+            <span class="nd-badge nd-muted" id="pcMachineBadge">—</span>
+            <span class="nd-badge nd-warn" id="pcCapBadge">检测中</span>
+            <span class="nd-badge nd-warn" id="pcWriteBadge" style="display:none">写入：—</span>
+            <span class="sb-value">采集时间：<span id="pcCollectTime">—</span></span>
+            <button class="nd-btn primary" id="pcBtnRefresh" onclick="pcLoadSnapshot()">刷新快照</button>
+        </div>
+        <div class="nd-hint" id="pcPolicyLine" style="display:none; margin:-2px 0 8px 2px"></div>
+        <div class="pc-err" id="pcErr"></div>
+
+        <section class="section-card">
+            <div class="card-header"><h3>BIOS 定时开机</h3></div>
+            <div class="card-body" id="pcBiosBody">
+                <div class="nd-empty">正在读取本机配置…</div>
+            </div>
+        </section>
+
+        <section class="section-card" id="pcCenterCard">
+            <div class="card-header"><h3>定时开机（中心任务）</h3>
+                <span class="nd-badge nd-muted" id="pcCenterConnBadge" style="display:none">检测连接…</span>
+                <button class="nd-btn" id="pcBtnCenterRefresh" onclick="pcLoadCenter()" style="margin-left:auto">刷新任务</button>
+            </div>
+            <div class="card-body" id="pcCenterBody">
+                <div class="nd-empty">正在检查中心连接…</div>
+            </div>
+        </section>
+
+        <section class="section-card" id="pcShutdownCard">
+            <div class="card-header"><h3>定时关机</h3></div>
+            <div class="card-body">
+                <div class="hm-row" style="margin-bottom:6px">
+                    <span class="hm-row-label">平台管理任务</span>
+                    <span class="hm-row-value" id="pcSdCurrent">—</span>
+                </div>
+                <div class="pc-form-row">
+                    <span class="pc-form-label">关机时刻</span>
+                    <input class="nd-input" type="time" id="pcSdTime" autocomplete="off">
+                </div>
+                <div class="pc-form-row">
+                    <span class="pc-form-label">重复周期</span>
+                    <select class="nd-select" id="pcSdMode" onchange="pcOnSdModeChange()">
+                        <option value="daily">每天</option>
+                        <option value="workday">工作日（周一至周五）</option>
+                        <option value="single">指定日期（单次）</option>
+                    </select>
+                    <input class="nd-input" type="date" id="pcSdDate" style="display:none" autocomplete="off">
+                </div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px">
+                    <button class="nd-btn primary" id="pcBtnSdSave" onclick="pcSaveShutdown()">保存并启用</button>
+                    <button class="nd-btn" id="pcBtnSdToggle" onclick="pcToggleShutdown()">停用</button>
+                    <button class="nd-btn" id="pcBtnSdRemove" onclick="pcRemoveShutdown()">删除</button>
+                    <span class="nd-hint" id="pcSdTip"></span>
+                </div>
+                <div class="pc-form-row" style="margin-top:12px">
+                    <span class="pc-form-label">当前关机任务</span>
+                </div>
+                <div id="pcSdTasksBody">
+                    <div class="nd-empty">正在读取本机配置…</div>
+                </div>
+                <div class="nd-hint" style="margin-top:8px">到点后系统将倒计时 60 秒执行关机（本版本暂无关机前提醒弹窗）。</div>
+            </div>
+        </section>
+    </div>
+    <script src="powercontrol.js"></script>
+    <script>
+    // 独立页打开即采集（主应用中由 switchTab 守卫触发 initPowerControlTab）
+    function __pcBoot() {
+        setTimeout(pcLoadSnapshot, 0);
+        setTimeout(pcLoadCenter, 0);
+    }
+    if (document.readyState === "complete") { __pcBoot(); }
+    else { window.addEventListener("load", __pcBoot); }
+    </script>
+</body>
+</html>

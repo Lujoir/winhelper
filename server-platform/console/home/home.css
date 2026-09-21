@@ -1,0 +1,325 @@
+/* 观枢终端平台 · 控制台「首页」样式（home-console-dev）
+ * **基线：控制台统一规范**（index.html 的 .section / .cfg-grid / .card）——
+ *   容器 .section（padding 16px 20px）+ 网格 .cfg-grid（auto-fit / 340px 下限 / gap 14px）；
+ *   卡片对齐 .card：**无卡头分隔线、标题 14px var(--txt2) 600、内边距 16px 18px**。
+ * 2026-09-19 变更：原基线为 net-doctor/docs/STYLE.md（13.5px cyan 卡头 + 分隔线 +
+ *   自建 .page-home-wrap/.home-grid 容器 + 15px 17px 内边距），与「系统管理」等页面
+ *   视觉不一致（两套规范并存），经用户指出后改为复用控制台标准容器与卡片规范。
+ * 保留的首页专有结构：.hc-head/.hc-body 分离（支撑骨架/错误/空三态与 keepAlive
+ *   交互卡）、键值行 dashed 底线、hc-* 状态类 —— 这些是功能需要，非样式分歧。
+ * 色板：控制台全局 CSS 变量（--panel/--line/--txt/--acc...）。 */
+
+/* 容器与网格改用标准类 .section / .cfg-grid（HTML 侧已切换）。
+ * 原 .page-home-wrap / .home-grid 已删除 —— 二者与 .section/.cfg-grid 功能重复
+ * 且参数不一致（330 vs 340 / auto-fill vs auto-fit / 有无 16px 20px 内边距），
+ * 正是"两套规范"的根源。 */
+
+.home-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.home-toolbar h2 {
+  font-size: 14px;
+  color: var(--txt0);
+  margin: 0;
+  font-weight: 600;
+}
+
+.home-toolbar .sub {
+  color: var(--txt2);
+  font-size: 12px;
+}
+
+/* ---------- 卡片（对齐控制台 .card 规范） ---------- */
+
+.home-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* 卡头：**无分隔线 + 灰色标题**，对齐 .card h2（14px / var(--txt2) / 600）。
+ * 上内边距 16px 与 .card 对齐；标题下方间距交给 h3 的 margin-bottom:12px，
+ * 合起来与 .card(padding:16px 18px) + .card h2(margin-bottom:12px) 视觉等价。 */
+.hc-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 18px 0;
+}
+
+.hc-head h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--txt2);
+  margin: 0 0 12px;
+}
+
+.hc-tag {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--txt2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 0 8px;
+  line-height: 18px;
+}
+
+/* 卡体：上内边距归零（标题间距已由 h3 margin 提供），左右/下与 .card 对齐 */
+.hc-body {
+  padding: 0 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+}
+
+.hc-summary {
+  font-size: 12px;
+  color: var(--txt2);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.hc-note {
+  font-size: 12px;
+  color: var(--txt2);
+  background: var(--panel2);
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 7px 10px;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 键值行（hm-row 同构：左标签右值 + dashed 底线） ---------- */
+
+.hc-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.hc-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 12.5px;
+  border-bottom: 1px dashed rgba(42, 47, 69, .6);
+}
+
+.hc-row:last-child {
+  border-bottom: none;
+}
+
+.hc-row .hc-k {
+  color: var(--txt2);
+  flex-shrink: 0;
+}
+
+.hc-row .hc-v {
+  color: var(--txt0);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-row .hc-v b {
+  font-weight: 600;
+}
+
+/* ---------- 直达按钮 ---------- */
+
+.hc-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+/* ---------- 空态 / 错误态 / 加载态 ---------- */
+
+.hc-empty {
+  color: var(--txt2);
+  font-size: 12.5px;
+  padding: 10px 0;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hc-empty .hc-empty-sub {
+  font-size: 11px;
+  color: #6e7681;
+}
+
+.hc-empty-err {
+  color: var(--err);
+}
+
+.hc-loading {
+  display: flex;
+  gap: 6px;
+  padding: 10px 0;
+}
+
+.hc-loading i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--line);
+  animation: hcblink 1.2s infinite ease-in-out;
+}
+
+.hc-loading i:nth-child(2) { animation-delay: .2s; }
+.hc-loading i:nth-child(3) { animation-delay: .4s; }
+
+@keyframes hcblink {
+  0%, 80%, 100% { opacity: .3; }
+  40% { opacity: 1; background: var(--acc); }
+}
+
+/* ---------- 宽度降级 ---------- */
+
+/* 网格降级由 .cfg-grid 的 `repeat(auto-fit, minmax(340px, 1fr))` 自适应承担：
+ * 视口变窄 → 列数自动减少 → 单列。原 @media 断点覆盖 .home-grid 已随该类删除。 */
+
+/* ---------- 资产定位卡（asset-locate，asset-mgmt-dev；键值行复用 hc-*） ---------- */
+
+.al-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.al-input-row input {
+  flex: 1;
+  min-width: 0;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  color: var(--txt0);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 12.5px;
+}
+
+.al-input-row input:focus {
+  outline: none;
+  border-color: var(--acc);
+}
+
+.al-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.al-sec-t {
+  font-size: 12px;
+  color: var(--txt2);
+  letter-spacing: .5px;
+}
+
+.al-name {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--txt0);
+}
+
+.al-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: 1px;
+}
+
+.al-on { background: var(--ok); }
+.al-off { background: #6e7681; }
+
+.al-warn {
+  font-size: 11.5px;
+  color: var(--warn);
+  background: rgba(240, 183, 47, .1);
+  border: 1px solid rgba(240, 183, 47, .35);
+  border-radius: 8px;
+  padding: 6px 9px;
+  line-height: 1.6;
+}
+
+.al-badge {
+  display: inline-block;
+  font-size: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 6px;
+  line-height: 16px;
+  margin-left: 4px;
+  color: var(--txt2);
+}
+
+.al-ai-badge {
+  display: inline-block;
+  font-size: 10px;
+  color: var(--acc);
+  border: 1px solid var(--acc);
+  border-radius: 8px;
+  padding: 0 6px;
+  line-height: 16px;
+}
+
+.al-ai-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--txt0);
+  margin-left: 6px;
+}
+
+.al-ai-text {
+  font-size: 12px;
+  color: var(--txt0);
+  line-height: 1.6;
+  margin-top: 3px;
+}
+
+.al-ai-ev {
+  font-size: 11px;
+  color: var(--txt2);
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.al-ai-sub {
+  font-size: 11px;
+  color: #6e7681;
+  line-height: 1.5;
+}
+
+.al-ai-block {
+  border-top: 1px dashed rgba(42, 47, 69, .6);
+  padding-top: 6px;
+}
+
+.al-ai-block + .al-ai-block {
+  margin-top: 6px;
+}
+
+.al-sub {
+  font-size: 11px;
+  color: #6e7681;
+  line-height: 1.5;
+}

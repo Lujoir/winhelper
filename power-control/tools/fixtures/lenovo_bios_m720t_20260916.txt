@@ -1,0 +1,329 @@
+﻿== EyeTerm Lenovo BIOS 鍙鎺㈡煡 ==
+鏃堕棿: 2026-09-16 18:25:37
+鏄惁绠＄悊鍛? True
+
+== 1. 鏈哄瀷淇℃伅 ==
+Manufacturer : LENOVO
+Model        : 10SWA03ECD
+SystemFamily : ThinkCentre M720t-D234
+SystemSKU    : LENOVO_MT_10SW_BU_Think_FM_ThinkCentre M720t-D234
+BIOS 鐗堟湰    : M1YKT56A  (12/10/2019 08:00:00)
+
+== 2. root\wmi 涓?Lenovo* 绫绘竻鍗曪紙浼佷笟绾挎帴鍙ｆ槸鍚﹀瓨鍦級 ==
+Lenovo_BatteryInformation
+Lenovo_BIOSElement
+Lenovo_BiosPasswordSettings
+Lenovo_BiosSetting
+Lenovo_DiscardBiosSettings
+Lenovo_LoadDefaultSettings
+Lenovo_PreloadLanguage
+Lenovo_SaveBiosSettings
+Lenovo_SetBiosPassword
+Lenovo_SetBiosSetting
+Lenovo_SetPreloadLanguage
+Lenovo_WmiOpcodeInterface
+
+== 3. 缁撹锛氭爣鍑?BIOS 璁剧疆鎺ュ彛 Lenovo_BiosSetting 瀛樺湪 = True ==
+
+== 4. BIOS 璁剧疆鍏ㄩ噺锛堟牸寮忥細椤瑰悕,褰撳墠鍊硷級 ==
+鎬婚」鏁? 255
+Serial Port1 Address,3F8/IRQ4;[Optional:3F8/IRQ4,2F8/IRQ3,3E8/IRQ4,2E8/IRQ3,Disabled]
+
+
+
+
+
+USBPortAccess,Enabled;[Optional:Disabled,Enabled]
+USBBIOSSupport,Enabled;[Optional:Enabled,Disabled]
+USB Enumeration Delay,Disabled;[Optional:Disabled,Enabled]
+Front USB Ports,Enabled;[Optional:Disabled,Enabled]
+USB Port 1,Enabled;[Optional:Disabled,Enabled]
+USB Port 2,Enabled;[Optional:Disabled,Enabled]
+USB Port 3,Enabled;[Optional:Disabled,Enabled]
+USB Port 4,Enabled;[Optional:Disabled,Enabled]
+USB Port 9,Enabled;[Optional:Disabled,Enabled]
+USB Port 10,Enabled;[Optional:Disabled,Enabled]
+Rear USB Ports,Enabled;[Optional:Disabled,Enabled]
+USB Port 5,Enabled;[Optional:Disabled,Enabled]
+USB Port 6,Enabled;[Optional:Disabled,Enabled]
+USB Port 7,Enabled;[Optional:Disabled,Enabled]
+USB Port 8,Enabled;[Optional:Disabled,Enabled]
+SATA Controller,Enabled;[Optional:Disabled,Enabled]
+SATA Drive 1,Enabled;[Optional:Disabled,Enabled]
+SATA Drive 2,Enabled;[Optional:Disabled,Enabled]
+SATA Drive 3,Enabled;[Optional:Disabled,Enabled]
+SATA Drive 3 Hot-Plug Support,Disabled;[Optional:Disabled,Enabled]
+Configure SATA as,AHCI;[Optional:AHCI,Intel(R) RST with Intel(R) Optane]
+Hard Disk Pre-delay,Disabled;[Optional:Disabled,3 Seconds,6 Seconds,9 Seconds,12 Seconds,15 Seconds,21 Seconds,30 Seconds]
+Select Active Video,Auto;[Optional:IGD,PEG,Auto]
+
+
+Onboard Audio Controller,Enabled;[Optional:Disabled,Enabled]
+Internal Speaker,Enabled;[Optional:Disabled,Enabled]
+Onboard Ethernet Controller,Enabled;[Optional:Disabled,Enabled]
+PXE Option ROM,Enabled;[Optional:Disabled,Enabled]
+PXE IPV4 network stack,Enabled;[Optional:Disabled,Enabled]
+PXE IPV6 network stack,Enabled;[Optional:Disabled,Enabled]
+
+PCIe 16x Slot Speed,Auto;[Optional:Auto,Gen1,Gen2,Gen3]
+PCIe 1x Slot 1 Speed,Auto;[Optional:Auto,Gen1,Gen2,Gen3]
+PCIe 1x Slot 2 Speed,Auto;[Optional:Auto,Gen1,Gen2,Gen3]
+
+
+EIST Support,Enabled;[Optional:Disabled,Enabled]
+
+Core Multi-Processing,Enabled;[Optional:Enabled,Disabled]
+VirtualizationTechnology,Enabled;[Optional:Disabled,Enabled]
+VTdFeature,Enabled;[Optional:Disabled,Enabled]
+C1E Support,Enabled;[Optional:Disabled,Enabled]
+C State Support,C1C3C6C7C8;[Optional:C1,C1C3,C1C3C6,C1C3C6C7,C1C3C6C7C8]
+Turbo Mode,Enabled;[Optional:Disabled,Enabled]
+Intel(R) SGX Control,Software Controlled;[Optional:Disabled,Enabled,Software Controlled]
+Dust Shield Alert,Disabled;[Optional:Disabled,Enabled]
+Intel(R) DPTF Support,Disabled;[Optional:Disabled,Enabled]
+After Power Loss,Last State;[Optional:Power Off,Power On,Last State]
+Enhanced Power Saving Mode,Disabled;[Optional:Disabled,Enabled]
+WakeOnLAN,Automatic;[Optional:Primary,Automatic,Disabled]
+Wake from Serial Port Ring,Primary;[Optional:Primary,Automatic,Disabled]
+Wake Up on Alarm,Daily Event;[Optional:Single Event,Daily Event,Weekly Event,Disabled,User Defined]
+Startup Sequence,Primary;[Optional:Primary,Automatic]
+Alarm Time(HH:MM:SS),[08:00:00]
+Alarm Date(MM/DD/YYYY),[01/01/2017][Status:ShowOnly]
+Alarm Day of Week,Sunday;[Optional:Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday][Status:ShowOnly]
+Sunday,Disabled;[Optional:Disabled,Enabled][Status:ShowOnly]
+Monday,Disabled;[Optional:Disabled,Enabled][Status:ShowOnly]
+Tuesday,Disabled;[Optional:Disabled,Enabled][Status:ShowOnly]
+Wednesday,Disabled;[Optional:Disabled,Enabled][Status:ShowOnly]
+Thursday,Disabled;[Optional:Disabled,Enabled][Status:ShowOnly]
+Friday,Disabled;[Optional:Disabled,Enabled][Status:ShowOnly]
+Saturday,Disabled;[Optional:Disabled,Enabled][Status:ShowOnly]
+User Defined Alarm Time(HH:MM:SS),[00:00:00][Status:ShowOnly]
+SecureRollBackPrevention,Enabled;[Optional:Disabled,Enabled]
+Require Admin. Pass. when Flashing,No;[Optional:No,Yes]
+WindowsUEFIFirmwareUpdate,Enabled;[Optional:Disabled,Enabled]
+BIOSPasswordAtUnattendedBoot,Enabled;[Optional:Disabled,Enabled]
+BIOSPasswordAtReboot,Disabled;[Optional:Disabled,Enabled]
+
+BIOSPasswordAtBootDeviceList,Disabled;[Optional:Disabled,Enabled]
+Smart USB Protection,Disabled;[Optional:Disabled,Read Only,No Access]
+Require HDP on System Boot,Auto;[Optional:No,Auto]
+SecurityChip,Enabled;[Optional:Disabled,Enabled]
+Clear TCG Security Feature,No;[Optional:No,Yes]
+SecureBoot,Disabled;[Optional:Disabled,Enabled]
+ComputraceModuleActivation,Permanently Disabled;[Optional:Disabled,Enabled,Permanently Disabled][Status:ShowOnly]
+DeviceGuard,Disabled;[Optional:Disabled,Enabled]
+
+CoverTamperDetected,Disabled;[Optional:Disabled,Enabled]
+Configuration Change Detection,Disabled;[Optional:Disabled,Enabled]
+PasswordCountExceededError,Enabled;[Optional:Disabled,Enabled]
+CSM,Disabled;[Optional:Disabled,Enabled]
+Boot Mode,UEFI Only;[Optional:Auto,Legacy Only,UEFI Only][Status:ShowOnly]
+
+Boot Up Num-Lock Status,On;[Optional:Off,On]
+
+
+Startup Device Menu Prompt,Enabled;[Optional:Disabled,Enabled]
+OS Optimized Defaults,Enabled;[Optional:Disabled,Enabled]
+Primary Boot Sequence,M.2 Drive:SATA 1:SATA 2:SATA 3:Network 1:USB HDD:USB CDROM:Other Device;[Excluded from boot order:Network 2:Network 3:Network 4]
+Error Boot Sequence,M.2 Drive:SATA 1:SATA 2:SATA 3:Other Device:Network 1;[Excluded from boot order:Network 2:Network 3:Network 4:USB HDD:USB CDROM]
+Automatic Boot Sequence,M.2 Drive:SATA 1:SATA 2:SATA 3:Other Device:Network 1;[Excluded from boot order:Network 2:Network 3:Network 4:USB HDD:USB CDROM]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+== 5. RTC/瀹氭椂寮€鏈?鐢垫簮鐩稿叧椤癸紙杩囨护瑙嗗浘锛?==
+[鐩稿叧] After Power Loss,Last State;[Optional:Power Off,Power On,Last State]
+[鐩稿叧] WakeOnLAN,Automatic;[Optional:Primary,Automatic,Disabled]
+[鐩稿叧] Wake from Serial Port Ring,Primary;[Optional:Primary,Automatic,Disabled]
+[鐩稿叧] Wake Up on Alarm,Daily Event;[Optional:Single Event,Daily Event,Weekly Event,Disabled,User Defined]
+[鐩稿叧] Startup Sequence,Primary;[Optional:Primary,Automatic]
+[鐩稿叧] Alarm Time(HH:MM:SS),[08:00:00]
+[鐩稿叧] Alarm Date(MM/DD/YYYY),[01/01/2017][Status:ShowOnly]
+[鐩稿叧] Alarm Day of Week,Sunday;[Optional:Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday][Status:ShowOnly]
+[鐩稿叧] User Defined Alarm Time(HH:MM:SS),[00:00:00][Status:ShowOnly]
+[鐩稿叧] Automatic Boot Sequence,M.2 Drive:SATA 1:SATA 2:SATA 3:Other Device:Network 1;[Excluded from boot order:Network 2:Network 3:Network 4:USB HDD:USB CDROM]
+
+== 6. BIOS 瀵嗙爜鐘舵€?==
+0
+
+== 8. 鍐欏叆鎺ュ彛 Lenovo_SetBiosSetting 瀛樺湪锛堟湰娆℃湭浣跨敤锛?==
+
+== 9. 鐢垫簮鐘舵€侊紙蹇€熷惎鍔?/ 浼戠湢鑳藉姏锛?==
+HiberbootEnabled 閿笉瀛樺湪
+--- powercfg /a ---
+此系统上有以下睡眠状态:
+    待机 (S3)
+    休眠
+    混合睡眠
+    快速启动
+
+此系统上没有以下睡眠状态:
+    待机 (S1)
+	系统固件不支持此待机状态。
+
+    待机 (S2)
+	系统固件不支持此待机状态。
+
+    待机(S0 低电量待机)
+	系统固件不支持此待机状态。
+
+== 10. 娲诲姩鍞ら啋瀹氭椂鍣紙powercfg /waketimers锛岄渶绠＄悊鍛橈級 ==
+[SERVICE] \Device\HarddiskVolume4\Windows\System32\svchost.exe (SystemEventsBroker) 设置的计时器在 18:48:18 过期(位于 2026/9/16 上)。
+  原因: Windows 将执行“NT TASK\Microsoft\Windows\UpdateOrchestrator\Reboot_AC”计划的任务，该任务请求唤醒计算机。
+
+== 11. 鍚叧鏈哄姩浣滅殑璁″垝浠诲姟锛坰chtasks 鍙鏌ヨ锛?==
+(鏃犲惈 shutdown/鍏虫満 鍔ㄤ綔鐨勪换鍔?
+
+== 鎺㈡煡缁撴潫锛堟湰鑴氭湰鍏ㄧ▼鍙锛?==

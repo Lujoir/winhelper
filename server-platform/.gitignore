@@ -1,0 +1,30 @@
+# 本地开发配置与数据（含 token/口令，禁止入库）
+config.local.json
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 备份与产物
+backups/
+dist/
+*.log
+
+# 凭据类临时文件（任何情况下不得入库）
+*.token
+*.secret
+.env
+.prod_ssh.json
+
+# 证书与私钥（私钥任何情况下不得入库；证书由部署/本地流程管理）
+*.key
+*.crt
+debugcerts/
+spike2_certs/
+deploy/certs/

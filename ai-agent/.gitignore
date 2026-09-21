@@ -10,3 +10,6 @@ tmp/*
 memory/*/STATE.json
 memory/*/SESSION.jsonl
 memory/*/archive/*
+
+# 子仓 .git 备份（结构合并取证用，不入库）
+backup/

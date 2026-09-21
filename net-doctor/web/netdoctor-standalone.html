@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>网络排障 · 独立测试页｜观枢终端平台 EyeTerm</title>
+    <style>
+        /* 独立测试页自包含样式（与主应用深色风格一致） */
+        :root {
+            --bg: #10131b; --bg-card: #171a23; --bg-hover: #1d212e;
+            --border: #262b3a; --text: #e8ebf2; --text-2: #8a93a5; --text-3: #5a6274;
+            --cyan: #4fc3f7; --radius: 10px;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.7 "Segoe UI", "Microsoft YaHei", sans-serif; }
+        .navbar { display: flex; align-items: center; gap: 14px; padding: 12px 22px; background: var(--bg-card); border-bottom: 1px solid var(--border); }
+        .navbar .nav-title { font-weight: 700; font-size: 15px; }
+        .navbar .nav-tag { font-size: 11.5px; color: var(--text-2); border: 1px solid var(--border); border-radius: 12px; padding: 1px 10px; }
+        .main-content { max-width: 1600px; margin: 0 auto; padding: 18px 20px 60px; }
+        .page-header h2 { margin: 6px 0 2px; font-size: 19px; }
+        .page-subtitle { margin: 0 0 14px; color: var(--text-2); font-size: 12.5px; }
+        .section-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 14px; }
+        /* 卡片折叠（2026-09-11 五模块卡默认收起，独立页等效主应用机制） */
+        .section-card[data-collapse] > .card-header { cursor: pointer; user-select: none; }
+        .section-card[data-collapse] > .card-header:hover h3 { color: var(--cyan); }
+        .section-card.collapsed > *:not(.card-header) { display: none !important; }
+        .section-card.collapsed > .card-header { border-bottom: none; }
+        .nd-chevron { display: inline-flex; align-items: center; color: var(--text-2); font-size: 13px; transition: transform .2s ease; }
+        .section-card.collapsed .nd-chevron { transform: rotate(-90deg); }
+        .card-header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+        .card-header h3 { margin: 0; font-size: 14px; flex: 0 0 auto; }
+        .card-body { padding: 12px 16px 16px; }
+        .nd-btn { background: var(--bg-hover); color: var(--cyan); border: 1px solid var(--border); border-radius: 8px; padding: 6px 14px; cursor: pointer; font-size: 12.5px; }
+        .nd-btn:hover { border-color: var(--cyan); }
+        .nd-btn:disabled { opacity: .45; cursor: default; }
+        .nd-btn.primary { background: rgba(79,195,247,.14); }
+        .nd-btn-danger { border-color: rgba(224, 82, 82, .6); color: var(--err); }
+        .nd-btn-danger:hover { border-color: var(--err); color: var(--err); }
+        /* uiConfirm 内联副本样式（主应用 style.css 同步；按钮走 nd-btn 体系适配独立页） */
+        .ui-confirm-mask { position: fixed; inset: 0; z-index: 1200; background: rgba(6,8,12,.72); display: flex; align-items: center; justify-content: center; }
+        .ui-confirm-card { width: min(420px, 88vw); background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 12px 44px rgba(0,0,0,.55); overflow: hidden; }
+        .ui-confirm-head { padding: 16px 18px 0; }
+        .ui-confirm-head h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--text); }
+        .ui-confirm-body { padding: 10px 18px 4px; font-size: 13px; line-height: 1.7; color: var(--text-2); white-space: pre-line; word-break: break-word; max-height: 50vh; overflow: auto; }
+        .ui-confirm-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 18px 16px; }
+        .ui-confirm-btn { min-width: 76px; }
+        .ui-confirm-ok-danger { background: #e57373 !important; border-color: #e57373 !important; color: #fff !important; }
+        .ui-confirm-ok-danger:hover { background: #ef8a8a !important; }
+        .nd-input, .nd-select { background: var(--bg-hover); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 12.5px; }
+        .nd-badge { display: inline-block; border: 1px solid; border-radius: 20px; padding: 1px 10px; font-size: 11.5px; vertical-align: 1px; white-space: nowrap; }
+        .nd-ok { color: #66bb6a; border-color: rgba(102,187,106,.5); background: rgba(102,187,106,.1); }
+        .nd-warn { color: #ffb74d; border-color: rgba(255,183,77,.5); background: rgba(255,183,77,.1); }
+        .nd-err { color: #ef5350; border-color: rgba(239,83,80,.5); background: rgba(239,83,80,.1); }
+        .nd-info { color: #4fc3f7; border-color: rgba(79,195,247,.5); background: rgba(79,195,247,.1); }
+        .nd-muted { color: var(--text-2); border-color: var(--border); background: var(--bg-hover); }
+        .nd-hint { color: var(--text-2); font-size: 11.5px; }
+        .nd-empty { color: var(--text-3); font-size: 12.5px; padding: 10px 0; }
+        /* AI 诊断卡排版对齐主应用终端概览三卡（2026-09-11，等效基线：独立页无 home 家族，
+           hm-row 三类为对齐补充定义）；五模块卡同基线（nd-styled，规格见 net-doctor/docs/STYLE.md） */
+        .hm-row { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: 12.5px; border-bottom: 1px dashed rgba(42,47,69,.6); }
+        .hm-row-label { color: var(--text-2); flex-shrink: 0; }
+        .hm-row-value { color: var(--text); }
+        .nd-ai-card .card-header h3, .nd-styled .card-header h3 { font-size: 13.5px; font-weight: 600; color: var(--cyan); letter-spacing: .5px; }
+        .nd-ai-card .card-body, .nd-styled .card-body { padding: 15px 17px; }
+        .nd-ai-card .nd-summary, .nd-styled .nd-summary { margin: 0 0 10px; line-height: 1.6; }
+        .nd-ai-card .nd-hint, .nd-styled .nd-hint { font-size: 12px; }
+        .nd-ai-card .nd-ai-issue { background: var(--panel2, #1d212e); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; line-height: 1.6; }
+        .nd-ai-card .nd-ai-row { margin: 10px 0 6px; }
+        .nd-kv { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; font-size: 12.5px; margin: 0; border-bottom: 1px dashed rgba(42,47,69,.6); }
+        .nd-kv:last-child { border-bottom: none; }
+        .nd-kv .k { color: var(--text-2); flex-shrink: 0; }
+        .nd-table th { color: var(--text-2); font-weight: 600; background: rgba(255,255,255,.02); border-bottom: 1px solid var(--border); }
+        .nd-table tbody tr:nth-child(even) { background: rgba(255,255,255,.015); }
+        .nd-table td { border: none; border-bottom: 1px solid rgba(42,47,69,.55); }
+        .nd-summary { font-size: 12px; color: var(--text-2); margin-top: 8px; min-height: 16px; word-break: break-all; }
+        .nd-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 6px 0; }
+        .nd-table th, .nd-table td { border: 1px solid var(--border); padding: 5px 9px; text-align: left; }
+        .nd-table th { background: var(--bg-hover); color: var(--text-2); font-weight: 600; white-space: nowrap; }
+        .nd-num { font-variant-numeric: tabular-nums; }
+        .nd-statusbar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 14px; flex-wrap: wrap; }
+        .nd-adapter { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; background: rgba(255,255,255,.02); }
+        .nd-adapter.nd-dim { opacity: .6; }
+        .nd-adapter-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+        .nd-kv { display: grid; grid-template-columns: 84px 1fr; gap: 2px 10px; font-size: 12.5px; margin: 2px 0; }
+        .nd-kv .k { color: var(--text-2); }
+        .nd-check-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 12.5px; flex-wrap: wrap; }
+        .nd-gate { border: 1px dashed rgba(239,83,80,.45); color: #ef9a9a; background: rgba(239,83,80,.06); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; margin-bottom: 10px; }
+        .nd-evlist { margin: 4px 0 8px; padding-left: 20px; font-size: 12.5px; color: var(--text-2); }
+        .nd-ai { border: 1px solid var(--border); border-left: 3px solid var(--cyan); border-radius: 8px; padding: 8px 12px; margin-top: 10px; font-size: 12.5px; }
+        .nd-pre { margin: 6px 0 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; color: var(--text); font-family: inherit; }
+        /* 压测进度条 · 2026-09-10（青色填充+斜纹流动+段完成微闪+三态终态） */
+        .nd-progress { margin: 8px 0; }
+        .nd-progress-head { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-2); margin-bottom: 4px; }
+        .nd-progress-bar { height: 10px; border-radius: 6px; background: rgba(255,255,255,.06); overflow: hidden; }
+        .nd-progress-fill { height: 100%; width: 0%; border-radius: 6px; background: linear-gradient(90deg, var(--cyan), #2f9ce0); transition: width .6s ease; }
+        .nd-progress-fill.stripes { background-image: linear-gradient(45deg, rgba(255,255,255,.14) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.14) 50%, rgba(255,255,255,.14) 75%, transparent 75%, transparent); background-size: 18px 18px; animation: ndStripes 1s linear infinite; }
+        @keyframes ndStripes { from { background-position: 0 0; } to { background-position: 18px 0; } }
+        .nd-progress-fill.flash { animation: ndFlash .4s ease 1, ndStripes 1s linear infinite; }
+        @keyframes ndFlash { 50% { opacity: .35; } }
+        .nd-progress.done .nd-progress-fill { background: #43a047; }
+        .nd-progress.cancelled .nd-progress-fill { background: #757575; }
+        .nd-progress.failed .nd-progress-fill { background: #e05252; }
+        /* IP 冲突深度检测 · 2026-09-10 对接平台编排时间线（契约 9e604a7+cc34bae） */
+        .nd-steps { margin: 8px 0 2px; }
+        .nd-step { border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; margin: 6px 0; background: rgba(255,255,255,.015); }
+        .nd-step-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .nd-cmds summary { cursor: pointer; font-size: 12px; color: var(--text-2); }
+        .nd-cmds { margin-top: 6px; }
+        .nd-evlist code { font-family: Consolas, monospace; font-size: 11.5px; color: var(--text); }
+        .nd-params { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        .nd-params label { font-size: 12px; color: var(--text-2); }
+        /* AI 诊断 · 2026-09-10 六项优化（结构化结果/失败态/日志折叠/时间选择） */
+        .nd-ai-meta { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 2px; }
+        .nd-ai-sec { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin-top: 8px; font-size: 12.5px; }
+        .nd-ai-sec-cause { border-left: 3px solid var(--cyan); }
+        .nd-ai-sec-advice { border-left: 3px solid #66bb6a; }
+        .nd-ai-sec-risk { border-left: 3px solid #ffb74d; }
+        .nd-ai-sec-title { font-size: 12.5px; }
+        .nd-ai-err { border: 1px solid rgba(239,83,80,.45); background: rgba(239,83,80,.06); border-radius: 8px; padding: 10px 12px; margin-top: 8px; font-size: 12.5px; }
+        .nd-ai-logs-head { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; padding: 7px 10px; margin-top: 8px; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; color: var(--text-2); flex-wrap: wrap; }
+        .nd-ai-logs-head:hover { border-color: var(--cyan); }
+        .nd-ai-sub td:first-child { padding-left: 26px; }
+        .nd-ai-issue { padding: 10px 16px; line-height: 1.7; min-height: 84px; resize: vertical; }
+        .nd-time-select { width: 128px; }
+        .nd-time-input { width: 180px; }
+        .nd-segwrap { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+        /* AI 卡头部按钮组（2026-09-10 UX）：仅作用 AI 卡元素 */
+        #ndAiModeSeg { margin-left: auto; }
+        .nd-seg { width: 68px; height: 30px; padding: 0; text-align: center; background: transparent; color: var(--text-2); border: none; cursor: pointer; font-size: 12px; opacity: .85; }
+        .nd-seg.on { background: var(--cyan); color: #10213a; font-weight: 600; opacity: 1; }
+        #ndAiBtn { height: 30px; margin-left: 8px; background: var(--cyan); color: #10213a; font-weight: 600; border-color: transparent; }
+        #ndAiBtn:hover { background: #7bd7ff; border-color: transparent; }
+        #ndAiBtn:disabled { background: var(--bg-hover); color: var(--text-2); cursor: not-allowed; opacity: .6; }
+        /* 补采模态（2026-09-10）：应用内自绘 */
+        #ndAiCompleteOverlay { display: none; position: fixed; inset: 0; background: rgba(6,8,12,.72); z-index: 999; align-items: center; justify-content: center; }
+        .nd-modal { width: min(500px, 92vw); background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; box-shadow: 0 12px 44px rgba(0,0,0,.55); }
+        .nd-modal > b { display: block; font-size: 13.5px; margin-bottom: 6px; }
+        .nd-modal-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 12.5px; flex-wrap: wrap; }
+        /* AI 诊断结果区文本可选复制（2026-09-10 用户反馈）：仅限结果容器与历史列表，不改全局选择行为 */
+        #ndAiBody, #ndAiBody *, #ndAiHistoryBody, #ndAiHistoryBody * { user-select: text; -webkit-user-select: text; cursor: text; }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <span class="nav-title">观枢终端平台｜EyeTerm</span>
+        <span class="nav-tag">网络排障 · 独立测试页</span>
+    </nav>
+    <main class="main-content">
+        <div id="tab-netdoctor" class="tab-content active">
+            <div class="page-header">
+                <h2>网络排障</h2>
+                <p class="page-subtitle">AI 智能诊断 · 配置核查 · IP 冲突 · 连通性测试 · 路由追踪 · 网络压测</p>
+            </div>
+
+            <!-- 中心连接状态条 -->
+            <div class="nd-statusbar">
+                <b style="font-size:13px">中心平台</b>
+                <span id="ndUplinkBody"><span class="nd-hint">读取中…</span></span>
+            </div>
+
+            <!-- AI 智能诊断（2026-09-10 优化：移至模块最上 + 企业版/个人版双模式切换；2026-09-11 排版对齐概览三卡） -->
+            <div class="section-card nd-ai-card">
+                <div class="card-header">
+                    <h3>AI 智能诊断</h3>
+                    <span class="nd-segwrap" id="ndAiModeSeg">
+                        <button type="button" class="nd-seg on" id="ndAiModeEnt" onclick="ndAiSetMode('enterprise')">企业版</button>
+                        <button type="button" class="nd-seg" id="ndAiModePers" onclick="ndAiSetMode('personal')">个人版</button>
+                    </span>
+                    <span style="margin-left:auto"></span>
+                    <button class="nd-btn primary" id="ndAiBtn" onclick="ndAiSubmit()">提交诊断</button>
+                </div>
+                <div class="card-body">
+                    <div class="nd-gate" id="ndAiGate" style="display:none">未连接中心平台，功能不可用</div>
+                    <div class="nd-summary" id="ndAiSummary">填写问题概述并勾选日志类型，由平台模型链出具诊断建议（需已连接中心）</div>
+                    <div class="hm-row nd-ai-row"><span class="hm-row-label">问题概述</span>
+                        <span class="hm-row-value">≤2000 字 · 当前 <span id="ndAiIssueCount">0</span>/2000</span></div>
+                    <textarea id="ndAiIssue" class="nd-input nd-ai-issue" maxlength="2000" rows="4" style="width:100%"
+                        placeholder="请输入本机在哪个时间段出现的问题概况（如：今天上午 9-11 点频繁卡顿）"
+                        oninput="ndAiCountIssue()"></textarea>
+                    <div class="nd-ai-logs-head" id="ndAiLogsHead" onclick="ndAiToggleLogs()">
+                        <span id="ndAiLogsArrow">▸</span>
+                        <span>诊断日志（默认全选；单类超 32KB 自动截断，采集失败标「不可用」不阻断）</span>
+                        <span class="nd-hint" id="ndAiLogsAgg"></span>
+                        <span style="margin-left:auto"></span>
+                        <button class="nd-btn" id="ndAiRefreshBtn" style="display:none"
+                            onclick="event.stopPropagation(); ndAiRefreshSources()">重新探测数据源</button>
+                    </div>
+                    <div id="ndAiLogsBody" style="display:none">
+                        <table class="nd-table"><tr><th>选用</th><th>数据源</th><th>时间范围</th><th>状态</th></tr><tbody id="ndAiSourcesBody"></tbody></table>
+                    </div>
+                    <div class="nd-hint" style="margin-top:10px">本地诊断历史（最近 20 次，点击行回看）</div>
+                    <div id="ndAiHistoryBody"><div class="nd-empty">暂无历史</div></div>
+                    <div id="ndAiBody" style="margin-top:8px"><div class="nd-empty">尚未诊断</div></div>
+                </div>
+            </div>
+
+
+            <!-- ① 配置核查 -->
+            <div class="section-card nd-styled collapsed" data-collapse>
+                <div class="card-header">
+                    <h3>① 配置核查</h3>
+                    <span id="ndConfBadge"></span>
+                    <span style="margin-left:auto"></span>
+                    <button class="nd-btn primary" id="ndConfBtn" onclick="ndStartConfigCheck()">开始核查</button>
+                </div>
+                <div class="card-body">
+                    <div class="nd-summary" id="ndConfSummary"></div>
+                    <div class="nd-hint" id="ndDnsBaselineTip"></div>
+                    <div id="ndConfBody"><div class="nd-empty">尚未核查</div></div>
+                </div>
+            </div>
+
+            <!-- ② IP 冲突检测 -->
+            <div class="section-card nd-styled collapsed" data-collapse>
+                <div class="card-header">
+                    <h3>② IP 冲突检测</h3>
+                    <span style="margin-left:auto"></span>
+                    <button class="nd-btn primary" id="ndConflictBtn" onclick="ndStartConflict()">开始检测</button>
+                </div>
+                <div class="card-body">
+                    <div class="nd-gate" id="ndConflictGate" style="display:none">未连接中心平台，此功能不可用（可在「设置 · 中心平台配置」开启接入）</div>
+                    <div class="nd-summary" id="ndConflictSummary"></div>
+                    <div id="ndConflictBody"><div class="nd-empty">尚未检测</div></div>
+                </div>
+            </div>
+
+            <!-- ③ 连通性测试 -->
+            <div class="section-card nd-styled collapsed" data-collapse>
+                <div class="card-header">
+                    <h3>③ 连通性测试</h3>
+                    <span style="margin-left:auto"></span>
+                    <button class="nd-btn primary" id="ndPingBtn" onclick="ndStartPing()">开始检测</button>
+                </div>
+                <div class="card-body">
+                    <div class="nd-summary" id="ndPingSummary">按配置节点表逐区段探测（ping / DNS / NTP / TCP / UDP），结果自动留档</div>
+                    <table class="nd-table">
+                        <tr><th>节点</th><th>目标</th><th>方式</th><th>状态</th><th>延迟</th><th>丢包</th><th>说明</th><th>操作</th></tr>
+                        <tbody id="ndNodesBody"></tbody>
+                    </table>
+                    <div class="nd-params" style="margin:8px 0 2px;flex-wrap:wrap">
+                        <button class="nd-btn" id="ndNodeFormToggle" onclick="ndToggleNodeForm()">添加节点</button>
+                        <button class="nd-btn" onclick="ndResetNodes()">恢复默认节点</button>
+                    </div>
+                    <div id="ndNodeForm" style="display:none;gap:8px;flex-wrap:wrap;margin:6px 0 2px">
+                        <input id="ndNodeName" class="nd-input" type="text" placeholder="节点名称（必填）" style="width:150px">
+                        <input id="ndNodeTarget" class="nd-input" type="text" placeholder="目标，如 baidu.com:443 或 127.0.0.1" style="width:210px">
+                        <select id="ndNodeMethod" class="nd-input" style="width:110px" onchange="ndNodeMethodChange()">
+                            <option value="ping">ICMP Ping</option>
+                            <option value="tcp">TCP 连接</option>
+                            <option value="udp">UDP 探测</option>
+                            <option value="nslookup">DNS 解析</option>
+                            <option value="ntp">NTP 校时</option>
+                        </select>
+                        <input id="ndNodePort" class="nd-input" type="text" placeholder="端口（必填，1-65535）" style="width:140px;display:none">
+                        <button class="nd-btn primary" onclick="ndAddNodeSubmit()">确认添加</button>
+                        <span class="nd-hint" id="ndNodeFormTip"></span>
+                    </div>
+                    <div class="nd-hint" style="margin-top:10px">最近历史摘要（近 7 天）</div>
+                    <div id="ndHistoryBody"><div class="nd-empty">加载中…</div></div>
+                </div>
+            </div>
+
+            <!-- ④ 路由追踪 -->
+            <div class="section-card nd-styled collapsed" data-collapse>
+                <div class="card-header">
+                    <h3>④ 路由追踪</h3>
+                    <span style="margin-left:auto"></span>
+                        <input class="nd-input" id="ndTracertTarget" placeholder="请输入目标域名或IP" style="width:230px">
+                        <button class="nd-btn primary" id="ndTracertBtn" onclick="ndStartTracert()">开始追踪</button>
+                        <button class="nd-btn primary" id="ndTraceAiBtn" style="display:none" onclick="ndStartTraceAi()">AI 分析</button>
+                </div>
+                <div class="card-body">
+                    <div class="nd-summary" id="ndTracertSummary"></div>
+                    <div id="ndTracertBody"><div class="nd-empty">尚未追踪</div></div>
+                    <div id="ndTraceAiBody"></div>
+                    <span class="nd-hint" id="ndTraceAiTip"></span>
+                </div>
+            </div>
+
+            <!-- ⑤ 网络压测 -->
+            <div class="section-card nd-styled collapsed" data-collapse>
+                <div class="card-header">
+                    <h3>⑤ 网络压测</h3>
+                    <span style="margin-left:auto"></span>
+                    <button class="nd-btn ghost" id="ndStressOpenBtn" style="display:none" onclick="ndOpenStressLocation()">打开位置</button>
+                    <button class="nd-btn" id="ndStressExportBtn" style="display:none" onclick="ndExportStress()">导出 HTML 报告</button>
+                    <button class="nd-btn" id="ndStressCancelBtn" style="display:none" onclick="ndCancelStress()">取消</button>
+                    <button class="nd-btn primary" id="ndStressBtn" onclick="ndStartStress()">开始压测</button>
+                </div>
+                <div class="card-body">
+                    <div class="nd-gate" id="ndStressGate" style="display:none">未连接中心平台，功能不可用</div>
+                    <div class="nd-params" style="margin-bottom:8px">
+                        <label>iperf3 每轮时长（秒）</label>
+                        <select class="nd-select" id="ndStressDur" onchange="ndOnDurChange()">
+                            <option value="10" selected>10</option>
+                            <option value="15">15</option>
+                            <option value="30">30</option>
+                            <option value="60">60</option>
+                            <option value="120">120</option>
+                            <option value="180">180</option>
+                            <option value="300">300</option>
+                            <option value="custom">自定义</option>
+                        </select>
+                        <input class="nd-input" id="ndStressDurCustom" style="width:70px;display:none" placeholder="1~300">
+                        <span id="ndStressDurErr" style="color:#ef9a9a"></span>
+                        <label>包长 1（字节）</label>
+                        <input class="nd-input nd-stress-size" id="ndStressSize1" value="64" style="width:64px">
+                        <label>包长 2（字节）</label>
+                        <input class="nd-input nd-stress-size" id="ndStressSize2" value="256" style="width:64px">
+                        <label>包长 3（字节）</label>
+                        <input class="nd-input nd-stress-size" id="ndStressSize3" value="1024" style="width:64px">
+                        <label>包长 4（字节）</label>
+                        <input class="nd-input nd-stress-size" id="ndStressSize4" value="4096" style="width:64px">
+                        <label>UDP 码率（Mbps）</label>
+                        <input class="nd-input" id="ndStressUdp" value="100" style="width:80px">
+                    </div>
+                    <div class="nd-hint" style="margin:-4px 0 8px">每档对中心服务器执行 20 次 ping，观测不同包长下的延迟与丢包<span id="ndStressSizesErr" style="color:#ef9a9a;margin-left:8px"></span></div>
+                    <div class="nd-summary" id="ndStressSummary">多档包长持续 ping 中心服务器 + iperf3 TCP/UDP 带宽压测，输出综合结论（需已连接中心）</div>
+                    <div id="ndStressBody"><div class="nd-empty">尚未压测</div></div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+    <script src="netdoctor.js"></script>
+    <script>
+    /* uiConfirm 内联副本（主应用 web/app.js 逐字同步，2026-09-14 废除原生弹窗专项；按钮类
+       适配独立页 nd-btn 体系）。全项目唯一合法对话框出口，本页删除节点确认走此组件。 */
+    function uiConfirm(opts) {
+        return new Promise(function (resolve) {
+            var title = (opts && opts.title) || "确认";
+            var message = (opts && opts.message) || "";
+            var okText = (opts && opts.okText) || "确定";
+            var cancelText = (opts && opts.cancelText !== undefined) ? opts.cancelText : "取消";
+            var danger = !!(opts && opts.danger);
+
+            var mask = document.createElement("div");
+            mask.className = "ui-confirm-mask";
+
+            var card = document.createElement("div");
+            card.className = "ui-confirm-card";
+            card.setAttribute("role", "dialog");
+            card.setAttribute("aria-modal", "true");
+
+            var head = document.createElement("div");
+            head.className = "ui-confirm-head";
+            var h3 = document.createElement("h3");
+            h3.textContent = title;
+            head.appendChild(h3);
+
+            var body = document.createElement("div");
+            body.className = "ui-confirm-body";
+            body.textContent = message;
+
+            var foot = document.createElement("div");
+            foot.className = "ui-confirm-foot";
+
+            var done = false;
+            function close(result) {
+                if (done) return;
+                done = true;
+                document.removeEventListener("keydown", onKey, true);
+                mask.remove();
+                resolve(result);
+            }
+            function onKey(e) {
+                if (e.key === "Escape") { e.stopPropagation(); close(false); }
+                else if (e.key === "Enter") { e.stopPropagation(); close(true); }
+            }
+
+            var btnCancel = null;
+            if (cancelText) {
+                btnCancel = document.createElement("button");
+                btnCancel.className = "nd-btn ui-confirm-btn";
+                btnCancel.textContent = cancelText;
+                btnCancel.addEventListener("click", function () { close(false); });
+                foot.appendChild(btnCancel);
+            }
+
+            var btnOk = document.createElement("button");
+            btnOk.className = "nd-btn primary ui-confirm-btn" + (danger ? " ui-confirm-ok-danger" : "");
+            btnOk.textContent = okText;
+            btnOk.addEventListener("click", function () { close(true); });
+            foot.appendChild(btnOk);
+
+            mask.addEventListener("mousedown", function (e) {
+                if (e.target === mask) close(false);
+            });
+
+            card.appendChild(head);
+            card.appendChild(body);
+            card.appendChild(foot);
+            mask.appendChild(card);
+            document.body.appendChild(mask);
+
+            document.addEventListener("keydown", onKey, true);
+            btnOk.focus();
+        });
+    }
+    </script>
+</body>
+</html>

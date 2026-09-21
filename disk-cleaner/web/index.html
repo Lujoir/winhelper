@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Disk Cleaner — C盘磁盘清理与应用数据迁移</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* 独立部署微调 */
+        body { padding-top: 52px; }
+        .lite-header {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 28px; height: 52px;
+            background: rgba(15,17,23,.9);
+            border-bottom: 1px solid var(--border-color);
+        }
+        .lite-header .nav-title {
+            font-size: 16px; font-weight: 700;
+            background: linear-gradient(135deg,#00bcd4,#4fc3f7);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .lite-header .nav-sub { font-size: 12px; color: var(--text-muted); }
+        .main-content { margin-top: 24px; }
+    </style>
+</head>
+<body>
+    <header class="lite-header">
+        <span class="nav-title">Disk Cleaner · C盘磁盘清理与应用数据迁移</span>
+        <span class="nav-sub">独立服务 :5010 · 数据安全优先</span>
+    </header>
+
+    <main class="main-content">
+        <!-- 磁盘清理模块（与主应用同源） -->
+        <div class="page-header">
+            <h2>磁盘清理（C盘）</h2>
+            <p class="page-subtitle">垃圾清理 · 安装包清理 · C盘应用数据迁移 · 容量定位分析 · 数据安全优先</p>
+            <button class="btn btn-ghost" onclick="toggleAllCards(this)">📁 收纳全部</button>
+        </div>
+
+        <!-- C盘容量概览 -->
+        <div class="section-card disk-overview" data-collapse>
+            <div class="card-header">
+                <h3>C盘容量概览</h3>
+                <span class="card-badge" id="diskUsedPercent">--%</span>
+            </div>
+            <div class="disk-overview-body">
+                <div class="disk-usage-bar"><div class="disk-usage-fill" id="diskUsageFill"></div></div>
+                <div class="disk-stats">
+                    <div class="disk-stat"><span class="disk-stat-value" id="diskTotal">--</span><span class="disk-stat-label">总容量</span></div>
+                    <div class="disk-stat"><span class="disk-stat-value warn" id="diskUsed">--</span><span class="disk-stat-label">已使用</span></div>
+                    <div class="disk-stat"><span class="disk-stat-value ok" id="diskFree">--</span><span class="disk-stat-label">可用空间</span></div>
+                    <div class="disk-stat"><span class="disk-stat-value accent" id="diskCleanable">--</span><span class="disk-stat-label">预估可清理(垃圾)</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 垃圾文件分析 -->
+        <div class="section-card" data-collapse>
+            <div class="card-header">
+                <h3>垃圾文件分析（已默认勾选推荐清理项）</h3>
+                <div class="disk-toolbar">
+                    <button class="btn btn-ghost" id="junkScanBtn" onclick="startJunkScan()">重新扫描</button>
+                    <button class="btn btn-primary" id="junkCleanSelBtn" onclick="cleanSelected()" disabled>🧹 清理勾选项</button>
+                </div>
+            </div>
+            <div class="disk-progress-wrap" id="junkProgressWrap" style="display:none">
+                <div class="progress-bar"><div class="progress-fill" id="junkProgressBar"></div></div>
+                <span class="progress-text" id="junkProgressText"></span>
+            </div>
+            <div class="junk-grid" id="junkGrid">
+                <div class="empty-state-full" style="grid-column:1/-1">扫描中…</div>
+            </div>
+            <div class="disk-note" id="junkNote">
+                安全级(绿)项支持直接清理；谨慎级(黄)项默认不勾选，请确认后再选。被占用/无权限的文件会自动跳过并计入统计。
+            </div>
+        </div>
+
+        <!-- 安装包清理 -->
+        <div class="section-card collapsed" data-collapse>
+            <div class="card-header">
+                <h3>安装包清理（下载 / 桌面）</h3>
+                <div class="disk-toolbar">
+                    <select id="insScope" class="filter-select" onchange="onInsScopeChange()">
+                        <option value="both" selected>下载+桌面+浏览器下载目录</option>
+                        <option value="alldisks">全部固定磁盘（较慢）</option>
+                        <option value="downloads">仅下载</option>
+                        <option value="desktop">仅桌面</option>
+                        <option value="custom">自定义目录…</option>
+                    </select>
+                    <input type="text" id="insCustomDir" class="ad-input" style="display:none;width:200px" placeholder="自定义目录，如 D:\Downloads">
+                    <button class="btn btn-ghost" id="insScanBtn" onclick="scanInstallers()">重新扫描</button>
+                    <button class="btn btn-primary" id="insCleanBtn" onclick="cleanInstallers()" disabled>🗑 清理勾选安装包</button>
+                </div>
+            </div>
+            <div class="disk-progress-wrap" id="insProgressWrap" style="display:none">
+                <div class="progress-bar"><div class="progress-fill" id="insProgressBar"></div></div>
+                <span class="progress-text" id="insProgressText"></span>
+            </div>
+            <div class="ad-migrate-hint" id="insSummary">
+                扫描下载与桌面目录中的 .exe / .msi / .msix / .appx 安装包，<b>明确的安装包已默认勾选</b>，其余待人工确认。
+            </div>
+            <div class="table-wrapper">
+                <table class="event-table">
+                    <thead>
+                        <tr><th style="text-align:center"><input type="checkbox" id="insMasterCheck" onchange="toggleAllInstallers(this)" title="全选 / 取消全选"></th><th>文件名</th><th>大小</th><th>格式</th><th>位置</th><th>修改日期</th><th>置信</th><th>操作</th></tr>
+                    </thead>
+                    <tbody id="insBody">
+                        <tr><td colspan="8" class="empty-state">进入本页时已自动扫描</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="disk-note">
+                自动勾选规则：MSI/MSIX/AppX 安装格式 · EXE 命名含 setup/install/安装 · 含版本号(如 V3.7.5) · 含架构标记(win64/x64/64-bit)。
+                默认覆盖<b>下载、桌面及各浏览器下载目录</b>；工具类程序自动排除；悬停「置信」列查看判定依据。
+            </div>
+        </div>
+
+        <!-- C盘应用数据迁移 -->
+        <div class="section-card collapsed" data-collapse>
+            <div class="card-header">
+                <h3>C盘应用数据迁移</h3>
+                <div class="disk-toolbar">
+                    <button class="btn btn-primary" id="adScanBtn" onclick="startAppdataScan()">开始盘点</button>
+                    <span class="progress-text" id="adSummaryText"></span>
+                </div>
+            </div>
+            <div class="disk-warn-banner" style="margin-top:0">
+                ⚠️ 本区域文件多为<b>个人与工作数据</b>：默认只做盘点展示与建议；「迁移」把数据整体搬到数据盘（不删除）；「删除」需逐项显式确认，且仅限应用数据目录内。微信数据库与日志目录已自动排除、绝不触碰。
+            </div>
+            <div class="disk-progress-wrap" id="adProgressWrap" style="display:none">
+                <div class="progress-bar"><div class="progress-fill" id="adProgressBar"></div></div>
+                <span class="progress-text" id="adProgressText"></span>
+            </div>
+            <div class="junk-grid" id="adZoneGrid">
+                <div class="empty-state-full" style="grid-column:1/-1">点击「开始盘点」分析各应用数据占用…</div>
+            </div>
+
+            <!-- 区域详情 -->
+            <div id="adDetail" style="display:none">
+                <div class="section-card" data-collapse>
+                    <div class="card-header">
+                        <h3 id="adZoneTitle">区域详情</h3>
+                        <span class="card-badge" id="adZoneBadge"></span>
+                    </div>
+                    <div class="disk-warn-banner ad-advice" id="adZoneAdvice" style="margin:12px 20px 0;background:rgba(79,195,247,.08);border-color:rgba(79,195,247,.25);color:#81d4fa"></div>
+                    <div class="table-wrapper">
+                        <table class="event-table">
+                            <thead>
+                                <tr><th>分类</th><th>大小</th><th>文件数</th><th>风险</th><th>路径</th><th>可靠建议</th><th>操作</th></tr>
+                            </thead>
+                            <tbody id="adCatBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="section-card" data-collapse>
+                    <div class="card-header">
+                        <h3>大文件 TOP25</h3>
+                        <div class="disk-toolbar">
+                            <label style="font-size:12px;color:var(--text-secondary)">迁移目标盘</label>
+                            <select id="adDriveSelect" class="filter-select"><option value="">请先盘点数据盘</option></select>
+                            <input type="text" id="adTargetName" class="ad-input" placeholder="目标文件夹名" value="AppDataMigrate">
+                            <button class="btn btn-primary" id="adMigrateBtn" onclick="adMigrateSelected()" disabled>迁移选中分类</button>
+                        </div>
+                    </div>
+                    <div class="ad-migrate-hint" id="adMigrateHint">在上方分类表勾选要迁移的分类（建议: 聊天文件/接收的文件/会议录像），再点击「迁移选中分类」。</div>
+                    <div class="table-wrapper">
+                        <table class="event-table">
+                            <thead>
+                                <tr><th>层级</th><th>大小</th><th>修改日期</th><th>文件名</th><th>路径</th><th>操作</th></tr>
+                            </thead>
+                            <tbody id="adTopBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 容量定位分析（目录树） -->
+        <div class="section-card collapsed" data-collapse>
+            <div class="card-header">
+                <h3>容量定位分析（目录树）</h3>
+                <div class="disk-toolbar">
+                    <select id="largeScope" class="filter-select" onchange="onTreeScopeChange()"></select>
+                    <input type="text" id="largeCustomDir" class="ad-input" style="display:none;width:210px" placeholder="自定义目录，如 D:\logs">
+                    <select id="largeSort" class="filter-select" onchange="renderTreeChildren()">
+                        <option value="size">按容量排序</option>
+                        <option value="files">按文件数排序</option>
+                    </select>
+                    <select id="largeMinMb" class="filter-select" title="仅影响大文件TOP25阈值">
+                        <option value="50">大文件≥50MB</option>
+                        <option value="100" selected>大文件≥100MB</option>
+                        <option value="200">大文件≥200MB</option>
+                        <option value="500">大文件≥500MB</option>
+                    </select>
+                    <button class="btn btn-primary" id="largeScanBtn" onclick="startLargeScan()">开始扫描</button>
+                    <button class="btn btn-ghost" id="largeCancelBtn" onclick="cancelLargeScan()" style="display:none">取消</button>
+                </div>
+            </div>
+            <div class="disk-warn-banner">
+                💡 支持全部本地磁盘与自定义目录，树状逐级定位容量。目录名可点击逐层下钻；<b>「海量小文件」</b>目录（应用日志/缓存类）文件数极多、单体极小，清理效率反而最高——定位到文件夹容量即可按需清理。
+            </div>
+
+            <!-- 智能推荐：建议清理 TOP10 -->
+            <div id="recCard" style="display:none">
+                <div class="card-header" style="border-top:none">
+                    <h3>🎯 智能推荐 · 建议清理 TOP10 文件夹</h3>
+                    <span class="card-badge" id="recBadge"></span>
+                </div>
+                <div class="table-wrapper">
+                    <table class="event-table">
+                        <thead>
+                            <tr><th>#</th><th>目录（点击下钻）</th><th>容量</th><th>文件数</th><th>类别</th><th>可清理度</th><th>推荐理由</th><th>建议</th><th>操作</th></tr>
+                        </thead>
+                        <tbody id="recBody"></tbody>
+                    </table>
+                </div>
+                <div class="disk-note" id="recNote"></div>
+            </div>
+
+            <div class="disk-progress-wrap" id="largeProgressWrap" style="display:none">
+                <div class="progress-bar"><div class="progress-fill indeterminate" id="largeProgressBar"></div></div>
+                <span class="progress-text" id="largeProgressText"></span>
+            </div>
+            <div class="tree-summary" id="treeSummary" style="display:none"></div>
+            <div class="tree-breadcrumb" id="treeBreadcrumb" style="display:none"></div>
+            <div class="table-wrapper">
+                <table class="event-table">
+                    <thead>
+                        <tr><th>目录（点击下钻）</th><th>容量</th><th>文件数</th><th>子目录</th><th>文件均值</th><th>标记</th><th>操作</th></tr>
+                    </thead>
+                    <tbody id="treeBody">
+                        <tr><td colspan="7" class="empty-state">选择磁盘或自定义目录后开始扫描</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="disk-note" id="treeNote"></div>
+            <div class="card-header sub-header" style="border-top:1px solid var(--border-color)">
+                <h3>该范围内大文件 TOP25</h3>
+            </div>
+            <div class="table-wrapper">
+                <table class="event-table">
+                    <thead>
+                        <tr><th>大小</th><th>类型</th><th>修改时间</th><th>所在位置</th><th>分析建议</th><th>路径</th><th>操作</th></tr>
+                    </thead>
+                    <tbody id="largeFilesBody">
+                        <tr><td colspan="7" class="empty-state">随目录树扫描一并生成</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="disk-note" id="largeNote"></div>
+        </div>
+
+        <!-- C盘文件夹容量分析仪表盘 -->
+        <div class="section-card" data-collapse>
+            <div class="card-header">
+                <h3>C盘文件夹容量分析仪表盘</h3>
+                <div class="disk-toolbar">
+                    <span class="progress-text" id="tmPathText"></span>
+                    <button class="btn btn-mini btn-ghost" id="tmUpBtn" onclick="treemapUp()" style="display:none">⬆ 上一级</button>
+                    <button class="btn btn-primary btn-mini" id="tmStartBtn" onclick="startTreeForTreemap()">生成仪表盘</button>
+                </div>
+            </div>
+            <div class="treemap-wrap">
+                <div id="treemap" class="treemap">
+                    <div class="empty-state-full" id="tmPlaceholder">点击「生成仪表盘」，以色块图形式可视化展示 C盘 主要文件夹占用（点击色块可下钻）</div>
+                </div>
+            </div>
+            <div class="disk-note" id="tmNote">色块面积与背景色深浅均与文件夹占用容量成正比：深色=占用大，浅色=占用小。基于「容量定位分析」的扫描结果自动生成，点击色块下钻查看子目录。</div>
+        </div>
+    </main>
+
+    <script src="app-lite.js"></script>
+    <script src="disk.js"></script>
+    <script src="appdata.js"></script>
+</body>
+</html>

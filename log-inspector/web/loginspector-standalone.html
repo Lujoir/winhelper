@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>观枢终端平台｜EyeTerm - 日志诊断（独立测试页）</title>
+    <script src="../vendor/chart.umd.min.js"></script>
+    <style>
+        /* 独立测试页自带精简深色样式（主应用由 web/style.css 提供，此处仅供 standalone E2E） */
+        :root {
+            --bg: #0f1117; --bg-card: #161a24; --bg-secondary: #1a1f2c; --bg-hover: #1e2430;
+            --border-color: #262b3a; --text-primary: #e8ebf2; --text-secondary: #8a93a5;
+            --text-muted: #6b7280; --accent-cyan: #4fc3f7;
+            --color-critical: #ef5350; --color-error: #ff8a65; --color-warning: #ffd54f; --color-info: #4fc3f7;
+            --radius: 10px; --radius-sm: 6px;
+        }
+        * { box-sizing: border-box; }
+        body { background: var(--bg); color: var(--text-primary); font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; margin: 0; padding: 18px 22px; font-size: 14px; }
+        h2 { margin: 0; font-size: 22px; }
+        h3 { margin: 0; font-size: 14.5px; }
+        .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; gap: 12px; }
+        .page-subtitle { font-size: 12.5px; color: var(--text-secondary); margin: 4px 0 0; }
+        .mode-badge { font-size: 11px; padding: 3px 10px; border-radius: 20px; border: 1px solid var(--accent-cyan); color: var(--accent-cyan); }
+
+        .section-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); margin-bottom: 14px; overflow: hidden; }
+        .card-header { display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid var(--border-color); }
+        .card-badge { margin-left: auto; font-size: 12px; color: var(--accent-cyan); background: rgba(79,195,247,.1); border-radius: 12px; padding: 2px 10px; white-space: nowrap; }
+        .card-header.sub-header { border-top: 1px solid var(--border-color); margin-top: 6px; }
+        .disk-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+        .btn { padding: 7px 14px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-secondary); color: var(--text-primary); cursor: pointer; font-size: 13px; }
+        .btn:hover:not(:disabled) { border-color: var(--accent-cyan); color: var(--accent-cyan); }
+        .btn:disabled { opacity: .35; cursor: not-allowed; }
+        .btn-primary { background: linear-gradient(135deg, #0097a7, #00bcd4); border-color: transparent; color: #001318; font-weight: 600; }
+        .btn-ghost { background: transparent; }
+        .btn-mini { padding: 3px 9px; font-size: 11px; }
+
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; padding: 14px 18px; }
+        .stat-card { padding: 16px; border-radius: var(--radius); background: var(--bg-secondary); border: 1px solid var(--border-color); border-left: 3px solid var(--border-color); }
+        .stat-value { font-size: 28px; font-weight: 800; margin-bottom: 4px; }
+        .stat-label { font-size: 12px; color: var(--text-secondary); }
+        .stat-total { border-left-color: var(--accent-cyan); } .stat-total .stat-value { color: var(--accent-cyan); }
+        .stat-critical { border-left-color: var(--color-critical); } .stat-critical .stat-value { color: var(--color-critical); }
+        .stat-error { border-left-color: var(--color-error); } .stat-error .stat-value { color: var(--color-error); }
+        .stat-warning { border-left-color: var(--color-warning); } .stat-warning .stat-value { color: var(--color-warning); }
+        .stat-info { border-left-color: var(--color-info); } .stat-info .stat-value { color: var(--color-info); }
+
+        .event-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .event-table thead { background: var(--bg-secondary); }
+        .event-table th { padding: 9px 12px; text-align: left; font-weight: 600; color: var(--text-secondary); border-bottom: 1px solid var(--border-color); }
+        .event-table td { padding: 8px 12px; border-bottom: 1px solid var(--border-color); color: var(--text-primary); }
+        .event-table tbody tr:hover { background: var(--bg-hover); }
+        .event-table .empty-state { text-align: center; padding: 34px; color: var(--text-muted); }
+        .table-wrapper { overflow: auto; }
+        .empty-state-full { text-align: center; padding: 44px 20px; color: var(--text-muted); }
+
+        .level-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11.5px; }
+        .level-badge.critical { background: rgba(255,82,82,.2); color: var(--color-critical); }
+        .level-badge.error { background: rgba(255,138,101,.2); color: var(--color-error); }
+        .level-badge.warning { background: rgba(255,213,79,.2); color: var(--color-warning); }
+        .level-badge.info { background: rgba(100,181,246,.2); color: var(--color-info); }
+        .level-badge.danger { background: rgba(255,82,82,.2); color: var(--color-critical); }
+        .known-tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; background: rgba(79,195,247,.15); color: var(--accent-cyan); margin-left: 4px; }
+
+        .pagination-bar { display: flex; align-items: center; justify-content: center; gap: 4px; padding: 12px; }
+        .page-btn { padding: 4px 11px; border: 1px solid var(--border-color); background: transparent; color: var(--text-secondary); border-radius: 4px; cursor: pointer; font-size: 12.5px; }
+        .page-btn.active { background: rgba(79,195,247,.15); color: var(--accent-cyan); border-color: var(--accent-cyan); }
+        .page-btn:disabled { opacity: .35; cursor: not-allowed; }
+        .pagination-info { display: block; text-align: center; padding-bottom: 12px; font-size: 12.5px; color: var(--text-muted); }
+
+        .filter-select, .ad-input { background: var(--bg-secondary); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: var(--radius-sm); padding: 6px 9px; font-size: 12.5px; }
+        .progress-bar { height: 8px; background: var(--bg-secondary); border-radius: 4px; overflow: hidden; flex: 1; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, #0097a7, #00bcd4); transition: width .3s; }
+        .disk-progress-wrap { display: flex; align-items: center; gap: 12px; padding: 12px 18px; }
+        .progress-text { font-size: 12.5px; color: var(--text-secondary); }
+        .disk-note { font-size: 12px; color: var(--text-secondary); line-height: 1.7; padding: 10px 18px 14px; }
+
+        .fault-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); margin: 10px 18px; cursor: pointer; }
+        .fault-card:hover { border-color: var(--accent-cyan); }
+        .fault-header { display: flex; align-items: center; gap: 10px; padding: 11px 14px; }
+        .fault-severity { width: 9px; height: 9px; border-radius: 50%; background: var(--text-muted); flex: none; }
+        .fault-severity.critical { background: var(--color-critical); } .fault-severity.error { background: var(--color-error); }
+        .fault-severity.warning { background: var(--color-warning); } .fault-severity.info { background: var(--color-info); }
+        .fault-name { font-weight: 600; }
+        .fault-count { color: var(--text-secondary); font-size: 12.5px; }
+        .fault-arrow { margin-left: auto; color: var(--text-muted); transition: transform .2s; }
+        .fault-card.expanded .fault-arrow { transform: rotate(180deg); }
+        .fault-body { display: none; padding: 0 14px 12px; font-size: 13px; color: var(--text-secondary); line-height: 1.7; }
+        .fault-card.expanded .fault-body { display: block; }
+        .fault-body h5 { font-size: 13px; color: var(--text-primary); margin: 8px 0 4px; }
+        .fault-body ul { margin: 4px 0; padding-left: 20px; }
+        .fault-body code { background: var(--bg-secondary); padding: 1px 5px; border-radius: 4px; font-size: 11.5px; }
+
+        .knowledge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; padding: 14px 18px 18px; }
+        .knowledge-card { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 14px; }
+        .knowledge-card h3 { font-size: 14px; margin-bottom: 8px; }
+        .knowledge-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+        .knowledge-tag { font-size: 11px; border-radius: 4px; padding: 2px 8px; background: var(--bg-card); }
+        .knowledge-body { font-size: 12.5px; color: var(--text-secondary); line-height: 1.7; }
+        .knowledge-body ul { margin: 4px 0 0; padding-left: 18px; }
+
+        /* li 特有样式（与主应用 section 内嵌一致） */
+        .li-flow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 11px 18px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); margin-bottom: 14px; font-size: 12.5px; color: var(--text-secondary); }
+        .li-step { padding: 3px 10px; border-radius: 12px; border: 1px solid var(--border-color); }
+        .li-step.on { color: var(--accent-cyan); border-color: var(--accent-cyan); background: rgba(79,195,247,.1); }
+        .li-arrow { color: var(--text-muted); }
+        .li-cond-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; padding: 14px 18px; }
+        .li-cond-item { display: flex; flex-direction: column; gap: 6px; }
+        .li-cond-item > label { font-size: 12px; color: var(--text-secondary); }
+        .li-checks { display: flex; gap: 10px; flex-wrap: wrap; font-size: 12.5px; }
+        .li-checks label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+        .li-type-denied { opacity: .45; }
+        .li-denied { font-size: 11.5px; color: var(--color-warning); }
+        .li-charts-row { display: grid; grid-template-columns: 1.6fr 1fr; gap: 12px; padding: 12px 18px 4px; }
+        @media (max-width: 980px) { .li-charts-row { grid-template-columns: 1fr; } }
+        .chart-card { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 10px; }
+        .chart-body { height: 200px; position: relative; }
+        .li-chart-head { font-size: 12.5px; color: var(--text-secondary); margin-bottom: 6px; }
+        .li-conclusion { display: flex; gap: 12px; align-items: flex-start; margin: 12px 18px; padding: 12px 14px; border: 1px solid var(--border-color); border-left: 3px solid; border-radius: var(--radius); background: var(--bg-secondary); }
+        .li-concl-badge { display: inline-block; border: 1px solid; border-radius: 20px; padding: 3px 12px; font-size: 12.5px; white-space: nowrap; }
+        code { background: var(--bg-secondary); padding: 1px 5px; border-radius: 4px; font-size: 11.5px; }
+        /* 本机基础信息面板（modeBadge 点击弹出；主应用内嵌同一份到 tab-loginspector section） */
+        .li-sys-overlay { display: none; position: fixed; inset: 0; background: rgba(6,8,12,.72); z-index: 998; align-items: center; justify-content: center; }
+        .li-sys-panel { width: min(720px, 92vw); max-height: 84vh; overflow: auto; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; box-shadow: 0 12px 44px rgba(0,0,0,.55); }
+        .li-sys-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border-color); position: sticky; top: 0; background: var(--bg-card); z-index: 1; }
+        .li-sys-body { padding: 8px 18px 18px; }
+        .li-sys-body h4 { font-size: 13.5px; margin: 16px 0 8px; color: var(--accent-cyan); border-bottom: 1px dashed var(--border-color); padding-bottom: 5px; }
+        .li-sys-row { display: flex; gap: 14px; padding: 4px 0; font-size: 13px; }
+        .li-sys-k { color: var(--text-secondary); min-width: 110px; flex: none; }
+        .li-sys-v { color: var(--text-primary); word-break: break-all; }
+        .li-sys-table { margin: 6px 0 4px; }
+        .li-sys-none { font-size: 12px; color: var(--text-muted); padding: 4px 0; }
+        .li-sys-gpu-tag { display: inline-block; border: 1px solid var(--accent-cyan); color: var(--accent-cyan); border-radius: 4px; padding: 0 6px; font-size: 11px; }
+        .li-desc { white-space: pre-wrap; word-break: break-all; user-select: text; -webkit-user-select: text; }
+        .li-desc-clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+        .li-desc-toggle { color: var(--accent-cyan); font-size: 12px; cursor: pointer; user-select: none; -webkit-user-select: none; margin-left: 6px; }
+    </style>
+</head>
+<body>
+    <div class="page-header">
+        <div>
+            <h2>日志诊断（独立测试页）</h2>
+            <p class="page-subtitle">检索 → 下载 → 智能分析 → 知识库建议 · 观枢终端平台｜EyeTerm</p>
+        </div>
+        <span class="mode-badge" id="modeBadge">Standalone E2E</span>
+    </div>
+
+    <!-- ===== tab-loginspector 内容区（与主应用 index.html 的 section 保持一致） ===== -->
+    <div class="li-flow" id="liFlow">
+        <span class="li-step on">① 选择条件</span><span class="li-arrow">→</span>
+        <span class="li-step">② 检索</span><span class="li-arrow">→</span>
+        <span class="li-step">③ 下载原始日志</span><span class="li-arrow">→</span>
+        <span class="li-step">④ 智能分析</span><span class="li-arrow">→</span>
+        <span class="li-step">⑤ 知识库建议</span>
+    </div>
+
+    <!-- ① 条件区 -->
+    <div class="section-card" data-collapse>
+        <div class="card-header">
+            <h3>① 检索条件</h3>
+            <span class="card-badge" id="liCondBadge">默认：系统日志 · 近3天</span>
+            <div class="disk-toolbar">
+                <button class="btn btn-primary" id="liSearchBtn" onclick="liSearch(1)">🔍 检索</button>
+            </div>
+        </div>
+        <div class="li-cond-grid">
+            <div class="li-cond-item">
+                <label>日志类别（多选）</label>
+                <div class="li-checks" id="liTypeChecks">
+                    <label><input type="checkbox" class="li-type" value="System" checked> 系统日志</label>
+                    <label><input type="checkbox" class="li-type" value="Application" checked> 应用程序日志</label>
+                    <label><input type="checkbox" class="li-type" value="Security"> 安全日志</label>
+                    <label><input type="checkbox" class="li-type" value="Setup"> 安装程序</label>
+                </div>
+                <span class="li-denied" id="liDeniedTip" style="display:none"></span>
+            </div>
+            <div class="li-cond-item">
+                <label>时间范围</label>
+                <select id="liTimeRange" class="filter-select" onchange="liOnTimeRangeChange()">
+                    <option value="1">近 1 小时</option>
+                    <option value="24">近 24 小时</option>
+                    <option value="72" selected>近 3 天（默认）</option>
+                    <option value="168">近 7 天</option>
+                    <option value="custom">自定义起止…</option>
+                </select>
+                <div id="liCustomRange" style="display:none;gap:6px;align-items:center">
+                    <input type="datetime-local" id="liStart" class="ad-input">
+                    <span style="font-size:12px;color:var(--text-secondary)">至</span>
+                    <input type="datetime-local" id="liEnd" class="ad-input">
+                </div>
+            </div>
+            <div class="li-cond-item">
+                <label>级别（多选，空=全部）</label>
+                <div class="li-checks">
+                    <label><input type="checkbox" class="li-level" value="critical"> 关键</label>
+                    <label><input type="checkbox" class="li-level" value="error"> 错误</label>
+                    <label><input type="checkbox" class="li-level" value="warning"> 警告</label>
+                    <label><input type="checkbox" class="li-level" value="info"> 信息</label>
+                </div>
+            </div>
+            <div class="li-cond-item">
+                <label>来源</label>
+                <select id="liSource" class="filter-select"><option value="">全部来源</option></select>
+            </div>
+            <div class="li-cond-item">
+                <label>关键字（描述模糊匹配）</label>
+                <input type="text" id="liKeyword" class="ad-input" placeholder="如 disk / timeout / 服务">
+            </div>
+            <div class="li-cond-item">
+                <label>事件ID</label>
+                <input type="text" id="liEventId" class="ad-input" placeholder="如 41 / 1000">
+            </div>
+            <div class="li-cond-item">
+                <label>每页</label>
+                <select id="liPerPage" class="filter-select">
+                    <option value="25">25 条</option>
+                    <option value="50" selected>50 条</option>
+                    <option value="100">100 条</option>
+                </select>
+            </div>
+        </div>
+        <div class="disk-note" id="liNote">默认条件 = 系统日志 · 近3天全量（与下载默认一致）。安全日志需管理员权限，无权限时自动置灰。</div>
+    </div>
+
+    <!-- ② 检索结果 -->
+    <div class="section-card" data-collapse>
+        <div class="card-header">
+            <h3>② 检索结果</h3>
+            <span class="card-badge" id="liTotalBadge">共 -- 条</span>
+        </div>
+        <div class="stats-grid" id="liStats">
+            <div class="stat-card stat-total"><div class="stat-value">--</div><div class="stat-label">事件总数</div></div>
+            <div class="stat-card stat-critical"><div class="stat-value">--</div><div class="stat-label">关键事件</div></div>
+            <div class="stat-card stat-error"><div class="stat-value">--</div><div class="stat-label">错误事件</div></div>
+            <div class="stat-card stat-warning"><div class="stat-value">--</div><div class="stat-label">警告事件</div></div>
+            <div class="stat-card stat-info"><div class="stat-value">--</div><div class="stat-label">信息事件</div></div>
+        </div>
+        <div class="li-charts-row">
+            <div class="chart-card">
+                <div class="li-chart-head">事件时间分布</div>
+                <div class="chart-body"><canvas id="liTimeChart"></canvas></div>
+            </div>
+            <div class="chart-card">
+                <div class="li-chart-head">事件来源 TOP10</div>
+                <div class="chart-body"><canvas id="liSourceChart"></canvas></div>
+            </div>
+        </div>
+        <div class="table-wrapper">
+            <table class="event-table">
+                <thead><tr><th>时间</th><th>ID</th><th>来源</th><th>级别</th><th>描述</th></tr></thead>
+                <tbody id="liBody"><tr><td colspan="5" class="empty-state">输入条件后点击「检索」</td></tr></tbody>
+            </table>
+        </div>
+        <div class="pagination-bar">
+            <button class="page-btn" onclick="liChangePage(-1)">上一页</button>
+            <span id="liPageNums"></span>
+            <button class="page-btn" onclick="liChangePage(1)">下一页</button>
+        </div>
+        <span class="pagination-info" id="liPageInfo"></span>
+    </div>
+
+    <!-- ③ 下载原始日志 -->
+    <div class="section-card" data-collapse>
+        <div class="card-header">
+            <h3>③ 下载原始日志（txt）</h3>
+            <div class="disk-toolbar">
+                <button class="btn btn-primary" id="liExportBtn" onclick="liStartExport()">⬇ 按当前条件导出 txt</button>
+                <button class="btn btn-ghost" id="liExportCancelBtn" style="display:none" onclick="liCancelExport()">✖ 取消</button>
+            </div>
+        </div>
+        <div class="disk-note">按上方条件导出原始事件为 txt（utf-8 BOM，记事本可直接打开）；默认条件即近3天全量系统日志。大日志量采用后台任务流式写出，可取消。</div>
+        <div class="disk-progress-wrap" id="liExportProgress" style="display:none">
+            <div class="progress-bar"><div class="progress-fill" id="liExportBar"></div></div>
+            <span class="progress-text" id="liExportText"></span>
+        </div>
+        <div class="disk-note" id="liExportResult" style="display:none"></div>
+    </div>
+
+    <!-- ④ 智能分析 -->
+    <div class="section-card" data-collapse>
+        <div class="card-header">
+            <h3>④ 智能分析</h3>
+            <span class="card-badge" id="liAnalysisBadge">未分析</span>
+            <div class="disk-toolbar">
+                <button class="btn btn-primary" id="liAnalysisBtn" onclick="liRunAnalysis()">🧠 对当前条件分析</button>
+                <button class="btn btn-ghost" id="liReportBtn" onclick="liExportReport()" style="display:none">📄 导出 HTML 报告</button>
+            </div>
+        </div>
+        <div id="liConclusion" style="display:none"></div>
+        <div id="liPatterns"><div class="empty-state-full">尚未分析，点击「对当前条件分析」</div></div>
+        <div id="liKnownBlock" style="display:none">
+            <div class="card-header sub-header">
+                <h3>已知问题事件</h3>
+                <span class="card-badge" id="liKnownBadge">共 0 条</span>
+            </div>
+            <div class="table-wrapper">
+                <table class="event-table">
+                    <thead><tr><th>时间</th><th>事件ID</th><th>事件名称</th><th>来源</th><th>级别</th><th>描述</th></tr></thead>
+                    <tbody id="liKnownBody"><tr><td colspan="6" class="empty-state">暂无数据</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ⑤ 知识库建议 -->
+    <div class="section-card" data-collapse>
+        <div class="card-header">
+            <h3>⑤ 知识库建议</h3>
+            <div class="disk-toolbar">
+                <input type="text" id="liKbQuery" class="ad-input" placeholder="检索故障模式 / 事件ID / 关键字" onkeydown="if(event.key==='Enter')liFilterKnowledge()">
+                <button class="btn btn-ghost" onclick="liFilterKnowledge()">🔍 检索知识库</button>
+            </div>
+        </div>
+        <div class="disk-note">智能分析出的故障模式会自动列出处理建议；也可自由检索内置故障知识库。</div>
+        <div class="knowledge-grid" id="liKnowledgeGrid"><div class="empty-state-full">暂无内容，可先执行智能分析或自由检索</div></div>
+    </div>
+
+    <script>
+        /* standalone 页面专用：卡片收纳兜底（主应用由 app.js 提供） */
+        function toggleAllCards(btn) {
+            var scope = btn.closest(".section-card") ? document : document;
+            var cards = document.querySelectorAll(".section-card[data-collapse]");
+            var anyExpanded = Array.prototype.some.call(cards, function (c) { return !c.classList.contains("collapsed"); });
+            cards.forEach(function (c) { c.classList.toggle("collapsed", anyExpanded); });
+        }
+        (function () {
+            document.querySelectorAll(".section-card[data-collapse] > .card-header").forEach(function (h) {
+                h.style.cursor = "pointer";
+                h.addEventListener("click", function (e) {
+                    if (e.target.closest("button, select, input, a, label")) { return; }
+                    h.parentElement.classList.toggle("collapsed");
+                });
+            });
+        })();
+    </script>
+    <script src="loginspector.js"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            if (typeof initLogInspectorTab === "function") { initLogInspectorTab(); }
+        });
+    </script>
+</body>
+</html>
