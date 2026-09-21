@@ -16,3 +16,26 @@ dist_v3/
 installer/Output/
 installer/*.exe
 third_party/
+
+# ---- 构建产物（带版本号变体，主仓根级）----
+# 既有规则 dist/ build/ dist_v3/ 覆盖不到 build_v4110/ 这类变体名
+/build_v*/
+/dist_v*/
+/dist_new*/
+/build_new*/
+
+# ---- 项目根临时产物（ADR-005 约定）----
+# 约定：临时产物用 `_` 前缀 / `*_out*.txt` / `nd_tmp_*`，且**只在仓库根产生**。
+# 用前导 `/` 限定根级——这些模式若不加限定会匹配任意层级，
+# 可能误伤 assets/ 等处的合法资源。
+/_*.txt
+/_*.png
+/_*.py
+/*_out*.txt
+/*_out*.json
+/nd_*.txt
+/nd_tmp_*.py
+
+# 误重定向产物（命令输出写错文件名：内容是 git log）
+/OpenSSL
+

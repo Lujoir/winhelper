@@ -1,0 +1,331 @@
+{
+  "pilot": "huorong group/clients sync pilot",
+  "date": "2026-09-15",
+  "redaction": "IP/MAC 尾4位掩码；终端名保留前2字符；分组名保留（内部评审用）",
+  "groups": {
+    "count": 89,
+    "roots": 13,
+    "with_children": 15,
+    "names_sample": [
+      "i18n:db_groups_name:ungrouped",
+      "防护组",
+      "1F视光诊室",
+      "收费处",
+      "2F诊室",
+      "10F屈光、整形诊室",
+      "3F诊室",
+      "行政电脑",
+      "检验科",
+      "门诊诊室"
+    ],
+    "empty_groups_count": 12
+  },
+  "clients": {
+    "total_devices": 710,
+    "declared_total_field": 710,
+    "first_page_row_keys": [
+      "list",
+      "total"
+    ],
+    "online": 152,
+    "local_ip_ne_connect_ip": 20,
+    "unique_mac": 698,
+    "dup_mac_count": 12,
+    "os_versions_top5": [
+      [
+        "Microsoft Windows 10 专业版",
+        256
+      ],
+      [
+        "Microsoft Windows 10 教育版",
+        90
+      ],
+      [
+        "Microsoft Windows 10 家庭中文版",
+        79
+      ],
+      [
+        "Microsoft Windows 7 旗舰版 ",
+        59
+      ],
+      [
+        "Microsoft Windows 11 专业版",
+        58
+      ]
+    ]
+  },
+  "pagination_semantics": {
+    "first_page_data_keys": [
+      "list",
+      "total"
+    ],
+    "first_page_rows": 200,
+    "declared_total": 710,
+    "pages_pulled": 4,
+    "termination": "data.total"
+  },
+  "sample_group_device_mapping": [
+    {
+      "group_id": 2,
+      "group_name": "防护组",
+      "device_count": 174,
+      "devices": [
+        {
+          "client_name": "11***",
+          "computer_name": "11***",
+          "local_ip": "172.17.****",
+          "connect_ip": "172.17.****",
+          "mac": "1C-69-7A-2F-6****",
+          "is_online": false,
+          "os_version": "Microsoft Windows 10 教育版",
+          "version": "2.0.19.7"
+        },
+        {
+          "client_name": "XY***",
+          "computer_name": "XY***",
+          "local_ip": "172.17.60****",
+          "connect_ip": "172.17.60****",
+          "mac": "6C-4B-90-96-3****",
+          "is_online": false,
+          "os_version": "Microsoft Windows 10 专业版",
+          "version": "2.0.19.7"
+        },
+        {
+          "client_name": "13***",
+          "computer_name": "13***",
+          "local_ip": "172.17.60****",
+          "connect_ip": "172.17.60****",
+          "mac": "F4-8E-38-A5-0****",
+          "is_online": false,
+          "os_version": "Microsoft Windows 7 旗舰版 ",
+          "version": "2.0.19.7"
+        },
+        {
+          "client_name": "苹果***",
+          "computer_name": "ic***",
+          "local_ip": "172.17.20****",
+          "connect_ip": "172.17.254****",
+          "mac": "40-6C-8F-3E-D****",
+          "is_online": false,
+          "os_version": "Microsoft Windows 7 旗舰版 ",
+          "version": "2.0.18.3"
+        }
+      ]
+    },
+    {
+      "group_id": 59,
+      "group_name": "收费自助机",
+      "device_count": 33,
+      "devices": [
+        {
+          "client_name": "2F***",
+          "computer_name": "2F***",
+          "local_ip": "172.17.10****",
+          "connect_ip": "172.17.10****",
+          "mac": "00-E0-67-08-C****",
+          "is_online": false,
+          "os_version": "Microsoft Windows 7 专业版 ",
+          "version": "2.0.18.3"
+        },
+        {
+          "client_name": "28***",
+          "computer_name": "zz***",
+          "local_ip": "172.17.1****",
+          "connect_ip": "172.17.1****",
+          "mac": "00-E0-67-13-C****",
+          "is_online": false,
+          "os_version": "Microsoft Windows 7 旗舰版 ",
+          "version": "2.0.19.7"
+        },
+        {
+          "client_name": "31***",
+          "computer_name": "zz***",
+          "local_ip": "172.17.10****",
+          "connect_ip": "172.17.10****",
+          "mac": "00-E0-67-13-C****",
+          "is_online": false,
+          "os_version": "Microsoft Windows 7 旗舰版 ",
+          "version": "2.0.19.7"
+        },
+        {
+          "client_name": "19***",
+          "computer_name": "8f***",
+          "local_ip": "172.17.2****",
+          "connect_ip": "172.17.2****",
+          "mac": "00-E0-67-15-0****",
+          "is_online": false,
+          "os_version": "Microsoft Windows 7 专业版 ",
+          "version": "2.0.19.7"
+        }
+      ]
+    },
+    {
+      "group_id": 73,
+      "group_name": "禁用U盘",
+      "device_count": 28,
+      "devices": [
+        {
+          "client_name": "3F***",
+          "computer_name": "3F***",
+          "local_ip": "172.17.2****",
+          "connect_ip": "172.17.2****",
+          "mac": "E0-BE-03-29-2****",
+          "is_online": false,
+          "os_version": "Microsoft Windows 10 专业版",
+          "version": "2.0.19.7"
+        },
+        {
+          "client_name": "DE***",
+          "computer_name": "DE***",
+          "local_ip": "172.17.20****",
+          "connect_ip": "172.17.20****",
+          "mac": "6C-4B-90-C3-F****",
+          "is_online": false,
+          "os_version": "Microsoft Windows 10 教育版",
+          "version": "2.0.19.7"
+        },
+        {
+          "client_name": "3F***",
+          "computer_name": "3F***",
+          "local_ip": "172.17.20****",
+          "connect_ip": "172.17.20****",
+          "mac": "00-0E-C6-5D-E****",
+          "is_online": false,
+          "os_version": "Microsoft Windows 10 专业版",
+          "version": "2.0.19.7"
+        },
+        {
+          "client_name": "20***",
+          "computer_name": "20***",
+          "local_ip": "172.17.20****",
+          "connect_ip": "172.17.20****",
+          "mac": "F8-75-A4-55-8****",
+          "is_online": false,
+          "os_version": "Microsoft Windows 10 家庭中文版",
+          "version": "2.0.19.7"
+        }
+      ]
+    },
+    {
+      "group_id": 4,
+      "group_name": "1F视光诊室",
+      "device_count": 26,
+      "devices": [
+        {
+          "client_name": "1F***",
+          "computer_name": "1F***",
+          "local_ip": "172.17.10****",
+          "connect_ip": "172.17.10****",
+          "mac": "6C-4B-90-CB-4****",
+          "is_online": false,
+          "os_version": "Microsoft Windows 10 家庭中文版",
+          "version": "2.0.19.7"
+        },
+        {
+          "client_name": "1F***",
+          "computer_name": "1F***",
+          "local_ip": "172.17.1****",
+          "connect_ip": "172.17.1****",
+          "mac": "E0-BE-03-2F-4****",
+          "is_online": false,
+          "os_version": "Microsoft Windows 10 专业版",
+          "version": "2.0.19.7"
+        },
+        {
+          "client_name": "1F***",
+          "computer_name": "1F***",
+          "local_ip": "172.17.10****",
+          "connect_ip": "172.17.10****",
+          "mac": "E0-BE-03-37-C****",
+          "is_online": false,
+          "os_version": "Microsoft Windows 10 家庭中文版",
+          "version": "2.0.19.7"
+        },
+        {
+          "client_name": "1F***",
+          "computer_name": "1F***",
+          "local_ip": "172.17.10****",
+          "connect_ip": "172.17.10****",
+          "mac": "E0-BE-03-37-D****",
+          "is_online": false,
+          "os_version": "Microsoft Windows 10 家庭中文版",
+          "version": "2.0.19.7"
+        }
+      ]
+    },
+    {
+      "group_id": 116,
+      "group_name": "办公-云桌面",
+      "device_count": 24,
+      "devices": [
+        {
+          "client_name": "办公***",
+          "computer_name": "办公***",
+          "local_ip": "172.17.****",
+          "connect_ip": "172.17.****",
+          "mac": "FE-FC-FE-85-5****",
+          "is_online": false,
+          "os_version": "Microsoft Windows 10 教育版",
+          "version": "2.0.19.3"
+        },
+        {
+          "client_name": "视光***",
+          "computer_name": "视光***",
+          "local_ip": "172.17.****",
+          "connect_ip": "172.17.****",
+          "mac": "FE-FC-FE-CB-9****",
+          "is_online": false,
+          "os_version": "Microsoft Windows 10 教育版",
+          "version": "2.0.19.7"
+        },
+        {
+          "client_name": "办公***",
+          "computer_name": "办公***",
+          "local_ip": "172.17.****",
+          "connect_ip": "172.17.****",
+          "mac": "FE-FC-FE-AD-E****",
+          "is_online": false,
+          "os_version": "Microsoft Windows 10 教育版",
+          "version": "2.0.19.3"
+        },
+        {
+          "client_name": "办公***",
+          "computer_name": "办公***",
+          "local_ip": "172.17.****",
+          "connect_ip": "172.17.****",
+          "mac": "FE-FC-FE-B5-A****",
+          "is_online": false,
+          "os_version": "Microsoft Windows 10 教育版",
+          "version": "2.0.19.3"
+        }
+      ]
+    }
+  ],
+  "ip_diff_sample": [
+    {
+      "client": "苹果***",
+      "local_ip": "172.17.20****",
+      "connect_ip": "172.17.254****"
+    },
+    {
+      "client": "10***",
+      "local_ip": "172.17.30****",
+      "connect_ip": "172.17.254****"
+    },
+    {
+      "client": "12***",
+      "local_ip": "172.17.6****",
+      "connect_ip": "172.17.254****"
+    },
+    {
+      "client": "MK***",
+      "local_ip": "172.17.70****",
+      "connect_ip": "172.17.254****"
+    },
+    {
+      "client": "DE***",
+      "local_ip": "172.17.30****",
+      "connect_ip": "172.17.254****"
+    }
+  ]
+}
